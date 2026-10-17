@@ -6,17 +6,20 @@ struct GameShell: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        ZStack {
-            T.bg.ignoresSafeArea()
-            switch nav.tab {
-            case 0: FeedTab()
-            case 1: GoalsTab()
-            case 2: MessagesTab()
-            case 3: NotifsTab()
-            default: ProfileTab()
+        VStack(spacing: 0) {
+            ZStack {
+                T.bg.ignoresSafeArea()
+                switch nav.tab {
+                case 0: FeedTab()
+                case 1: GoalsTab()
+                case 2: MessagesTab()
+                case 3: NotifsTab()
+                default: ProfileTab()
+                }
             }
+            .frame(maxHeight: .infinity)
+            AppTabBar()
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) { AppTabBar() }
         .tint(.white)
         .fullScreenCover(isPresented: Binding(get: { game.playing && game.s.intro?.done == false }, set: { _ in })) {
             IntroFlow().zoomed()

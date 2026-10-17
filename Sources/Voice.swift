@@ -81,7 +81,7 @@ extension Game {
 
     /// Picks a reply for an NPC with full context. Returns (text, positive).
     func voiceLine(_ st: GameState, _ n: NPC, bucket b0: String, target: String?, toPlayer: Bool,
-                   text: String, heat h0: Double, topic tIn: String? = nil) -> (String, Bool)? {
+                   text: String, heat h0: Double, topic tIn: String? = nil, angry: Bool = false) -> (String, Bool)? {
         let me = st.persona.handle
         let vk = vkey(st, n.handle)
         let sk = vkey(st, n.handle + ">" + (target ?? "me"))
@@ -89,6 +89,17 @@ extension Game {
         var bucket = b0
         var heat = h0
 
+        if angry {
+            if toPlayer || b0.hasPrefix("dm") {
+                switch bucket {
+                case "comment.pos", "comment.neg": bucket = "roast.hard"
+                case "rebut.agree", "rebut.fight": bucket = "rebut.fight.hot"
+                case "dm.warm", "dm.cold": bucket = "dm.hostile"
+                default: break
+                }
+            } else if bucket == "rebut.fight" { bucket = "rebut.fight.hot" }
+            heat = 0.95
+        }
         // 1) continuity: what they said to this target a moment ago decides what they say now
         var sv = 0
         if let s = voice.stance[sk], Date().timeIntervalSince(s.at) < 1800 { sv = s.v }
@@ -96,7 +107,7 @@ extension Game {
             activeFeuds(st).first(where: { $0.id == Game.rivalKey(n.handle, t) })
         }
         let memF = toPlayer ? feeling(st, n.handle) : 0
-        let override = feudRow != nil || abs(memF) >= 4
+        let override = angry || feudRow != nil || abs(memF) >= 4
         if !override {
             if sv <= -2, !isNeg(bucket), Double.random(in: 0...1) < 0.7 { bucket = flip(bucket) }
             else if sv >= 2, isNeg(bucket), Double.random(in: 0...1) < 0.6 { bucket = flip(bucket) }
@@ -113,21 +124,21 @@ extension Game {
         let quote = Corpus.quote(from: text, fallback: topic)
 
         var out: String? = nil
-        var positive = !isNeg(bucket)
+        var positive = !(isNeg(bucket) || bucket == "roast.hard" || bucket == "rebut.fight.hot" || bucket == "dm.hostile")
 
         // 4) personal callbacks: feud > memory > hook
         let r = Double.random(in: 0...1)
-        if let f = feudRow, r < 0.45, let tpl = VoiceT.feud[n.trait]?.randomElement() {
+        if let f = feudRow, r < 0.45, !angry || !toPlayer, let tpl = VoiceT.feud[n.trait]?.randomElement() {
             let rival = st.npcs.first(where: { $0.handle == target })?.handle ?? (target ?? "")
             out = tpl.replacingOccurrences(of: "{c}", with: f.cause ?? topic).replacingOccurrences(of: "{r}", with: rival)
             positive = false
-        } else if toPlayer, abs(memF) >= 2, r < 0.35, let m = strongestMemory(st, n.handle, positive: memF > 0) {
+        } else if toPlayer, abs(memF) >= 2, r < 0.35, !angry, let m = strongestMemory(st, n.handle, positive: memF > 0) {
             let tpl = ((memF > 0 ? VoiceT.memPos : VoiceT.memNeg)[n.trait] ?? []).randomElement()
             if let tpl = tpl {
                 out = tpl.replacingOccurrences(of: "{t}", with: m.text)
                 positive = memF > 0
             }
-        } else if toPlayer, isNeg(bucket), r < 0.25, let h = cv.hooks.last,
+        } else if toPlayer, positive == false, r < 0.4, let h = cv.hooks.last,
                   let tpl = VoiceT.hook[n.trait]?.randomElement() {
             out = tpl.replacingOccurrences(of: "{h}", with: h)
             positive = false

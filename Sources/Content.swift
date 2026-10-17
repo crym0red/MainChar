@@ -18,6 +18,13 @@ enum ContentPrefs {
         r.numberOfMatches(in: s, range: NSRange(s.startIndex..., in: s))
     }
 
+    /// Player is cussing or insulting: characters answer with a heated, unfiltered argument.
+    static func isHostile(_ s: String) -> Bool {
+        if n(strong, s) > 0 || n(mild, s) > 0 && n(insult, s) > 0 { return true }
+        return n(insult, s) > 0 && s.contains("@")
+    }
+    private static let insult = try! NSRegularExpression(pattern: "\\b(idiot|stupid|loser|trash|garbage|clown|moron|dumb\\w*|ugly|pathetic|shut up|screw you|hate you|fraud|fake|bozo|joke)\\b", options: .caseInsensitive)
+
     static func allows(_ s: String) -> Bool {
         let lv = level
         if lv < 2 {
@@ -62,11 +69,16 @@ let appZoom: CGFloat = 0.75
 struct Zoomed: ViewModifier {
     func body(content: Content) -> some View {
         GeometryReader { g in
+            let ins = g.safeAreaInsets
             content
+                .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: ins.top / appZoom) }
+                .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: ins.bottom / appZoom) }
                 .frame(width: g.size.width / appZoom, height: g.size.height / appZoom)
                 .scaleEffect(appZoom, anchor: .topLeading)
                 .frame(width: g.size.width, height: g.size.height, alignment: .topLeading)
+                .clipped()
         }
+        .ignoresSafeArea(.container)
         .background(T.bg.ignoresSafeArea())
     }
 }

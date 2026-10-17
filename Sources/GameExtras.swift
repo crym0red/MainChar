@@ -230,7 +230,7 @@ extension Game {
         var st = s
         let delta = Int.random(in: -2...3)
         let power = takePower(&st)
-        let comments = makeComments(st, auraDelta: delta, count: Int.random(in: 6...10), text: t)
+        let comments = makeComments(st, auraDelta: delta, count: Int.random(in: 6...10), text: t, angry: ContentPrefs.isHostile(t))
         let story = UserStory(id: id, text: t, bg: bg, hasImage: hasImage, day: st.day, comments: comments)
         st.ex.stories.insert(story, at: 0)
         if st.ex.stories.count > 30 { st.ex.stories.removeLast(st.ex.stories.count - 30) }
@@ -334,7 +334,7 @@ extension Game {
         var warm = n.affinity >= 50
         if n.affinity < 50 && n.affinity >= 30 { warm = Bool.random() }
         if n.trait == .hater && n.affinity < 70 { warm = Double.random(in: 0...1) < 0.2 }
-        return voiceLine(st, n, bucket: warm ? "dm.warm" : "dm.cold", target: nil, toPlayer: true, text: text, heat: 0.45)?.0
+        return voiceLine(st, n, bucket: warm ? "dm.warm" : "dm.cold", target: nil, toPlayer: true, text: text, heat: 0.45, angry: ContentPrefs.isHostile(text))?.0
             ?? (Lines.dm[n.trait]?.randomElement() ?? "👀")
     }
 
@@ -348,30 +348,32 @@ extension Game {
             mention = String(w.dropFirst())
         }
         let first = cast.first(where: { $0.handle == mention }) ?? cast.randomElement()!
+        let angry = ContentPrefs.isHostile(playerText)
         var neg: Bool
         if first.affinity >= 55 { neg = Double.random(in: 0...1) < 0.2 }
         else if first.affinity < 35 { neg = Double.random(in: 0...1) < 0.75 }
         else { neg = Bool.random() }
         if first.trait == .hater && first.affinity < 70 { neg = Double.random(in: 0...1) < 0.85 }
+        if angry { neg = Double.random(in: 0...1) < (first.trait == .wholesome ? 0.8 : 0.97) }
 
         var out: [Comment] = []
         var lastNeg: [String: Bool] = [:]
         func add(_ n: NPC, _ body: String) {
             out.append(Comment(name: n.name, handle: n.handle, emoji: n.emoji, text: body, verified: n.followers >= 40000))
         }
-        let r0 = voiceLine(st, first, bucket: neg ? "comment.neg" : "comment.pos", target: nil, toPlayer: true, text: playerText, heat: 0.5)
+        let r0 = voiceLine(st, first, bucket: neg ? "comment.neg" : "comment.pos", target: nil, toPlayer: true, text: playerText, heat: angry ? 0.95 : 0.5, angry: angry)
         let l0 = r0?.0 ?? ((neg ? Lines.neg[first.trait] : Lines.pos[first.trait])?.randomElement() ?? "👀")
         if let r = r0 { neg = !r.1 }
         add(first, "@\(me) " + l0)
         lastNeg[first.handle] = neg
 
-        let others = cast.filter { $0.handle != first.handle }.shuffled().prefix(Int.random(in: 1...3))
+        let others = cast.filter { $0.handle != first.handle }.shuffled().prefix(angry ? Int.random(in: 3...5) : Int.random(in: 1...3))
         var prev = first
         for n in others {
             let pn = lastNeg[prev.handle] ?? false
-            let myNeg = n.trait == .hater ? Double.random(in: 0...1) < 0.7 : Double.random(in: 0...1) < 0.4
+            let myNeg = angry ? Double.random(in: 0...1) < 0.85 : (n.trait == .hater ? Double.random(in: 0...1) < 0.7 : Double.random(in: 0...1) < 0.4)
             let agree = pn == myNeg ? Double.random(in: 0...1) < 0.85 : Double.random(in: 0...1) < 0.15
-            let r = voiceLine(st, n, bucket: agree ? "rebut.agree" : "rebut.fight", target: prev.handle, toPlayer: false, text: playerText, heat: 0.5)
+            let r = voiceLine(st, n, bucket: agree ? "rebut.agree" : "rebut.fight", target: prev.handle, toPlayer: false, text: playerText, heat: angry ? 0.95 : 0.5, angry: angry)
             add(n, "@\(prev.handle) " + (r?.0 ?? (agree ? "exactly this" : "no, that's wrong")))
             lastNeg[n.handle] = r.map { !$0.1 } ?? (agree ? pn : !pn)
             prev = n

@@ -362,7 +362,7 @@ final class Game: ObservableObject {
                     day: st.day, isYou: false, verified: npc.followers >= 40000 || npc.id == "newsdesk")
     }
 
-    func makeComments(_ st: GameState, auraDelta: Int, count: Int, exclude: String = "", text: String = "") -> [Comment] {
+    func makeComments(_ st: GameState, auraDelta: Int, count: Int, exclude: String = "", text: String = "", angry: Bool = false) -> [Comment] {
         let pool = Array(st.npcs.filter { $0.id != "newsdesk" && $0.handle != exclude }.shuffled().prefix(count))
         let heat = auraDelta < 0 ? 0.75 : 0.5
         var out: [Comment] = []
@@ -370,23 +370,24 @@ final class Game: ObservableObject {
         for n in pool {
             let roll = Double.random(in: 0...1)
             var neg: Bool
+            if angry { neg = roll < (n.trait == .wholesome ? 0.8 : 0.96) } else {
             switch n.trait {
             case .hater: neg = roll < 0.82
             case .wholesome: neg = auraDelta < 0 ? roll < 0.35 : roll < 0.06
             case .chaos, .gossip: neg = auraDelta < 0 ? roll < 0.7 : roll < 0.3
             default: neg = auraDelta < 0 ? roll < 0.62 : roll < 0.2
-            }
+            } }
             var body: String
             if let target = out.randomElement(), Double.random(in: 0...1) < 0.6 {
                 let tn = negOf[target.handle] ?? false
                 let agree = tn == neg ? Double.random(in: 0...1) < 0.85 : Double.random(in: 0...1) < 0.12
                 let bucket = agree ? "rebut.agree" : "rebut.fight"
-                let r = voiceLine(st, n, bucket: bucket, target: target.handle, toPlayer: false, text: text, heat: heat)
+                let r = voiceLine(st, n, bucket: bucket, target: target.handle, toPlayer: false, text: text, heat: heat, angry: angry)
                 body = "@\(target.handle) " + (r?.0 ?? (agree ? "exactly this" : "no, that's wrong"))
                 neg = r.map { !$0.1 } ?? (agree ? tn : !tn)
             } else {
                 let bucket = neg ? "comment.neg" : "comment.pos"
-                let r = voiceLine(st, n, bucket: bucket, target: nil, toPlayer: true, text: text, heat: heat)
+                let r = voiceLine(st, n, bucket: bucket, target: nil, toPlayer: true, text: text, heat: heat, angry: angry)
                 body = r?.0 ?? ((neg ? Lines.neg[n.trait] : Lines.pos[n.trait])?.randomElement() ?? "👀")
                 if let r = r { neg = !r.1 }
             }
@@ -492,6 +493,10 @@ final class Game: ObservableObject {
         }
         let replied = st.posts[i]
         rememberReply(&st, post: replied, text: t)
+        if ContentPrefs.isHostile(t), let j = st.npcs.firstIndex(where: { $0.handle == replied.authorHandle && $0.id != "newsdesk" }) {
+            st.npcs[j].affinity = max(0, st.npcs[j].affinity - 12)
+            remember(&st, replied.authorHandle, "insult", "you cussed them out", mood: -3, ref: nil)
+        }
         gainXP(&st, 3)
         let sid = st.id
         let target = st.npcs.first(where: { $0.handle == st.posts[i].authorHandle && $0.id != "newsdesk" })?.handle
@@ -520,7 +525,8 @@ final class Game: ObservableObject {
         var gain = max(1, Int(Double(likes) * 0.06 * kind.followMult))
         if delta < 0 { gain = max(1, gain * 3 / 4) }
         let before = st.followers
-        let comments = makeComments(st, auraDelta: delta, count: Int.random(in: 4...7), text: t)
+        let mad = ContentPrefs.isHostile(t)
+        let comments = makeComments(st, auraDelta: mad ? min(delta, -3) : delta, count: Int.random(in: mad ? 6...9 : 4...7), text: t, angry: mad)
         let post = Post(authorHandle: st.persona.handle, authorName: st.persona.name, emoji: st.persona.emoji,
                         text: t, likes: likes, reposts: likes / 7, comments: comments, day: st.day, isYou: true,
                         verified: st.followers >= 10000, viral: viral, tag: kind.label)
