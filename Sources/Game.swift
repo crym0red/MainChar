@@ -152,7 +152,7 @@ final class Game: ObservableObject {
 
     // MARK: XP / notifications
 
-    static func xpNeed(_ level: Int) -> Int { 30 + 3 * level }
+    static func xpNeed(_ level: Int) -> Int { Levels.need(level) }
 
     func notify(_ st: inout GameState, _ kind: String, _ text: String, sub: String = "", handle: String = "", emoji: String = "🔔") {
         st.notifs.insert(Notif(kind: kind, text: text, sub: sub, handle: handle, emoji: emoji, day: st.day), at: 0)
@@ -160,15 +160,15 @@ final class Game: ObservableObject {
     }
 
     func gainXP(_ st: inout GameState, _ n: Int) {
-        st.xp += n
+        let keys = st.ex.keys?.count ?? 0
+        st.xp += n + n * min(40, keys) / 100
         while st.xp >= Game.xpNeed(st.level) {
             st.xp -= Game.xpNeed(st.level)
             st.level += 1
-            st.points += 3
             st.bonus += 1
-            st.ex.gems += 2
-            notify(&st, "level", "You reached level \(st.level)", sub: "+3 skill points, +2 gems", emoji: "⭐️")
+            applyLevelReward(&st, level: st.level)
         }
+        checkKeystones(&st)
     }
 
     func logIt(_ st: inout GameState, _ emoji: String, _ title: String, _ detail: String,
@@ -825,9 +825,12 @@ final class Game: ObservableObject {
 
     func upgrade(_ skillID: UUID) {
         var st = s
-        guard st.points > 0, let i = st.skills.firstIndex(where: { $0.id == skillID }) else { return }
+        guard let i = st.skills.firstIndex(where: { $0.id == skillID }), st.skills[i].value < 100 else { return }
+        let cost = Levels.skillCost(st.skills[i].value)
+        guard st.points >= cost else { showToast("Need \(cost) skill points"); return }
         st.skills[i].value += 1
-        st.points -= 1
+        st.points -= cost
+        checkKeystones(&st)
         s = st
     }
 

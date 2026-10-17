@@ -22,6 +22,7 @@ struct GoalsTab: View {
                         milestones(st)
                         quests(st)
                         skills(st).id("skills")
+                        rewards(st)
                     }
                     .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 40)
                 }
@@ -35,7 +36,7 @@ struct GoalsTab: View {
         .alert("How does this work?", isPresented: $how) {
             Button("Got it", role: .cancel) {}
         } message: {
-            Text("Posts, stories and events earn XP. Each level gives skill points and gems. Spend points on skills to unlock milestones and push your main goal forward.")
+            Text("Posts, stories and events earn XP. Every level pays out gems and skill points, every 5th gives an item, every 10th a badge. Skills get pricier the higher they go, and each keystone (10, 25, 50, 75, 100) pays gems and a permanent XP boost.")
         }
     }
 
@@ -54,29 +55,29 @@ struct GoalsTab: View {
 
     private func squareButton(_ icon: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: icon).font(.system(size: 24)).foregroundColor(.white)
-                .frame(width: 60, height: 60).background(T.card2)
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            Image(systemName: icon).font(.system(size: 19, weight: .semibold)).foregroundColor(.white)
+                .frame(width: 46, height: 46).background(T.card2)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
     }
 
     private func header(_ st: GameState, _ need: Int, _ proxy: ScrollViewProxy) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
-                Text("Lvl \(st.level)").font(.jk(27, .semibold))
-                Bar(value: Double(st.xp) / Double(max(1, need)), color: T.gold, height: 26).frame(width: 130)
-                Text("\(st.xp)/\(need) XP").font(.jk(19, .medium)).foregroundColor(T.gold)
-                octoPlus(size: 46) { withAnimation { proxy.scrollTo("skills", anchor: .top) } }
-                Spacer(minLength: 0)
-                squareButton("book.closed.fill") { showLog = true }
-                squareButton("storefront.fill") { showStore = true }
-            }
+        HStack(spacing: 10) {
             Button { how = true } label: {
-                HStack(spacing: 8) {
-                    Text("How does this work?").font(.jk(18)).foregroundColor(T.sub)
-                    Image(systemName: "questionmark.circle.fill").font(.system(size: 22)).foregroundColor(T.sub)
-                }
+                Text("LVL \(st.level)").font(.jk(16, .heavy)).foregroundColor(.white)
+                    .lineLimit(1).fixedSize()
+                    .padding(.horizontal, 12).frame(height: 34)
+                    .background(T.card2).clipShape(Capsule())
             }
+            ZStack {
+                Bar(value: Double(st.xp) / Double(max(1, need)), color: T.gold, height: 30)
+                Text("\(st.xp)/\(need) XP").font(.jk(13, .bold)).foregroundColor(.white)
+                    .lineLimit(1).minimumScaleFactor(0.6).shadow(color: .black.opacity(0.6), radius: 2)
+            }
+            .frame(maxWidth: .infinity)
+            octoPlus(enabled: st.points > 0, size: 40) { withAnimation { proxy.scrollTo("skills", anchor: .top) } }
+            squareButton("book.closed.fill") { showLog = true }
+            squareButton("storefront.fill") { showStore = true }
         }
         .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 12)
         .overlay(alignment: .bottom) { Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1) }
@@ -270,43 +271,129 @@ struct GoalsTab: View {
         }
     }
 
-    // MARK: Skills
+    // MARK: Skill tree
 
     private func skills(_ st: GameState) -> some View {
         let m = game.nextMilestone
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Skills").font(.jk(26, .medium))
+                Text("Skill tree").font(.jk(26, .medium))
                 Spacer()
                 HStack(spacing: 8) {
                     Image(systemName: "hammer.fill").rotationEffect(.degrees(-20))
-                    Text("\(st.points) Points to use")
+                    Text("\(st.points) pts")
                 }
                 .font(.jk(21, .semibold)).foregroundColor(Color(red: 0.85, green: 0.45, blue: 0.05))
             }
-            panel {
-                VStack(spacing: 0) {
-                    ForEach(Array(st.skills.enumerated()), id: \.element.id) { i, sk in
-                        let miss: Int = {
-                            guard let m = m else { return 0 }
-                            return m.reqs.filter { $0.skill == i }.map { max(0, $0.level - sk.value) }.reduce(0, +)
-                        }()
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack {
-                                Text(sk.name).font(.jk(26, .medium))
-                                Spacer(minLength: 6)
-                                if miss > 0 { needed(miss) }
-                                Color.clear.frame(width: 62, height: 1)
-                            }
-                            HStack(spacing: 12) {
-                                Bar(value: Double(sk.value) / 100, color: T.blue, height: 22)
-                                Text("\(sk.value)/100").font(.jk(22, .medium)).frame(width: 82, alignment: .trailing)
-                                octoPlus(enabled: st.points > 0, size: 50) { game.upgrade(sk.id) }
-                            }
-                            Text(sk.desc).font(.jk(19)).foregroundColor(T.sub)
+            Text("Every point costs more as a skill climbs. Keystones pay gems and +1% XP forever.")
+                .font(.jk(14)).foregroundColor(T.sub)
+            ForEach(Array(st.skills.enumerated()), id: \.element.id) { i, sk in
+                let miss: Int = {
+                    guard let m = m else { return 0 }
+                    return m.reqs.filter { $0.skill == i }.map { max(0, $0.level - sk.value) }.reduce(0, +)
+                }()
+                skillCard(sk, miss, st)
+            }
+        }
+    }
+
+    private func skillCard(_ sk: Skill, _ miss: Int, _ st: GameState) -> some View {
+        let cost = Levels.skillCost(sk.value)
+        let maxed = sk.value >= 100
+        let can = !maxed && st.points >= cost
+        let hue = Double(HK.h(sk.name) % 360) / 360
+        let tint = Color(hue: hue, saturation: 0.7, brightness: 1)
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(sk.name).font(.jk(24, .semibold))
+                Spacer(minLength: 6)
+                if miss > 0 { needed(miss) }
+                Text("\(sk.value)").font(.jk(26, .heavy)).foregroundColor(tint)
+                Text("/100").font(.jk(15)).foregroundColor(T.sub)
+            }
+            Text(sk.desc).font(.jk(15)).foregroundColor(T.sub)
+            GeometryReader { g in
+                let w = g.size.width
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.10)).frame(height: 8)
+                    Capsule().fill(tint).frame(width: max(8, w * CGFloat(sk.value) / 100), height: 8)
+                    ForEach(Array(Levels.keystones.enumerated()), id: \.offset) { idx, t in
+                        let got = sk.value >= t
+                        ZStack {
+                            Circle().fill(got ? tint : T.card2).frame(width: 30, height: 30)
+                            Circle().stroke(got ? Color.white.opacity(0.9) : Color.white.opacity(0.2), lineWidth: 2).frame(width: 30, height: 30)
+                            Image(systemName: got ? "star.fill" : "lock.fill").font(.system(size: 12, weight: .bold))
+                                .foregroundColor(got ? .black.opacity(0.75) : T.sub)
                         }
-                        .padding(.vertical, 18)
-                        if i < st.skills.count - 1 { Rectangle().fill(Color.white.opacity(0.14)).frame(height: 1) }
+                        .offset(x: w * CGFloat(t) / 100 - 15 - (t == 100 ? 0 : 0), y: 0)
+                        Text("\(t)").font(.jk(11, .semibold)).foregroundColor(got ? .white : T.sub)
+                            .offset(x: w * CGFloat(t) / 100 - 6 - (t >= 100 ? 4 : 0), y: 26)
+                    }
+                }
+                .frame(height: 30, alignment: .leading)
+            }
+            .frame(height: 52)
+            Button { game.upgrade(sk.id) } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: maxed ? "checkmark.seal.fill" : "arrow.up.circle.fill")
+                    Text(maxed ? "Mastered" : "Level up").font(.jk(18, .semibold))
+                    if !maxed {
+                        Text("\(cost) pt\(cost == 1 ? "" : "s")").font(.jk(15, .bold)).foregroundColor(can ? .white.opacity(0.9) : T.sub)
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(Color.black.opacity(0.25)).clipShape(Capsule())
+                    }
+                }
+                .foregroundColor(can || maxed ? .white : Color.white.opacity(0.5))
+                .frame(maxWidth: .infinity).padding(.vertical, 14)
+                .background(maxed ? T.lime.opacity(0.5) : (can ? tint.opacity(0.85) : Color.white.opacity(0.12))).clipShape(Capsule())
+            }
+            .disabled(!can)
+        }
+        .padding(18)
+        .background(T.card)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(tint.opacity(0.25), lineWidth: 1.5))
+    }
+
+    // MARK: Level rewards
+
+    private func rewards(_ st: GameState) -> some View {
+        let upcoming = (1...6).map { st.level + $0 }
+        let badges = st.ex.lvBadges ?? []
+        return VStack(alignment: .leading, spacing: 12) {
+            title("Level rewards")
+            panel {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(upcoming.enumerated()), id: \.offset) { i, l in
+                        let r = Levels.reward(l)
+                        HStack(spacing: 12) {
+                            ZStack {
+                                Circle().fill(r.badge != nil ? T.gold.opacity(0.25) : T.card2).frame(width: 42, height: 42)
+                                Image(systemName: r.badge?.symbol ?? r.itemSymbol ?? "diamond.fill")
+                                    .font(.system(size: 17, weight: .bold)).foregroundColor(r.badge != nil ? T.gold : T.blue)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Level \(l)").font(.jk(17, .semibold))
+                                Text(Levels.summary(r)).font(.jk(13)).foregroundColor(T.sub).fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.vertical, 10)
+                        if i < upcoming.count - 1 { Rectangle().fill(Color.white.opacity(0.10)).frame(height: 1) }
+                    }
+                }
+            }
+            if !badges.isEmpty {
+                Text("Badges earned (\(badges.count))").font(.jk(18, .medium)).padding(.top, 6)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 10)], spacing: 10) {
+                    ForEach(badges.reversed()) { b in
+                        VStack(spacing: 6) {
+                            Image(systemName: b.symbol).font(.system(size: 24, weight: .bold)).foregroundColor(T.gold)
+                            Text(b.name).font(.jk(12, .semibold)).multilineTextAlignment(.center).lineLimit(2)
+                            Text("Lvl \(b.level)").font(.jk(10)).foregroundColor(T.sub)
+                        }
+                        .frame(maxWidth: .infinity).padding(.vertical, 12).padding(.horizontal, 6)
+                        .background(T.card).clipShape(RoundedRectangle(cornerRadius: 16))
                     }
                 }
             }

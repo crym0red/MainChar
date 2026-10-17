@@ -308,6 +308,8 @@ struct Extras: Codable, Hashable {
     var castGen: Int? = nil
     var shield: Bool? = nil
     var squad: Bool? = nil
+    var lvBadges: [LevelBadge]? = nil
+    var keys: [String]? = nil
 }
 
 // MARK: - World
