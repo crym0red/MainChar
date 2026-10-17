@@ -135,6 +135,7 @@ extension Game {
             if let b = b {
                 remember(&st, a.handle, "sided", "you backed me in my fight with @\(b.handle)", mood: 2)
                 remember(&st, b.handle, "betrayed", "you took @\(a.handle)'s side against me", mood: -2)
+                takeSide(&st, a.handle, b.handle)
                 return
             }
         }
@@ -171,7 +172,7 @@ extension Game {
 
     func goViral(_ st: inout GameState, _ p: Post) {
         let snip = String(p.text.prefix(60))
-        addHistory(&st, "🔥", "A post by \(st.persona.name) went viral", snip)
+        addHistory(&st, "🔥", "A post by \(st.persona.name) went viral", snip, post: p.id)
         st.ex.spotlight = 6
         st.ex.spotGain = (st.ex.spotGain ?? 0) + max(5, Int(Double(p.likes) * 0.06))
         st.ex.fame = (st.ex.fame ?? 0) + 1
@@ -191,113 +192,6 @@ extension Game {
         notify(&st, "event", "You're going viral", sub: "The spotlight is on you. Expect attention, good and bad.", emoji: "🔥")
     }
 
-    // MARK: Sim events driven by memory
-
-    func simMemoryPost(_ st: inout GameState, _ items: inout [DigestItem], _ cast: [NPC], _ quiet: Bool) -> Bool {
-        let cands = cast.map { ($0, feeling(st, $0.handle)) }.filter { abs($0.1) >= 2 }
-        guard let (n, f) = cands.randomElement(), let m = strongestMemory(st, n.handle, positive: f > 0) else { return false }
-        let pos = f > 0
-        let text = MemLines.post(m, positive: pos, me: st.persona.handle)
-        var p = makePost(n, text, st)
-        p.tag = pos ? "Shoutout" : "Callout"
-        p.day = st.day
-        p.likes = max(p.likes * 2, 50)
-        p.comments = makeComments(st, auraDelta: pos ? 3 : -3, count: Int.random(in: 3...6), exclude: n.handle, text: text)
-        st.posts.insert(p, at: 0)
-        let d = pos ? Int.random(in: 1...3) : -Int.random(in: 1...3)
-        st.aura += d
-        st.lastAuraDelta = d
-        if pos { st.followers += max(1, st.followers / 80) } else { st.followers = max(10, st.followers - max(1, st.followers / 100)) }
-        markAired(&st, m.id)
-        _ = settleAura(&st)
-        if quiet {
-            notify(&st, "event", pos ? "\(n.name) gave you a shoutout" : "\(n.name) called you out", sub: String(text.prefix(90)), handle: n.handle, emoji: pos ? "🫶" : "🗣️")
-        } else {
-            items.append(DigestItem(emoji: pos ? "🫶" : "🗣️",
-                                    title: pos ? "\(n.name) gave you a shoutout" : "\(n.name) called you out",
-                                    detail: "They remembered that \(m.text) (aura \(d >= 0 ? "+" : "")\(d)%)", postID: p.id))
-        }
-        if abs(f) >= 4 {
-            addHistory(&st, pos ? "🫶" : "🗣️", pos ? "\(n.name) publicly stood by \(st.persona.name)" : "\(n.name) turned on \(st.persona.name)",
-                       "They remembered that \(m.text).")
-        }
-        return true
-    }
-
-    func simMemoryDM(_ st: inout GameState, _ items: inout [DigestItem], _ cast: [NPC], _ quiet: Bool) -> Bool {
-        let cands = cast.filter { n in
-            let f = feeling(st, n.handle)
-            guard abs(f) >= 2 else { return false }
-            if let last = st.threads[n.handle]?.last, !last.fromYou { return false }
-            return true
-        }
-        guard let n = cands.randomElement() else { return false }
-        let pos = feeling(st, n.handle) > 0
-        guard let m = strongestMemory(st, n.handle, positive: pos) else { return false }
-        let msg = MemLines.dm(m, positive: pos)
-        st.threads[n.handle, default: []].append(DMMessage(fromYou: false, text: msg))
-        st.unread.insert(n.handle)
-        markAired(&st, m.id)
-        notify(&st, "reply", "\(n.name) messaged you", sub: "\(n.handle): \(msg)", handle: n.handle, emoji: n.emoji)
-        if !quiet {
-            items.append(DigestItem(emoji: "💬", title: "\(n.name) messaged you", detail: String(msg.prefix(90))))
-        }
-        return true
-    }
-
-    func simScrutiny(_ st: inout GameState, _ items: inout [DigestItem], _ cast: [NPC], _ quiet: Bool) {
-        let pool = cast.filter { $0.trait == .hater || $0.trait == .gossip || $0.trait == .chaos }
-        guard let n = pool.randomElement() else { return }
-        let me = st.persona.handle
-        let t = ["is anyone else tired of hearing about @\(me)? the timeline is NOT that deep.",
-                 "everyone acting like @\(me) invented posting. relax.",
-                 "@\(me) is only famous because the algorithm picked them. discuss.",
-                 "going viral once doesn't make you interesting, @\(me).",
-                 "watching @\(me) get too much attention is my villain origin story."].randomElement() ?? "hm"
-        var p = makePost(n, t, st)
-        p.tag = "Backlash"
-        p.day = st.day
-        p.likes = max(p.likes * 2, 60)
-        p.comments = makeComments(st, auraDelta: -2, count: Int.random(in: 3...6), exclude: n.handle, text: t)
-        st.posts.insert(p, at: 0)
-        let d = -Int.random(in: 1...3)
-        st.aura += d
-        st.lastAuraDelta = d
-        _ = settleAura(&st)
-        if quiet {
-            notify(&st, "event", "Backlash from \(n.name)", sub: String(t.prefix(90)), handle: n.handle, emoji: "🌪️")
-        } else {
-            items.append(DigestItem(emoji: "🌪️", title: "Backlash after going viral",
-                                    detail: "\(n.name) turned on you (aura \(d)%)", postID: p.id))
-        }
-    }
-
-    func simOffer(_ st: inout GameState, _ items: inout [DigestItem], _ cast: [NPC], _ quiet: Bool) {
-        guard let n = cast.first(where: { $0.trait == .mogul }) ?? cast.randomElement() else { return }
-        if let last = st.threads[n.handle]?.last, !last.fromYou { return }
-        let msg = ["saw that post blow up. let's talk deal.", "your numbers are insane right now. call me.",
-                   "everyone's watching you. want to turn that into something?"].randomElement() ?? "call me"
-        st.threads[n.handle, default: []].append(DMMessage(fromYou: false, text: msg))
-        st.unread.insert(n.handle)
-        st.ex.gems += 2
-        st.followers += max(1, st.followers / 50)
-        notify(&st, "reply", "\(n.name) wants to work with you", sub: "\(n.handle): \(msg)", handle: n.handle, emoji: n.emoji)
-        remember(&st, n.handle, "offer", "you were the talk of the timeline", mood: 1)
-        if !quiet { items.append(DigestItem(emoji: "💼", title: "\(n.name) made you an offer", detail: "+2 gems, new followers. Check your DMs.")) }
-    }
-
-    func fadeHype(_ st: inout GameState, _ items: inout [DigestItem], _ quiet: Bool) {
-        let churn = max(0, (st.ex.spotGain ?? 0) / 4)
-        st.ex.spotGain = nil
-        guard churn > 0 else { return }
-        st.followers = max(10, st.followers - churn)
-        addHistory(&st, "📉", "The hype around \(st.persona.name) cooled", "Casual followers from the viral moment drifted away.")
-        if quiet {
-            notify(&st, "event", "The hype faded", sub: "-\(short(churn)) followers who only came for the viral moment", emoji: "📉")
-        } else {
-            items.append(DigestItem(emoji: "📉", title: "The viral hype faded", detail: "-\(short(churn)) followers who only came for the moment"))
-        }
-    }
 }
 
 // MARK: - What a character remembers (NPC sheet)
@@ -312,6 +206,7 @@ struct MemoryBlock: View {
         let lab = game.feelingLabel(f)
         let ms = (st.ex.memories ?? []).filter { $0.handle == handle }.prefix(3)
         VStack(alignment: .leading, spacing: 6) {
+            FeudBlock(handle: handle).padding(.horizontal, -28)
             HStack {
                 Text("They remember").font(.system(size: 12)).foregroundColor(T.sub)
                 Spacer()

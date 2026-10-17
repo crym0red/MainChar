@@ -90,6 +90,7 @@ struct Post: Identifiable, Codable, Hashable {
     var viral: Bool = false
     var liked: Bool = false
     var tag: String = ""
+    var ts: Date? = nil
 }
 
 struct DMMessage: Identifiable, Codable, Hashable {
@@ -226,6 +227,8 @@ struct HistoryItem: Codable, Hashable, Identifiable {
     var title: String
     var detail: String
     var date: Date = Date()
+    var postID: UUID? = nil
+    var handles: [String]? = nil
 }
 
 struct DigestItem: Codable, Hashable, Identifiable {
@@ -234,6 +237,11 @@ struct DigestItem: Codable, Hashable, Identifiable {
     var title: String
     var detail: String
     var postID: UUID? = nil
+    var handles: [String]? = nil
+    var at: Date? = nil
+    var weight: Int? = nil
+    var aura: Int? = nil
+    var fol: Int? = nil
 }
 
 struct Digest: Codable, Hashable {
@@ -241,6 +249,7 @@ struct Digest: Codable, Hashable {
     var followerDelta: Int
     var auraDelta: Int
     var minutes: Int
+    var more: Int? = nil
 }
 
 struct Rivalry: Codable, Hashable, Identifiable {
@@ -250,6 +259,12 @@ struct Rivalry: Codable, Hashable, Identifiable {
     var heat: Int
     var cause: String? = nil
     var lastDay: Int? = nil
+    var rel: Int? = nil
+    var status: String? = nil
+    var sides: [String: String]? = nil
+    var started: Date? = nil
+    var lastAt: Date? = nil
+    var resolvedBy: String? = nil
 }
 
 struct Memory: Codable, Hashable, Identifiable {
@@ -284,6 +299,10 @@ struct Extras: Codable, Hashable {
     var spotlight: Int? = nil
     var spotGain: Int? = nil
     var fame: Int? = nil
+    var simNow: Date? = nil
+    var simDay: String? = nil
+    var simAuraUsed: Int? = nil
+    var simFolUsed: Double? = nil
 }
 
 // MARK: - World
