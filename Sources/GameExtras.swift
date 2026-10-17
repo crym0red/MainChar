@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - Store items
 
 enum StoreItem: String, CaseIterable, Identifiable {
-    case energy, coffee, gift, viral, boost
+    case energy, coffee, gift, viral, boost, wave, xp, spotlight, shield, squad, slate, stir
     var id: String { rawValue }
 
     var title: String {
@@ -13,6 +13,13 @@ enum StoreItem: String, CaseIterable, Identifiable {
         case .gift: return "Gift"
         case .viral: return "Viral Moment"
         case .boost: return "Clout Boost"
+        case .wave: return "Follower Wave"
+        case .xp: return "XP Potion"
+        case .spotlight: return "Spotlight"
+        case .shield: return "Cert Shield"
+        case .squad: return "Hype Squad"
+        case .slate: return "Clean Slate"
+        case .stir: return "Stir the Pot"
         }
     }
     var desc: String {
@@ -22,6 +29,13 @@ enum StoreItem: String, CaseIterable, Identifiable {
         case .gift: return "A gift to send to a character to boost your relationship."
         case .viral: return "Greatly boost the outcomes of your next action"
         case .boost: return "Boost the outcomes of your actions for the next 15 minutes"
+        case .wave: return "Instantly gain 4% more followers."
+        case .xp: return "Drink up: +30 XP toward your next level."
+        case .spotlight: return "The whole scene watches you for a while. Expect scrutiny and sponsorship offers."
+        case .shield: return "Blocks the next aura loss from a post. One use."
+        case .squad: return "Your next post gets a guaranteed positive reaction and double reach."
+        case .slate: return "Everyone forgets. Clears every grudge and lifts low relationships to neutral."
+        case .stir: return "Start a brand new feud between two random characters right now."
         }
     }
     var price: Int {
@@ -31,6 +45,13 @@ enum StoreItem: String, CaseIterable, Identifiable {
         case .gift: return 6
         case .viral: return 2
         case .boost: return 12
+        case .wave: return 10
+        case .xp: return 5
+        case .spotlight: return 8
+        case .shield: return 6
+        case .squad: return 7
+        case .slate: return 15
+        case .stir: return 4
         }
     }
     var emoji: String {
@@ -40,6 +61,13 @@ enum StoreItem: String, CaseIterable, Identifiable {
         case .gift: return "💝"
         case .viral: return "💣"
         case .boost: return "🧪"
+        case .wave: return "🌊"
+        case .xp: return "🧬"
+        case .spotlight: return "🔦"
+        case .shield: return "🛡️"
+        case .squad: return "📣"
+        case .slate: return "🧼"
+        case .stir: return "🥄"
         }
     }
 }
@@ -142,6 +170,8 @@ extension Game {
             showToast("Viral Moment is already armed")
             return false
         }
+        if item == .shield && st.ex.shield == true { showToast("Cert Shield is already active"); return false }
+        if item == .squad && st.ex.squad == true { showToast("Hype Squad is already waiting for your next post"); return false }
         guard st.ex.gems >= item.price else {
             showToast("Not enough gems")
             return false
@@ -154,6 +184,18 @@ extension Game {
         case .boost:
             let base = max(Date(), st.ex.boostUntil ?? Date())
             st.ex.boostUntil = base.addingTimeInterval(15 * 60)
+        case .wave: st.followers += max(5, Int(Double(st.followers) * 0.04))
+        case .xp: gainXP(&st, 30)
+        case .spotlight: st.ex.spotlight = 8
+        case .shield: st.ex.shield = true
+        case .squad: st.ex.squad = true
+        case .slate:
+            st.ex.memories = (st.ex.memories ?? []).filter { $0.mood >= 0 }
+            for j in st.npcs.indices where st.npcs[j].id != "newsdesk" && st.npcs[j].affinity < 30 { st.npcs[j].affinity = 30 }
+        case .stir:
+            var items: [DigestItem] = []
+            let cast = st.npcs.filter { $0.id != "newsdesk" }
+            simBeef(&st, &items, cast, true)
         }
         st.ex.gems -= item.price
         s = st

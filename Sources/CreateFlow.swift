@@ -144,7 +144,7 @@ struct CreateFlow: View {
                             startBuilding()
                         } label: {
                             HStack(spacing: 14) {
-                                Text(f.emoji).font(.jk(26)).frame(width: 52, height: 52)
+                                Image(systemName: SymbolMap.name(f.emoji)).font(.system(size: 22, weight: .semibold)).foregroundColor(T.blue).frame(width: 52, height: 52)
                                     .background(T.card).clipShape(RoundedRectangle(cornerRadius: 14))
                                 Text(f.name).font(.jk(18, .medium)).foregroundColor(.white)
                                 Spacer()
@@ -397,7 +397,7 @@ struct RippleView: View {
                 .id(tickCount)
                 Spacer().frame(height: 40)
                 HStack(spacing: 10) {
-                    Text("💡").font(.jk(22))
+                    Image(systemName: "lightbulb.fill").font(.system(size: 20)).foregroundColor(T.gold)
                     Text("Finish side quests to level up faster").font(.jk(16))
                 }
                 .padding(.horizontal, 22).padding(.vertical, 14)

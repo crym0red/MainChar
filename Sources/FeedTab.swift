@@ -283,7 +283,7 @@ struct FeedTab: View {
             ZStack {
                 Button { showEvent = true } label: {
                     HStack(spacing: 10) {
-                        Text("🎭").font(.jk(28)).rotationEffect(.degrees(-12)).offset(x: -4, y: -8)
+                        Image(systemName: "theatermasks.fill").font(.system(size: 22)).foregroundColor(.white).rotationEffect(.degrees(-12)).offset(x: -4, y: -8)
                         Text("Event").font(.jk(26, .medium)).foregroundColor(.white)
                     }
                     .padding(.horizontal, 44).padding(.vertical, 16)
@@ -320,12 +320,15 @@ struct PostRow: View {
         let isNews = st.npcs.first(where: { $0.handle == post.authorHandle })?.id == "newsdesk"
         HStack(alignment: .top, spacing: 12) {
             Avatar(emoji: post.emoji, key: post.authorHandle, size: 52, photo: !isNews)
+                .profileTap(post.authorHandle)
             VStack(alignment: .leading, spacing: 6) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 5) {
-                        Text(post.authorName).font(.jk(18, .bold)).lineLimit(1)
-                        if post.verified { VerifiedSeal(size: 16) }
-                        Text("@\(post.authorHandle)").font(.jk(16)).foregroundColor(T.sub).lineLimit(1)
+                        HStack(spacing: 5) {
+                            Text(post.authorName).font(.jk(18, .bold)).lineLimit(1)
+                            if post.verified { VerifiedSeal(size: 16) }
+                            Text("@\(post.authorHandle)").font(.jk(16)).foregroundColor(T.sub).lineLimit(1)
+                        }.profileTap(post.authorHandle)
                         Spacer(minLength: 0)
                         Menu {
                             Button { game.toggleSave(post.id) } label: {
@@ -376,7 +379,7 @@ struct ReplySheet: View {
                     VStack(alignment: .leading, spacing: 14) {
                         if let p = post {
                             HStack(alignment: .top, spacing: 10) {
-                                Avatar(emoji: p.emoji, key: p.authorHandle, size: 42)
+                                Avatar(emoji: p.emoji, key: p.authorHandle, size: 42).profileTap(p.authorHandle)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(p.authorName).font(.jk(15, .bold))
                                     Text(p.text).font(.jk(15))
@@ -386,12 +389,13 @@ struct ReplySheet: View {
                             if p.comments.isEmpty { Text("No replies yet.").foregroundColor(T.sub).font(.jk(13)) }
                             ForEach(p.comments) { c in
                                 HStack(alignment: .top, spacing: 10) {
-                                    Avatar(emoji: c.emoji, key: c.handle, size: 32)
+                                    Avatar(emoji: c.emoji, key: c.handle, size: 32).profileTap(c.handle)
                                     VStack(alignment: .leading, spacing: 2) {
                                         HStack(spacing: 4) {
                                             Text(c.name).font(.jk(13, .bold))
                                             if c.verified { VerifiedSeal(size: 11) }
-                                        }
+                                            Text("@\(c.handle)").font(.jk(12)).foregroundColor(T.sub)
+                                        }.profileTap(c.handle)
                                         Text(c.text).font(.jk(14))
                                     }
                                 }
@@ -427,8 +431,8 @@ struct NPCSheet: View {
 
     var body: some View {
         let live = game.s.npcs.first { $0.handle == npc.handle } ?? npc
-        VStack(spacing: 12) {
-            Avatar(emoji: live.emoji, key: live.handle, size: 84, ring: true).padding(.top, 24)
+        ScrollView { VStack(spacing: 12) {
+            Avatar(emoji: live.emoji, key: live.handle, size: 96, ring: true).padding(.top, 24)
             HStack(spacing: 5) {
                 Text(live.name).font(.jk(22, .heavy))
                 if live.followers >= 40000 { VerifiedSeal(size: 18) }
@@ -444,8 +448,9 @@ struct NPCSheet: View {
                 Bar(value: Double(live.affinity) / 100, color: T.lime)
             }.padding(.horizontal, 28)
             MemoryBlock(handle: live.handle)
+            recent(live)
             if game.s.ex.gifts > 0 {
-                BigButton(title: "Send gift 💝 (\(game.s.ex.gifts) left)", color: T.card2) {
+                BigButton(title: "Send gift (\(game.s.ex.gifts) left)", color: T.card2) {
                     game.sendGift(live.handle)
                 }.padding(.horizontal, 20)
             }
@@ -455,10 +460,23 @@ struct NPCSheet: View {
                 nav.tab = 2
                 dismiss()
             }.padding(.horizontal, 20)
-            Spacer()
-        }
+        }.padding(.bottom, 30) }
         .background(T.bg)
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.large])
+    }
+
+    @ViewBuilder
+    private func recent(_ n: NPC) -> some View {
+        let mine = game.s.posts.filter { $0.authorHandle == n.handle }.prefix(4)
+        if !mine.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Recent posts").font(.jk(12, .bold)).foregroundColor(T.sub)
+                ForEach(Array(mine)) { p in
+                    Text(p.text).font(.jk(14)).frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12).background(T.card).clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+            }.padding(.horizontal, 20)
+        }
     }
 }
 
@@ -483,7 +501,7 @@ struct ComposeSheet: View {
                 VStack(alignment: .leading, spacing: 14) {
                     if let o = outcome {
                         VStack(spacing: 8) {
-                            Text(o.emoji).font(.jk(50))
+                            SymbolTile(emoji: o.emoji, size: 72)
                             Text(o.title).font(.jk(22, .heavy))
                             Text(o.detail).font(.jk(14)).foregroundColor(T.sub).multilineTextAlignment(.center)
                             BigButton(title: "Done") { dismiss() }.padding(.top, 8)
@@ -556,7 +574,7 @@ struct EventSheet: View {
                         resultCard(r)
                     } else if let e = st.currentEvent {
                         VStack(spacing: 10) {
-                            HStack { Text(e.emoji).font(.jk(30)); if e.ai { Chip(text: "AI written") }; Spacer() }
+                            HStack { SymbolTile(emoji: e.emoji, size: 52); if e.ai { Chip(text: "AI written") }; Spacer() }
                             Text(game.fill(e.text, st)).font(.jk(17, .semibold))
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }.card()
@@ -588,20 +606,20 @@ struct EventSheet: View {
     @ViewBuilder
     private func resultCard(_ r: ResultRecord) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack { Text(r.emoji).font(.jk(34)); Spacer() }
+            HStack { SymbolTile(emoji: r.emoji, size: 52); Spacer() }
             Text(r.text).font(.jk(16))
-            if r.cancelled { Text("🚫 Cancelled. Lost 30% of followers.").font(.jk(14, .bold)).foregroundColor(T.red) }
-            if r.iconUnlocked { Text("👑 Icon status! +20% followers.").font(.jk(14, .bold)).foregroundColor(T.gold) }
+            if r.cancelled { Text("Cancelled. Lost 30% of followers.").font(.jk(14, .bold)).foregroundColor(T.red) }
+            if r.iconUnlocked { Text("Icon status! +20% followers.").font(.jk(14, .bold)).foregroundColor(T.gold) }
             HStack {
                 Chip(text: "Aura \(r.auraDelta >= 0 ? "+" : "")\(r.auraDelta)%", color: r.auraDelta >= 0 ? T.lime.opacity(0.35) : T.red.opacity(0.4))
                 Chip(text: "\(r.followerDelta >= 0 ? "+" : "")\(short(r.followerDelta)) followers")
             }
             if !r.stats.isEmpty {
-                HStack { ForEach(r.stats) { c in Chip(text: "\(c.kind.emoji) \(c.kind.label) \(c.up ? "↑" : "↓")") } }
+                HStack { ForEach(r.stats) { c in Chip(text: "\(c.kind.label) \(c.up ? "↑" : "↓")") } }
             }
             if !r.npcs.isEmpty {
                 HStack(spacing: 6) {
-                    ForEach(r.npcs) { n in Chip(text: "\(n.emoji) \(n.up ? "↑" : "↓")") }
+                    ForEach(r.npcs) { n in Chip(text: "\(n.up ? "↑" : "↓") @\(n.handle)") }
                 }
             }
         }.card()

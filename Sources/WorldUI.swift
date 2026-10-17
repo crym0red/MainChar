@@ -119,8 +119,8 @@ struct AwayDigestSheet: View {
                 }
                 HStack(spacing: 12) {
                     if let h = it.handles, !h.isEmpty { AvatarStack(handles: h, size: 46) }
-                    else { Text(it.emoji).font(.jk(36)) }
-                    Text(it.title).font(.jk(22, .bold)).multilineTextAlignment(.leading)
+                    else { SymbolTile(emoji: it.emoji, size: 46, tint: T.orange) }
+                    Text(it.title.noEmoji).font(.jk(22, .bold)).multilineTextAlignment(.leading)
                 }
                 Text(it.detail).font(.jk(15)).foregroundColor(.white.opacity(0.8)).multilineTextAlignment(.leading)
                 impact(it)
@@ -148,10 +148,10 @@ struct AwayDigestSheet: View {
         Button { open(it.postID) } label: {
             HStack(alignment: .top, spacing: 12) {
                 if let h = it.handles, !h.isEmpty { AvatarStack(handles: h, size: 34) }
-                else { Text(it.emoji).font(.jk(26)) }
+                else { SymbolTile(emoji: it.emoji, size: 34) }
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text("\(it.emoji) \(it.title)").font(.jk(16, .semibold)).multilineTextAlignment(.leading)
+                        Text(it.title.noEmoji).font(.jk(16, .semibold)).multilineTextAlignment(.leading)
                         Spacer(minLength: 4)
                         Text(agoString(it.at)).font(.jk(12)).foregroundColor(T.sub)
                     }
@@ -200,7 +200,7 @@ struct WorldHistoryView: View {
                             .font(.jk(15)).foregroundColor(T.sub)
                         if let hot = st.ex.hot, !hot.isEmpty {
                             HStack {
-                                Text("🔥 Trending now").font(.jk(15, .semibold))
+                                Label("Trending now", systemImage: "flame.fill").font(.jk(15, .semibold))
                                 Spacer()
                                 Text(hot.capitalized).font(.jk(15)).foregroundColor(T.orange)
                             }
@@ -221,10 +221,10 @@ struct WorldHistoryView: View {
                             Button { open(h.postID) } label: {
                                 HStack(alignment: .top, spacing: 12) {
                                     if let hs = h.handles, !hs.isEmpty, hs != ["newsdesk"] { AvatarStack(handles: hs, size: 32) }
-                                    else { Text(h.emoji).font(.jk(26)) }
+                                    else { SymbolTile(emoji: h.emoji, size: 34) }
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text("Day \(h.day) · \(agoString(h.date))").font(.jk(12, .semibold)).foregroundColor(T.sub)
-                                        Text("\(h.emoji) \(h.title)").font(.jk(16, .semibold)).multilineTextAlignment(.leading)
+                                        Text(h.title.noEmoji).font(.jk(16, .semibold)).multilineTextAlignment(.leading)
                                         Text(h.detail).font(.jk(14)).foregroundColor(T.sub).multilineTextAlignment(.leading)
                                     }
                                     Spacer(minLength: 0)
@@ -260,7 +260,7 @@ struct WorldHistoryView: View {
                         .font(.jk(13)).foregroundColor(done ? T.lime : T.orange)
                 }
                 Spacer()
-                Text("🔥 \(r.heat)").font(.jk(15, .semibold)).foregroundColor(T.orange)
+                Label("\(r.heat)", systemImage: "flame.fill").font(.jk(15, .semibold)).foregroundColor(T.orange)
             }
             if let c = r.cause {
                 Text("Over \(c). \(sa) back \(a?.name ?? r.a), \(sb) back \(b?.name ?? r.b).")

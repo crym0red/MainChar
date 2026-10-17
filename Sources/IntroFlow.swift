@@ -93,7 +93,7 @@ struct ResultCardView: View {
             }
             Divider().background(Color.white.opacity(0.15))
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text("❤️‍🔥").font(.jk(28))
+                Image(systemName: "flame.fill").font(.system(size: 26)).foregroundColor(T.orange)
                 Text("Aura").font(.jk(28, .bold))
                 Text("\(o.auraDelta >= 0 ? "+" : "")\(o.auraDelta)%").font(.jk(30, .bold))
                     .foregroundColor(o.auraDelta >= 0 ? Color(red: 0.25, green: 0.85, blue: 0.6) : T.red)

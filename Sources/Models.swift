@@ -306,6 +306,8 @@ struct Extras: Codable, Hashable {
     var npcStories: [NPCStory]? = nil
     var npcLives: [NPCLive]? = nil
     var castGen: Int? = nil
+    var shield: Bool? = nil
+    var squad: Bool? = nil
 }
 
 // MARK: - World

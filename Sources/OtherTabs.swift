@@ -176,7 +176,7 @@ struct GoalsTab: View {
             if let m = game.nextMilestone {
                 nextCard(m, st)
             } else {
-                panel { Text("All milestones complete. 🎉").font(.jk(20, .semibold)) }
+                panel { Text("All milestones complete.").font(.jk(20, .semibold)) }
             }
         }
     }
@@ -519,7 +519,7 @@ struct NotifsTab: View {
         case "milestone":
             Image(systemName: "flag.fill").font(.system(size: 26)).foregroundColor(T.lime)
         default:
-            Text(n.emoji).font(.jk(28))
+            EmojiIcon(emoji: n.emoji, size: 24, color: T.blue)
         }
     }
 
@@ -740,7 +740,7 @@ struct ProfileTab: View {
         let prev = max(0, min(100, value - delta))
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
-                Text(emoji).font(.jk(32))
+                EmojiIcon(emoji: emoji, size: 26, color: T.blue)
                 Text(name).font(.jk(26, .medium)).padding(.top, 2)
                 Spacer()
                 VStack(alignment: .trailing, spacing: 4) {
@@ -801,7 +801,7 @@ struct ProfileTab: View {
                 ForEach(Game.badgeDefs) { b in
                     let got = st.achievements.contains(b.id)
                     HStack {
-                        Text(b.emoji).opacity(got ? 1 : 0.3)
+                        EmojiIcon(emoji: b.emoji, size: 18, color: got ? T.gold : T.sub)
                         Text(b.title).foregroundColor(got ? .white : T.sub)
                         Spacer()
                         if got { Image(systemName: "checkmark.circle.fill").foregroundColor(T.lime) }
@@ -822,7 +822,7 @@ struct ProfileTab: View {
         return VStack(alignment: .leading, spacing: 14) {
             Button { showHistory = true } label: {
                 HStack {
-                    Text("🌍").font(.jk(24))
+                    Image(systemName: "globe.americas.fill").font(.system(size: 22)).foregroundColor(T.blue)
                     Text("World History").font(.jk(17, .semibold))
                     Spacer()
                     Image(systemName: "chevron.right").foregroundColor(T.sub)
@@ -919,7 +919,7 @@ struct ProfileTab: View {
             if acts.isEmpty { EmptyState(emoji: "📜", title: "Nothing yet", detail: "Your activity fills up as you play.") }
             ForEach(acts) { l in
                 HStack(alignment: .top, spacing: 10) {
-                    Text(l.emoji).font(.jk(22))
+                    EmojiIcon(emoji: l.emoji, size: 18, color: T.blue)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(l.title).font(.jk(14, .bold))
                         Text(l.detail).font(.jk(12)).foregroundColor(T.sub).lineLimit(2)

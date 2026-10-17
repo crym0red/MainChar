@@ -149,6 +149,96 @@ actor AvatarLoader {
     }
 }
 
+enum HK {
+    static func h(_ s: String) -> UInt32 {
+        var x: UInt32 = 5381
+        for u in s.unicodeScalars { x = x &* 33 &+ u.value }
+        return x
+    }
+    static let glyphs = ["terminal.fill", "cpu", "lock.open.fill", "ladybug.fill", "bolt.horizontal.fill",
+                         "chevron.left.forwardslash.chevron.right", "shield.lefthalf.filled", "network",
+                         "externaldrive.fill", "key.fill", "antenna.radiowaves.left.and.right", "wrench.and.screwdriver.fill"]
+    static func neon(_ key: String) -> Color { Color(hue: Double(h(key.lowercased()) % 360) / 360, saturation: 0.85, brightness: 1) }
+    static func glyph(_ key: String) -> String { glyphs[Int((h(key.lowercased()) >> 5) % UInt32(glyphs.count))] }
+}
+
+struct HackerAvatar: View {
+    let key: String
+    var size: CGFloat = 40
+
+    var body: some View {
+        let h = HK.h(key.lowercased())
+        let hue = Double(h % 360) / 360
+        let neon = Color(hue: hue, saturation: 0.85, brightness: 1)
+        let deep = Color(hue: hue, saturation: 0.75, brightness: 0.24)
+        let eyes = Int((h >> 9) % 4)
+        let gear = Int((h >> 13) % 3)
+        ZStack(alignment: .topTrailing) {
+            LinearGradient(colors: [deep, Color.black], startPoint: .top, endPoint: .bottom)
+            Canvas { ctx, sz in
+                let w = sz.width, ht = sz.height
+                var grid = Path()
+                let step = w / 8
+                for i in 1..<8 {
+                    let v = step * CGFloat(i)
+                    grid.move(to: CGPoint(x: v, y: 0)); grid.addLine(to: CGPoint(x: v, y: ht))
+                    grid.move(to: CGPoint(x: 0, y: v)); grid.addLine(to: CGPoint(x: w, y: v))
+                }
+                ctx.stroke(grid, with: .color(neon.opacity(0.13)), lineWidth: 0.6)
+                let dark = Color(white: 0.05)
+                ctx.fill(Path(ellipseIn: CGRect(x: w * 0.10, y: ht * 0.70, width: w * 0.80, height: ht * 0.70)), with: .color(dark))
+                ctx.stroke(Path(ellipseIn: CGRect(x: w * 0.10, y: ht * 0.70, width: w * 0.80, height: ht * 0.70)), with: .color(neon.opacity(0.55)), lineWidth: max(0.8, w * 0.012))
+                let hood = CGRect(x: w * 0.23, y: ht * 0.14, width: w * 0.54, height: ht * 0.60)
+                ctx.fill(Path(ellipseIn: hood), with: .color(dark))
+                ctx.stroke(Path(ellipseIn: hood), with: .color(neon.opacity(0.7)), lineWidth: max(0.9, w * 0.015))
+                if gear == 1 {
+                    ctx.fill(Path(roundedRect: CGRect(x: w * 0.17, y: ht * 0.34, width: w * 0.09, height: ht * 0.22), cornerRadius: w * 0.03), with: .color(neon))
+                    ctx.fill(Path(roundedRect: CGRect(x: w * 0.74, y: ht * 0.34, width: w * 0.09, height: ht * 0.22), cornerRadius: w * 0.03), with: .color(neon))
+                    var band = Path(); band.addArc(center: CGPoint(x: w * 0.5, y: ht * 0.45), radius: w * 0.29, startAngle: .degrees(190), endAngle: .degrees(350), clockwise: false)
+                    ctx.stroke(band, with: .color(neon), lineWidth: max(1, w * 0.02))
+                } else if gear == 2 {
+                    var peak = Path()
+                    peak.move(to: CGPoint(x: w * 0.5, y: ht * 0.04)); peak.addLine(to: CGPoint(x: w * 0.40, y: ht * 0.20)); peak.addLine(to: CGPoint(x: w * 0.60, y: ht * 0.20)); peak.closeSubpath()
+                    ctx.fill(peak, with: .color(neon.opacity(0.85)))
+                }
+                let face = CGRect(x: w * 0.31, y: ht * 0.27, width: w * 0.38, height: ht * 0.36)
+                ctx.fill(Path(ellipseIn: face), with: .color(.black))
+                let ey = ht * 0.42
+                func glow(_ r: CGRect, _ corner: CGFloat) {
+                    ctx.fill(Path(roundedRect: r.insetBy(dx: -w * 0.025, dy: -w * 0.025), cornerRadius: corner + w * 0.02), with: .color(neon.opacity(0.28)))
+                    ctx.fill(Path(roundedRect: r, cornerRadius: corner), with: .color(neon))
+                }
+                switch eyes {
+                case 0:
+                    glow(CGRect(x: w * 0.36, y: ey, width: w * 0.09, height: ht * 0.05), w * 0.01)
+                    glow(CGRect(x: w * 0.55, y: ey, width: w * 0.09, height: ht * 0.05), w * 0.01)
+                case 1:
+                    glow(CGRect(x: w * 0.34, y: ey - ht * 0.01, width: w * 0.32, height: ht * 0.06), w * 0.02)
+                case 2:
+                    glow(CGRect(x: w * 0.37, y: ey, width: w * 0.06, height: w * 0.06), w * 0.03)
+                    glow(CGRect(x: w * 0.47, y: ey, width: w * 0.06, height: w * 0.06), w * 0.03)
+                    glow(CGRect(x: w * 0.57, y: ey, width: w * 0.06, height: w * 0.06), w * 0.03)
+                default:
+                    glow(CGRect(x: w * 0.455, y: ey - ht * 0.01, width: w * 0.09, height: w * 0.09), w * 0.045)
+                }
+                if w >= 36 {
+                    var y: CGFloat = 0
+                    var lines = Path()
+                    while y < ht { lines.move(to: CGPoint(x: 0, y: y)); lines.addLine(to: CGPoint(x: w, y: y)); y += 3 }
+                    ctx.stroke(lines, with: .color(.black.opacity(0.18)), lineWidth: 0.8)
+                }
+            }
+            if size >= 56 {
+                Image(systemName: HK.glyph(key)).font(.system(size: size * 0.16, weight: .bold))
+                    .foregroundColor(neon).padding(size * 0.15)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(neon.opacity(0.55), lineWidth: max(1, size * 0.022)))
+    }
+}
+
 struct Avatar: View {
     let emoji: String
     let key: String
@@ -164,31 +254,49 @@ struct Avatar: View {
 
     var body: some View {
         ZStack {
-            Circle().fill(letterColor(key))
             if let img = img {
                 Image(uiImage: img).resizable().scaledToFill()
+                    .frame(width: size, height: size).clipShape(Circle())
+            } else if !photo {
+                ZStack {
+                    Circle().fill(T.card2)
+                    Image(systemName: "newspaper.fill").font(.system(size: size * 0.42, weight: .semibold)).foregroundColor(T.blue)
+                }
+                .frame(width: size, height: size)
             } else {
-                Text(String(key.first.map { String($0).uppercased() } ?? "?"))
-                    .font(.jk(size * 0.46, .bold)).foregroundColor(.white)
+                HackerAvatar(key: key, size: size)
             }
         }
         .frame(width: size, height: size)
-        .clipShape(Circle())
-        .overlay(Circle().stroke(ring ? T.blue : Color.clear, lineWidth: 2.5))
+        .overlay(Circle().stroke(ring ? T.blue : Color.clear, lineWidth: 2.5).padding(-1))
         .task(id: key) {
             guard photo, img == nil else { return }
             if let c = AvatarMem.cache.object(forKey: key as NSString) { img = c; return }
             if let custom = ProfileImages.load("avatar_" + key) {
                 AvatarMem.cache.setObject(custom, forKey: key as NSString)
                 img = custom
-                return
-            }
-            if let loaded = await AvatarLoader.shared.image(seed: key) {
-                AvatarMem.cache.setObject(loaded, forKey: key as NSString)
-                img = loaded
             }
         }
     }
+}
+
+/// Tap a character anywhere to open their profile sheet.
+struct ProfileTap: ViewModifier {
+    @EnvironmentObject var game: Game
+    let handle: String
+    @State private var npc: NPC?
+    func body(content: Content) -> some View {
+        content
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if let n = game.s.npcs.first(where: { $0.handle == handle }), n.id != "newsdesk" { npc = n }
+            }
+            .sheet(item: $npc) { NPCSheet(npc: $0).zoomed() }
+    }
+}
+
+extension View {
+    func profileTap(_ handle: String) -> some View { modifier(ProfileTap(handle: handle)) }
 }
 
 struct VerifiedSeal: View {
@@ -271,7 +379,7 @@ struct EmptyState: View {
     let detail: String
     var body: some View {
         VStack(spacing: 8) {
-            Text(emoji).font(.jk(44))
+            SymbolTile(emoji: emoji, size: 60)
             Text(title).font(.jk(18, .bold)).foregroundColor(.white)
             Text(detail).font(.jk(14)).foregroundColor(T.sub).multilineTextAlignment(.center)
         }

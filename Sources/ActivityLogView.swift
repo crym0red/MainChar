@@ -271,7 +271,7 @@ struct ActivityLogView: View {
         let open = expanded.contains(e.id)
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                Text(e.emoji).font(.jk(34))
+                EmojiIcon(emoji: e.emoji, size: 28, color: T.blue)
                 Text(e.title).font(.jk(26, .bold))
                 Text(value).font(.jk(26, .bold)).foregroundColor(good ? T.lime : T.red)
                 Spacer()
@@ -322,7 +322,7 @@ struct ActivityLogView: View {
 
     private func plainCard(_ e: LogEntry, _ k: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            Text(e.emoji).font(.jk(30))
+            EmojiIcon(emoji: e.emoji, size: 24, color: T.blue)
             VStack(alignment: .leading, spacing: 3) {
                 Text(e.title).font(.jk(21, .semibold))
                 let sub = k == "dm" ? (e.body ?? "") : e.detail

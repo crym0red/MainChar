@@ -151,7 +151,7 @@ struct EditProfileSheet: View {
                         HStack {
                             ForEach(Vibe.allCases) { v in
                                 Button { p.vibe = v } label: {
-                                    Text("\(v.emoji) \(v.label)").font(.jk(17, .semibold)).foregroundColor(.white)
+                                    Label(v.label, systemImage: SymbolMap.name(v.emoji)).font(.jk(17, .semibold)).foregroundColor(.white)
                                         .padding(.horizontal, 16).padding(.vertical, 10)
                                         .background(p.vibe == v ? T.blue : T.card2).clipShape(Capsule())
                                 }

@@ -176,10 +176,10 @@ struct WorldCardView: View {
                 LinearGradient(colors: [Color(hue: world.hue, saturation: 0.65, brightness: 0.6),
                                         Color(hue: h2, saturation: 0.7, brightness: 0.25)],
                                startPoint: .topLeading, endPoint: .bottomTrailing)
-                Text(world.emoji).font(.jk(120)).opacity(0.32)
+                Image(systemName: SymbolMap.name(world.emoji)).font(.system(size: 110, weight: .bold)).foregroundColor(.white).opacity(0.22)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 HStack(spacing: 8) {
-                    Text(world.emoji)
+                    Image(systemName: SymbolMap.name(world.emoji))
                     Text(world.title).lineLimit(1)
                 }
                 .font(.jk(17, .medium)).foregroundColor(.white)
@@ -244,7 +244,7 @@ struct CreateCharacterSheet: View {
                     ForEach(Vibe.allCases) { v in
                         Button { vibe = v } label: {
                             HStack {
-                                Text(v.emoji).font(.jk(24))
+                                EmojiIcon(emoji: v.emoji, size: 20, color: T.blue)
                                 VStack(alignment: .leading) {
                                     Text(v.label).font(.jk(15, .bold)).foregroundColor(.white)
                                     Text(v.blurb).font(.jk(12)).foregroundColor(T.sub)

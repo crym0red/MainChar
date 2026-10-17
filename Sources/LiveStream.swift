@@ -162,11 +162,69 @@ struct LiveMsg: Identifiable {
     var handle: String
     var text: String
     var kind: Int   // 0 chat, 1 donation, 2 raid, 3 system, 4 you, 5 streamer
+    var icon: String? = nil
+}
+
+struct LiveGift: Identifiable {
+    let name: String, symbol: String, cost: Int, color: Color
+    var id: String { name }
+    static let all: [LiveGift] = [
+        LiveGift(name: "Coffee", symbol: "cup.and.saucer.fill", cost: 1, color: Color(red: 0.85, green: 0.65, blue: 0.45)),
+        LiveGift(name: "Heart", symbol: "heart.fill", cost: 2, color: Color(red: 1, green: 0.4, blue: 0.55)),
+        LiveGift(name: "Bug bounty", symbol: "ladybug.fill", cost: 3, color: T.lime),
+        LiveGift(name: "Signed cert", symbol: "checkmark.seal.fill", cost: 5, color: T.blue),
+        LiveGift(name: "Server rack", symbol: "server.rack", cost: 10, color: Color(red: 0.6, green: 0.55, blue: 1)),
+        LiveGift(name: "Rocket", symbol: "paperplane.fill", cost: 25, color: T.orange),
+        LiveGift(name: "Crown", symbol: "crown.fill", cost: 50, color: T.gold),
+        LiveGift(name: "Root access", symbol: "terminal.fill", cost: 100, color: Color(red: 0.2, green: 1, blue: 0.5))
+    ]
+}
+
+struct Floater: Identifiable {
+    let id = UUID()
+    let symbol: String
+    let color: Color
+    let dx: CGFloat
+    var size: CGFloat = 26
+}
+
+struct FloatingIcon: View {
+    let f: Floater
+    @State private var go = false
+    var body: some View {
+        Image(systemName: f.symbol).font(.system(size: f.size, weight: .bold)).foregroundColor(f.color)
+            .shadow(color: f.color.opacity(0.7), radius: 6)
+            .offset(x: go ? f.dx : 0, y: go ? -250 : 0)
+            .opacity(go ? 0 : 1).scaleEffect(go ? 1.4 : 0.6)
+            .onAppear { withAnimation(.easeOut(duration: 2.1)) { go = true } }
+    }
+}
+
+extension Game {
+    func liveGift(_ handle: String, cost: Int, name: String) -> Bool {
+        var st = s
+        guard st.ex.gems >= cost else { showToast("Not enough gems"); return false }
+        st.ex.gems -= cost
+        if let j = st.npcs.firstIndex(where: { $0.handle == handle }) {
+            st.npcs[j].affinity = min(100, st.npcs[j].affinity + max(1, cost / 2))
+            remember(&st, handle, "gift", "you gifted me \(name) on stream", mood: 2)
+        }
+        s = st
+        return true
+    }
 }
 
 struct LiveStats {
     var peak = 0, gems = 0, gain = 0, aura = 0
     var hostile = 0
+}
+
+struct OptionalProfileTap: ViewModifier {
+    let handle: String
+    let on: Bool
+    func body(content: Content) -> some View {
+        if on { content.profileTap(handle) } else { content }
+    }
 }
 
 struct LiveView: View {
@@ -192,6 +250,13 @@ struct LiveView: View {
     @State private var stats = LiveStats()
     @State private var started = false
     @State private var confirmEnd = false
+    @State private var showGifts = false
+    @State private var floaters: [Floater] = []
+    @State private var hype = 0.0
+    @State private var pulse = false
+    @State private var following = false
+    @State private var ticker: LiveMsg? = nil
+    private let reactions: [(String, Color)] = [("flame.fill", T.orange), ("heart.fill", Color(red: 1, green: 0.4, blue: 0.55)), ("bolt.fill", T.gold), ("hands.clap.fill", T.blue), ("100.circle.fill", T.lime), ("eye.fill", Color(red: 0.7, green: 0.5, blue: 1))]
     private let timer = Timer.publish(every: 1.8, on: .main, in: .common).autoconnect()
 
     private var isHost: Bool { if case .host = mode { return true }; return false }
@@ -226,115 +291,337 @@ struct LiveView: View {
     // MARK: Screens
 
     private func liveBody(_ st: GameState) -> some View {
-        VStack(spacing: 0) {
-            stage(st)
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 9) {
-                        ForEach(chat) { m in row(m).id(m.id) }
-                    }
-                    .padding(.horizontal, 14).padding(.vertical, 10)
+        ZStack(alignment: .bottom) {
+            VStack(spacing: 0) {
+                stage(st)
+                chatList
+                dock
+            }
+            ZStack(alignment: .bottomTrailing) {
+                ForEach(floaters) { f in FloatingIcon(f: f) }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            .padding(.trailing, 24).padding(.bottom, 130)
+            .allowsHitTesting(false)
+            if showGifts { giftPanel }
+        }
+    }
+
+    private var chatList: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(chat) { m in row(m).id(m.id) }
                 }
-                .onChange(of: chat.count) { _ in
-                    if let l = chat.last { withAnimation { proxy.scrollTo(l.id, anchor: .bottom) } }
+                .padding(.horizontal, 14).padding(.vertical, 10)
+            }
+            .overlay(alignment: .top) {
+                if let t = ticker {
+                    HStack(spacing: 8) {
+                        Image(systemName: t.icon ?? "gift.fill").foregroundColor(T.gold)
+                        Text(t.text).font(.jk(13, .semibold)).foregroundColor(.white).lineLimit(1)
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(Capsule().fill(Color.black.opacity(0.75)))
+                    .overlay(Capsule().stroke(T.gold.opacity(0.7), lineWidth: 1))
+                    .padding(.top, 8).transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
-            inputBar
+            .onChange(of: chat.count) { _ in
+                if let l = chat.last { withAnimation { proxy.scrollTo(l.id, anchor: .bottom) } }
+            }
         }
     }
 
     private func stage(_ st: GameState) -> some View {
-        ZStack(alignment: .bottom) {
-            StoryStyle.gradient(abs(streamerHandle.hashValue) % 6)
+        let neon = HK.neon(streamerHandle)
+        return ZStack {
+            LinearGradient(colors: [neon.opacity(0.45), Color(white: 0.05)], startPoint: .top, endPoint: .bottom)
             VStack(spacing: 0) {
                 HStack(spacing: 8) {
-                    Text(ended ? "ENDED" : "LIVE").font(.jk(12, .bold))
-                        .padding(.horizontal, 9).padding(.vertical, 4)
-                        .background(ended ? Color.gray : T.red).clipShape(RoundedRectangle(cornerRadius: 6))
-                    HStack(spacing: 5) {
-                        Image(systemName: "eye").font(.system(size: 12, weight: .semibold))
+                    HStack(spacing: 8) {
+                        Avatar(emoji: "", key: streamerHandle, size: 32)
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(streamerName).font(.jk(13, .bold)).lineLimit(1)
+                            Text("@\(streamerHandle)").font(.jk(11)).foregroundColor(.white.opacity(0.7)).lineLimit(1)
+                        }
+                    }
+                    .padding(.leading, 4).padding(.trailing, 10).padding(.vertical, 4)
+                    .background(Color.black.opacity(0.45)).clipShape(Capsule())
+                    .profileTap(streamerHandle)
+                    if !isHost {
+                        Button {
+                            following.toggle()
+                            if following { game.liveKind(streamerHandle) }
+                        } label: {
+                            Text(following ? "Following" : "Follow").font(.jk(12, .bold))
+                                .padding(.horizontal, 11).padding(.vertical, 7)
+                                .background(following ? Color.white.opacity(0.18) : T.blue).clipShape(Capsule())
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    HStack(spacing: 4) {
+                        Circle().fill(ended ? Color.gray : T.red).frame(width: 7, height: 7)
+                        Text(ended ? "ENDED" : "LIVE").font(.jk(11, .heavy))
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 5).background(Color.black.opacity(0.45)).clipShape(Capsule())
+                    HStack(spacing: 4) {
+                        Image(systemName: "eye.fill").font(.system(size: 11))
                         Text(fmt(viewers)).font(.jk(12, .semibold))
                     }
-                    .padding(.horizontal, 9).padding(.vertical, 4)
-                    .background(Color.black.opacity(0.4)).clipShape(RoundedRectangle(cornerRadius: 6))
-                    Spacer()
+                    .padding(.horizontal, 8).padding(.vertical, 5).background(Color.black.opacity(0.45)).clipShape(Capsule())
                     Button { if isHost && !ended { confirmEnd = true } else { leave() } } label: {
-                        Image(systemName: "xmark").font(.system(size: 14, weight: .bold))
-                            .frame(width: 34, height: 34).background(Color.black.opacity(0.4)).clipShape(Circle())
+                        Image(systemName: "xmark").font(.system(size: 13, weight: .bold))
+                            .frame(width: 30, height: 30).background(Color.black.opacity(0.45)).clipShape(Circle())
                     }
                 }
-                .foregroundColor(.white).padding(.horizontal, 16).padding(.top, 10)
-                Spacer()
-                Avatar(emoji: streamer?.emoji ?? st.persona.emoji, key: streamerHandle, size: 104)
-                    .overlay(Circle().stroke(Color.white.opacity(0.85), lineWidth: 3))
-                Spacer()
-            }
-            HStack(alignment: .bottom) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(topic).font(.jk(17, .bold)).foregroundColor(.white)
-                    Text("@\(streamerHandle)").font(.jk(12)).foregroundColor(.white.opacity(0.75))
+                .foregroundColor(.white).padding(.horizontal, 12).padding(.top, 8)
+                Spacer(minLength: 0)
+                ZStack {
+                    Circle().stroke(neon.opacity(0.7), lineWidth: 2).frame(width: 124, height: 124)
+                        .scaleEffect(pulse ? 1.45 : 1).opacity(pulse ? 0 : 0.8)
+                    Circle().stroke(neon.opacity(0.5), lineWidth: 2).frame(width: 124, height: 124)
+                        .scaleEffect(pulse ? 1.2 : 0.95).opacity(pulse ? 0.1 : 0.6)
+                    Avatar(emoji: "", key: streamerHandle, size: 112)
+                        .shadow(color: neon.opacity(0.8), radius: 16)
                 }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text("CHAT MOOD").font(.jk(10, .bold)).foregroundColor(.white.opacity(0.7))
-                    GeometryReader { g in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(Color.white.opacity(0.2))
-                            Capsule().fill(mood > 0.66 ? T.orange : (mood < 0.34 ? T.lime : T.blue))
-                                .frame(width: max(8, g.size.width * CGFloat(mood)))
+                .onAppear { withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) { pulse = true } }
+                Spacer(minLength: 0)
+                HStack(alignment: .bottom) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(topic).font(.jk(16, .bold)).foregroundColor(.white).lineLimit(1)
+                        HStack(spacing: 6) {
+                            Image(systemName: "flame.fill").font(.system(size: 11)).foregroundColor(T.orange)
+                            GeometryReader { g in
+                                ZStack(alignment: .leading) {
+                                    Capsule().fill(Color.white.opacity(0.18))
+                                    Capsule().fill(LinearGradient(colors: [T.orange, T.gold], startPoint: .leading, endPoint: .trailing))
+                                        .frame(width: max(6, g.size.width * CGFloat(hype)))
+                                }
+                            }.frame(width: 110, height: 6)
+                            Text("HYPE").font(.jk(10, .heavy)).foregroundColor(.white.opacity(0.7))
                         }
-                    }.frame(width: 96, height: 8)
-                    Text(mood > 0.66 ? "Heated" : (mood < 0.34 ? "Wholesome" : "Mixed"))
-                        .font(.jk(11, .bold)).foregroundColor(mood > 0.66 ? T.orange : .white.opacity(0.8))
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("CHAT MOOD").font(.jk(10, .bold)).foregroundColor(.white.opacity(0.7))
+                        GeometryReader { g in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Color.white.opacity(0.2))
+                                Capsule().fill(mood > 0.66 ? T.orange : (mood < 0.34 ? T.lime : T.blue))
+                                    .frame(width: max(8, g.size.width * CGFloat(mood)))
+                            }
+                        }.frame(width: 90, height: 6)
+                        Text(mood > 0.66 ? "Heated" : (mood < 0.34 ? "Wholesome" : "Mixed"))
+                            .font(.jk(11, .bold)).foregroundColor(mood > 0.66 ? T.orange : .white.opacity(0.8))
+                    }
                 }
+                .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 10)
             }
-            .padding(.horizontal, 16).padding(.bottom, 12)
         }
-        .frame(height: 270)
+        .frame(height: 290)
     }
 
     private func row(_ m: LiveMsg) -> some View {
         Group {
             switch m.kind {
             case 1:
-                HStack(spacing: 8) {
-                    Image(systemName: "star.fill").foregroundColor(T.gold)
-                    Text(m.text).font(.jk(13)).foregroundColor(.white)
+                HStack(spacing: 10) {
+                    Image(systemName: m.icon ?? "gift.fill").font(.system(size: 16, weight: .bold)).foregroundColor(T.gold)
+                    Text(m.text).font(.jk(13, .semibold)).foregroundColor(.white)
                 }
                 .padding(10).frame(maxWidth: .infinity, alignment: .leading)
-                .background(T.card2).overlay(Rectangle().fill(T.gold).frame(width: 3), alignment: .leading)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .background(LinearGradient(colors: [T.gold.opacity(0.22), T.card2], startPoint: .leading, endPoint: .trailing))
+                .overlay(Rectangle().fill(T.gold).frame(width: 3), alignment: .leading)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
             case 2:
                 HStack(spacing: 8) {
-                    Image(systemName: "arrow.right").foregroundColor(.white)
+                    Image(systemName: "arrow.triangle.branch").foregroundColor(.white)
                     Text(m.text).font(.jk(13, .semibold)).foregroundColor(.white)
                 }
                 .padding(10).frame(maxWidth: .infinity, alignment: .leading)
                 .background(LinearGradient(colors: [Color(red: 0.36, green: 0.17, blue: 0.77), Color(red: 0.48, green: 0.27, blue: 0.91)], startPoint: .leading, endPoint: .trailing))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             case 3:
-                Text(m.text).font(.jk(12, .semibold)).foregroundColor(T.sub).frame(maxWidth: .infinity, alignment: .center)
+                HStack(spacing: 6) {
+                    Image(systemName: m.icon ?? "info.circle.fill").font(.system(size: 11))
+                    Text(m.text).font(.jk(12, .semibold))
+                }
+                .foregroundColor(T.sub).frame(maxWidth: .infinity, alignment: .center)
             default:
-                (Text(m.kind == 4 ? "you " : m.handle + " ").font(.jk(14, .bold))
-                    .foregroundColor(m.kind == 4 ? T.blue : (m.kind == 5 ? T.gold : letterColor(m.handle)))
-                 + Text(m.text).font(.jk(14)).foregroundColor(Color.white.opacity(0.9)))
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(alignment: .top, spacing: 8) {
+                    if m.kind == 4 {
+                        Avatar(emoji: "", key: m.handle, size: 24)
+                    } else {
+                        Avatar(emoji: "", key: m.handle, size: 24).profileTap(m.handle)
+                    }
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 5) {
+                            Text(m.kind == 4 ? "you" : m.handle).font(.jk(13, .bold))
+                                .foregroundColor(m.kind == 4 ? T.blue : (m.kind == 5 ? T.gold : HK.neon(m.handle)))
+                            if m.kind == 5 {
+                                Text("HOST").font(.jk(9, .heavy)).padding(.horizontal, 5).padding(.vertical, 2)
+                                    .background(T.gold).foregroundColor(.black).clipShape(RoundedRectangle(cornerRadius: 4))
+                            }
+                        }
+                        .modifier(OptionalProfileTap(handle: m.handle, on: m.kind != 4))
+                        Text(m.text).font(.jk(14)).foregroundColor(Color.white.opacity(0.92))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
             }
         }
     }
 
-    private var inputBar: some View {
-        HStack(spacing: 8) {
-            TextField(banned ? "You were banned from this chat" : (isHost ? "Say something on mic..." : "Send a message..."), text: $input)
-                .font(.jk(15)).padding(.horizontal, 16).frame(height: 44)
-                .background(T.card2).clipShape(Capsule())
-                .disabled(banned || ended).submitLabel(.send).onSubmit { send() }
-            Button { send() } label: {
-                Image(systemName: "arrow.up").font(.system(size: 18, weight: .bold)).foregroundColor(.white)
-                    .frame(width: 44, height: 44).background(T.blue).clipShape(Circle())
-            }.disabled(banned || ended)
+    private var dock: some View {
+        VStack(spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Array(reactions.enumerated()), id: \.offset) { _, r in
+                        Button { react(r.0, r.1, 3) } label: {
+                            Image(systemName: r.0).font(.system(size: 17, weight: .bold)).foregroundColor(r.1)
+                                .frame(width: 44, height: 38).background(T.card2).clipShape(Capsule())
+                        }
+                    }
+                    Button { hypeBurst() } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "flame.fill")
+                            Text("Hype it up").font(.jk(13, .bold))
+                        }
+                        .foregroundColor(.white).padding(.horizontal, 14).frame(height: 38)
+                        .background(LinearGradient(colors: [T.orange, Color(red: 0.95, green: 0.3, blue: 0.35)], startPoint: .leading, endPoint: .trailing))
+                        .clipShape(Capsule())
+                    }
+                }
+                .padding(.horizontal, 12)
+            }
+            HStack(spacing: 8) {
+                if !isHost {
+                    Button { withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { showGifts = true } } label: {
+                        Image(systemName: "gift.fill").font(.system(size: 18, weight: .bold)).foregroundColor(T.gold)
+                            .frame(width: 44, height: 44).background(T.card2).clipShape(Circle())
+                    }.disabled(ended)
+                }
+                TextField(banned ? "You were banned from this chat" : (isHost ? "Say something on mic..." : "Send a message..."), text: $input)
+                    .font(.jk(15)).padding(.horizontal, 16).frame(height: 44)
+                    .background(T.card2).clipShape(Capsule())
+                    .disabled(banned || ended).submitLabel(.send).onSubmit { send() }
+                Button { send() } label: {
+                    Image(systemName: "arrow.up").font(.system(size: 18, weight: .bold)).foregroundColor(.white)
+                        .frame(width: 44, height: 44).background(T.blue).clipShape(Circle())
+                }.disabled(banned || ended)
+            }
+            .padding(.horizontal, 12)
         }
-        .padding(.horizontal, 12).padding(.vertical, 8).background(T.bg)
+        .padding(.top, 8).padding(.bottom, 8).background(T.bg)
+    }
+
+    private var giftPanel: some View {
+        ZStack(alignment: .bottom) {
+            Color.black.opacity(0.5).ignoresSafeArea().onTapGesture { withAnimation { showGifts = false } }
+            VStack(spacing: 12) {
+                HStack {
+                    Text("Send a gift").font(.jk(18, .bold))
+                    Spacer()
+                    HStack(spacing: 5) {
+                        Image(systemName: "diamond.fill").font(.system(size: 12)).foregroundColor(T.gold)
+                        Text("\(game.s.ex.gems)").font(.jk(14, .bold))
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 6).background(T.card2).clipShape(Capsule())
+                    Button { withAnimation { showGifts = false } } label: {
+                        Image(systemName: "xmark").font(.system(size: 13, weight: .bold)).foregroundColor(.white)
+                            .frame(width: 30, height: 30).background(T.card2).clipShape(Circle())
+                    }
+                }
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4), spacing: 10) {
+                    ForEach(LiveGift.all) { g in
+                        Button { sendGift(g) } label: {
+                            VStack(spacing: 6) {
+                                Image(systemName: g.symbol).font(.system(size: 26, weight: .semibold)).foregroundColor(g.color)
+                                    .frame(height: 30)
+                                Text(g.name).font(.jk(11, .semibold)).foregroundColor(.white).lineLimit(1).minimumScaleFactor(0.7)
+                                HStack(spacing: 3) {
+                                    Image(systemName: "diamond.fill").font(.system(size: 9))
+                                    Text("\(g.cost)").font(.jk(12, .bold))
+                                }.foregroundColor(T.gold)
+                            }
+                            .frame(maxWidth: .infinity).padding(.vertical, 12)
+                            .background(T.card2).clipShape(RoundedRectangle(cornerRadius: 14))
+                            .opacity(game.s.ex.gems >= g.cost ? 1 : 0.4)
+                        }
+                    }
+                }
+            }
+            .padding(16).padding(.bottom, 10)
+            .background(T.card.ignoresSafeArea(edges: .bottom))
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .transition(.move(edge: .bottom))
+        }
+    }
+
+    // MARK: Reactions and gifts
+
+    private func spawn(_ symbol: String, _ color: Color, _ n: Int, size: CGFloat = 26) {
+        for i in 0..<n {
+            let f = Floater(symbol: symbol, color: color, dx: CGFloat.random(in: -70...20), size: size)
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.09) {
+                floaters.append(f)
+                if floaters.count > 40 { floaters.removeFirst(floaters.count - 40) }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.3) { floaters.removeAll { $0.id == f.id } }
+            }
+        }
+    }
+
+    private func react(_ symbol: String, _ color: Color, _ n: Int) {
+        guard !ended else { return }
+        spawn(symbol, color, n)
+        addHype(0.03 * Double(n))
+    }
+
+    private func hypeBurst() {
+        guard !ended else { return }
+        for r in reactions { spawn(r.0, r.1, 2, size: 30) }
+        addHype(0.25)
+        burst = max(burst, 3)
+        mood = min(0.95, mood + 0.05)
+    }
+
+    private func addHype(_ v: Double) {
+        withAnimation { hype = min(1, hype + v) }
+        if hype >= 1 {
+            withAnimation { hype = 0 }
+            let bump = max(15, viewers / 6)
+            viewers += bump
+            peak = max(peak, viewers)
+            burst = max(burst, 4)
+            add("", "", "HYPE TRAIN: chat is going wild (+\(bump) viewers)", 3, icon: "flame.fill")
+            spawn("flame.fill", T.orange, 10, size: 32)
+        }
+    }
+
+    private func pin(_ m: LiveMsg) {
+        withAnimation { ticker = m }
+        let id = m.id
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) {
+            if ticker?.id == id { withAnimation { ticker = nil } }
+        }
+    }
+
+    private func sendGift(_ g: LiveGift) {
+        guard case .watch(let h) = mode, !ended else { return }
+        guard game.liveGift(h, cost: g.cost, name: g.name) else { return }
+        withAnimation { showGifts = false }
+        let m = LiveMsg(name: "you", handle: game.s.persona.handle, text: "you sent \(g.name) (\(g.cost) gems)", kind: 1, icon: g.symbol)
+        chat.append(m)
+        pin(m)
+        spawn(g.symbol, g.color, min(14, 3 + g.cost / 4), size: 30 + CGFloat(min(g.cost, 50)) / 4)
+        addHype(min(0.6, 0.08 + Double(g.cost) * 0.02))
+        mood = max(0.05, mood - 0.1)
+        if let s = streamer {
+            let line = game.voiceLine(game.s, s, bucket: "dm.warm", target: nil, toPlayer: true, text: "thanks for the \(g.name)", heat: 0.2)?.0 ?? "appreciate you"
+            add(s.name, s.handle, "@\(game.s.persona.handle) " + line, 5)
+        }
     }
 
     private var recap: some View {
@@ -376,8 +663,8 @@ struct LiveView: View {
 
     // MARK: Engine
 
-    private func add(_ name: String, _ handle: String, _ text: String, _ kind: Int = 0) {
-        chat.append(LiveMsg(name: name, handle: handle, text: text, kind: kind))
+    private func add(_ name: String, _ handle: String, _ text: String, _ kind: Int = 0, icon: String? = nil) {
+        chat.append(LiveMsg(name: name, handle: handle, text: text, kind: kind, icon: icon))
         if chat.count > 90 { chat.removeFirst(chat.count - 90) }
     }
 
@@ -424,13 +711,21 @@ struct LiveView: View {
             if s.trait == .hater || s.trait == .chaos { mood = min(0.95, mood + 0.12) }
             if s.trait == .wholesome { mood = max(0.05, mood - 0.1) }
         }
+        if Double.random(in: 0...1) < 0.7 {
+            let r = mood > 0.66 ? [reactions[0], reactions[2]].randomElement()! : reactions.randomElement()!
+            spawn(r.0, r.1, Int.random(in: 1...2))
+        }
+        hype = max(0, hype - 0.01)
         let n = burst > 0 ? 3 : Int.random(in: 1...2)
         if burst > 0 { burst -= 1 }
         for _ in 0..<n { if let sp = cast.randomElement() { chatLine(sp, st) } }
         if Double.random(in: 0...1) < 0.07, let d = cast.randomElement() {
             let amt = [5, 10, 25].randomElement() ?? 5
             let msg = mood > 0.66 ? ["answer the DM, coward", "say that again", "keep going lol"] : ["love this", "keep it up", "you're the best"]
-            add("", d.handle, "\(d.handle) donated \(amt) gems: \"\(msg.randomElement() ?? "")\"", 1)
+            let gm = LiveMsg(name: "", handle: d.handle, text: "\(d.handle) donated \(amt) gems: \"\(msg.randomElement() ?? "")\"", kind: 1, icon: ["gift.fill", "heart.fill", "crown.fill", "server.rack"].randomElement())
+            chat.append(gm)
+            pin(gm)
+            spawn(gm.icon ?? "gift.fill", T.gold, 4, size: 30)
             if isHost { gems += amt }
         }
         if !raided, ticks > 5, Double.random(in: 0...1) < 0.04,
@@ -440,6 +735,7 @@ struct LiveView: View {
             viewers += add
             peak = max(peak, viewers)
             self.add("", r.handle, "\(r.name) raided with \(fmt(add)) viewers", 2)
+            spawn("arrow.triangle.branch", Color(red: 0.7, green: 0.5, blue: 1), 6, size: 30)
         }
         if isHost && ticks >= 45 { finish() }
     }
@@ -523,6 +819,10 @@ struct NPCStoryViewer: View {
     @State private var input = ""
     @State private var reply: String? = nil
     @State private var closed = false
+    @State private var floaters: [Floater] = []
+    @State private var reacted: String? = nil
+    @FocusState private var typing: Bool
+    private let reactions: [(String, Color)] = [("flame.fill", T.orange), ("heart.fill", Color(red: 1, green: 0.4, blue: 0.55)), ("bolt.fill", T.gold), ("hands.clap.fill", T.blue), ("100.circle.fill", T.lime), ("eye.fill", Color(red: 0.7, green: 0.5, blue: 1))]
 
     var body: some View {
         let st = game.s
@@ -530,41 +830,83 @@ struct NPCStoryViewer: View {
         let npc = story.flatMap { s in st.npcs.first { $0.handle == s.handle } }
         ZStack {
             if let story = story, let npc = npc {
+                let neon = HK.neon(npc.handle)
                 StoryStyle.gradient(story.bg).ignoresSafeArea()
-                Color.black.opacity(0.2).ignoresSafeArea()
-                Text(story.text).font(.jk(30, .bold)).foregroundColor(.white)
-                    .multilineTextAlignment(.center).padding(.horizontal, 28)
-                    .shadow(color: .black.opacity(0.35), radius: 4)
-                VStack(spacing: 14) {
+                LinearGradient(colors: [Color.black.opacity(0.45), Color.clear, Color.black.opacity(0.55)], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+                Canvas { ctx, sz in
+                    var p = Path()
+                    var x: CGFloat = 0
+                    while x < sz.width { p.move(to: CGPoint(x: x, y: 0)); p.addLine(to: CGPoint(x: x, y: sz.height)); x += 36 }
+                    var y: CGFloat = 0
+                    while y < sz.height { p.move(to: CGPoint(x: 0, y: y)); p.addLine(to: CGPoint(x: sz.width, y: y)); y += 36 }
+                    ctx.stroke(p, with: .color(.white.opacity(0.05)), lineWidth: 0.6)
+                }.ignoresSafeArea().allowsHitTesting(false)
+                VStack(spacing: 10) {
+                    Image(systemName: "quote.opening").font(.system(size: 22, weight: .bold)).foregroundColor(neon)
+                    Text(story.text).font(.jk(28, .bold)).foregroundColor(.white).multilineTextAlignment(.center)
+                    HStack(spacing: 6) {
+                        Image(systemName: HK.glyph(npc.handle)).font(.system(size: 11, weight: .bold))
+                        Text("@\(npc.handle)").font(.jk(12, .semibold))
+                    }.foregroundColor(neon)
+                }
+                .padding(.horizontal, 22).padding(.vertical, 24)
+                .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Color.black.opacity(0.42)))
+                .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(neon.opacity(0.55), lineWidth: 1.2))
+                .padding(.horizontal, 24)
+                HStack(spacing: 0) {
+                    Color.clear.contentShape(Rectangle()).onTapGesture { progress = 0; restart() }
+                    Color.clear.contentShape(Rectangle()).onTapGesture { if !closed { closed = true; onClose() } }
+                }
+                .padding(.top, 110).padding(.bottom, 170)
+                VStack(spacing: 12) {
                     GeometryReader { g in
                         ZStack(alignment: .leading) {
                             Capsule().fill(Color.white.opacity(0.28))
-                            Capsule().fill(Color.white.opacity(0.9)).frame(width: g.size.width * progress)
+                            Capsule().fill(Color.white.opacity(0.95)).frame(width: g.size.width * progress)
                         }
-                    }.frame(height: 5)
+                    }.frame(height: 4)
                     HStack(spacing: 10) {
-                        Avatar(emoji: npc.emoji, key: npc.handle, size: 48)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(npc.name).font(.jk(16, .bold)).foregroundColor(.white)
-                            Text(agoString(story.date)).font(.jk(12)).foregroundColor(.white.opacity(0.75))
+                        HStack(spacing: 10) {
+                            Avatar(emoji: npc.emoji, key: npc.handle, size: 42, ring: false)
+                            VStack(alignment: .leading, spacing: 1) {
+                                HStack(spacing: 4) {
+                                    Text(npc.name).font(.jk(15, .bold)).foregroundColor(.white)
+                                    if npc.followers >= 40000 { VerifiedSeal(size: 12) }
+                                }
+                                Text(agoString(story.date)).font(.jk(12)).foregroundColor(.white.opacity(0.75))
+                            }
                         }
+                        .profileTap(npc.handle)
                         Spacer()
                         Button(action: onClose) {
-                            Image(systemName: "xmark").font(.system(size: 16, weight: .bold)).foregroundColor(.white)
-                                .frame(width: 38, height: 38).background(Color.black.opacity(0.35)).clipShape(Circle())
+                            Image(systemName: "xmark").font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                                .frame(width: 36, height: 36).background(Color.black.opacity(0.4)).clipShape(Circle())
                         }
                     }
                     Spacer()
                     if let r = reply {
-                        Text(r).font(.jk(15)).foregroundColor(.white).padding(12)
-                            .background(Color.black.opacity(0.5)).clipShape(RoundedRectangle(cornerRadius: 14))
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        HStack(alignment: .top, spacing: 8) {
+                            Avatar(emoji: npc.emoji, key: npc.handle, size: 26)
+                            Text(r).font(.jk(14)).foregroundColor(.white)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(10).background(Color.black.opacity(0.55)).clipShape(RoundedRectangle(cornerRadius: 14))
+                    }
+                    HStack(spacing: 8) {
+                        ForEach(Array(reactions.enumerated()), id: \.offset) { _, r in
+                            Button { react(r.0, r.1, npc) } label: {
+                                Image(systemName: r.0).font(.system(size: 18, weight: .bold)).foregroundColor(r.1)
+                                    .frame(maxWidth: .infinity).frame(height: 40)
+                                    .background(Color.black.opacity(reacted == r.0 ? 0.65 : 0.38)).clipShape(Capsule())
+                                    .overlay(Capsule().stroke(reacted == r.0 ? r.1 : Color.clear, lineWidth: 1.5))
+                            }
+                        }
                     }
                     HStack(spacing: 8) {
                         TextField("Reply to \(npc.name.components(separatedBy: " ").first ?? npc.name)...", text: $input)
                             .font(.jk(15)).padding(.horizontal, 16).frame(height: 46)
-                            .background(Color.black.opacity(0.4)).clipShape(Capsule()).foregroundColor(.white)
-                            .submitLabel(.send).onSubmit { send(npc) }
+                            .background(Color.black.opacity(0.45)).clipShape(Capsule()).foregroundColor(.white)
+                            .focused($typing).submitLabel(.send).onSubmit { send(npc) }
                         Button { send(npc) } label: {
                             Image(systemName: "arrow.up").font(.system(size: 18, weight: .bold)).foregroundColor(.white)
                                 .frame(width: 46, height: 46).background(T.blue).clipShape(Circle())
@@ -572,6 +914,11 @@ struct NPCStoryViewer: View {
                     }
                 }
                 .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 8)
+                ZStack(alignment: .bottomTrailing) {
+                    ForEach(floaters) { f in FloatingIcon(f: f) }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                .padding(.trailing, 40).padding(.bottom, 120).allowsHitTesting(false)
             } else {
                 VStack(spacing: 16) {
                     Text("This story is gone.").font(.jk(18, .semibold))
@@ -579,10 +926,30 @@ struct NPCStoryViewer: View {
                 }
             }
         }
+        .background(T.bg.ignoresSafeArea())
         .onAppear {
             game.markStorySeen(storyID)
-            withAnimation(.linear(duration: 12)) { progress = 1 }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 12) { if reply == nil && input.isEmpty && !closed { closed = true; onClose() } }
+            restart()
+        }
+    }
+
+    private func restart() {
+        progress = 0
+        withAnimation(.linear(duration: 12)) { progress = 1 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12.2) {
+            if reply == nil && input.isEmpty && !typing && !closed && reacted == nil { closed = true; onClose() }
+        }
+    }
+
+    private func react(_ symbol: String, _ color: Color, _ n: NPC) {
+        reacted = symbol
+        game.liveKind(n.handle)
+        for i in 0..<7 {
+            let f = Floater(symbol: symbol, color: color, dx: CGFloat.random(in: -80...30), size: 28)
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.08) {
+                floaters.append(f)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.3) { floaters.removeAll { $0.id == f.id } }
+            }
         }
     }
 

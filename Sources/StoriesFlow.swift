@@ -191,10 +191,11 @@ struct CreateStoryView: View {
     @State private var pick: PhotosPickerItem? = nil
     @State private var audience = false
     @FocusState private var focused: Bool
+    private let prompts: [(String, String)] = [("terminal.fill", "pushed a fix at 3am"), ("lock.open.fill", "new jailbreak just dropped"), ("checkmark.seal.fill", "signed and sideloaded"), ("ladybug.fill", "found a bug, not telling"), ("bolt.fill", "build passing, finally")]
 
     var body: some View {
         let st = game.s
-        let can = (!text.trimmed.isEmpty || image != nil) && game.canAfford(1)
+        let can = (!text.trimmed.isEmpty || image != nil)
         VStack(spacing: 14) {
             HStack(spacing: 14) {
                 circleButton("xmark", size: 46, onClose)
@@ -242,6 +243,30 @@ struct CreateStoryView: View {
             }
             .padding(.horizontal, 16)
 
+            HStack(spacing: 10) {
+                ForEach(0..<StoryStyle.colors.count, id: \.self) { i in
+                    Button { bg = i } label: {
+                        StoryStyle.gradient(i).frame(width: 30, height: 30).clipShape(Circle())
+                            .overlay(Circle().stroke(Color.white, lineWidth: bg == i ? 3 : 0))
+                    }
+                }
+                Spacer()
+                Text("\(text.count)/140").font(.jk(12, .semibold)).foregroundColor(T.sub)
+            }
+            .padding(.horizontal, 20)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(prompts, id: \.1) { p in
+                        Button { text = p.1; focused = false } label: {
+                            Label(p.1, systemImage: p.0).font(.jk(13, .semibold)).foregroundColor(.white)
+                                .padding(.horizontal, 12).padding(.vertical, 8)
+                                .background(T.card2).clipShape(Capsule())
+                        }
+                    }
+                }.padding(.horizontal, 16)
+            }
+
             HStack(spacing: 12) {
                 Avatar(emoji: st.persona.emoji, key: st.persona.handle, size: 56)
                 Button { audience = true } label: {
@@ -255,9 +280,8 @@ struct CreateStoryView: View {
                 }
                 Button(action: post) {
                     HStack(spacing: 8) {
-                        Text("Post").font(.jk(20, .medium))
-                        Text("−1").font(.jk(20, .bold)).foregroundColor(T.gold)
-                        Image(systemName: "bolt.fill").foregroundColor(T.gold)
+                        Image(systemName: "paperplane.fill")
+                        Text("Share story").font(.jk(20, .medium))
                     }
                     .foregroundColor(can ? .white : Color.white.opacity(0.5))
                     .frame(maxWidth: .infinity).padding(.vertical, 16)
@@ -418,7 +442,7 @@ struct StoryViewer: View {
         VStack(alignment: .leading, spacing: 12) {
             if let c = story.comments.first {
                 HStack(alignment: .top, spacing: 12) {
-                    Avatar(emoji: c.emoji, key: c.handle, size: 50)
+                    Avatar(emoji: c.emoji, key: c.handle, size: 50).profileTap(c.handle)
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
                             Text(c.name).font(.jk(18, .bold)).lineLimit(1)
@@ -507,7 +531,7 @@ struct StoryCommentsSheet: View {
 
     private func row(_ c: Comment) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            Avatar(emoji: c.emoji, key: c.handle, size: 54)
+            Avatar(emoji: c.emoji, key: c.handle, size: 54).profileTap(c.handle)
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 6) {
                     Text(c.name).font(.jk(20, .bold)).lineLimit(1)
@@ -546,9 +570,7 @@ struct StoryCommentsSheet: View {
         VStack(spacing: 10) {
             if hint {
                 HStack(spacing: 6) {
-                    Text("Replying in Private Stories uses").foregroundColor(T.sub)
-                    Text("1").foregroundColor(T.gold).fontWeight(.bold)
-                    Image(systemName: "bolt.fill").foregroundColor(T.gold).font(.system(size: 14))
+                    Text("Replies are free. Say what you want.").foregroundColor(T.sub)
                     Spacer()
                     Button { hint = false } label: { Image(systemName: "xmark").foregroundColor(T.sub) }
                 }

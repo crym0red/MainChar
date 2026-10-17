@@ -72,8 +72,9 @@ struct StoreView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     streakCard(st)
-                    section("Boosts", [.gift], st)
-                    section("Powerups", [.viral, .boost], st)
+                    section("Boosts", [.gift, .wave, .xp, .spotlight], st)
+                    section("Powerups", [.viral, .boost, .shield, .squad], st)
+                    section("Wild West", [.slate, .stir], st)
                 }
                 .padding(.horizontal, 16).padding(.bottom, 40)
             }
@@ -112,7 +113,7 @@ struct StoreView: View {
                 }
             }
             Spacer()
-            Text("🔥").font(.jk(64))
+            Image(systemName: "flame.fill").font(.system(size: 56)).foregroundColor(T.orange)
         }
         .padding(20)
         .background(T.card)
@@ -133,6 +134,9 @@ struct StoreView: View {
         switch it {
         case .gift: return st.ex.gifts > 0 ? "You have \(st.ex.gifts)" : nil
         case .viral: return st.ex.viralArmed ? "Armed for your next action" : nil
+        case .shield: return st.ex.shield == true ? "Active · blocks your next loss" : nil
+        case .squad: return st.ex.squad == true ? "Waiting for your next post" : nil
+        case .spotlight: return (st.ex.spotlight ?? 0) > 0 ? "On you now" : nil
         case .boost:
             if let b = st.ex.boostUntil, b > Date() {
                 let m = Int(b.timeIntervalSinceNow / 60) + 1
@@ -145,7 +149,7 @@ struct StoreView: View {
 
     private func row(_ it: StoreItem, _ st: GameState) -> some View {
         HStack(spacing: 16) {
-            Text(it.emoji).font(.jk(52)).frame(width: 84)
+            SymbolTile(emoji: it.emoji, size: 64, tint: T.gold).frame(width: 84)
             VStack(alignment: .leading, spacing: 4) {
                 Text(it.title).font(.jk(24, .medium)).foregroundColor(.white)
                 Text(it.desc).font(.jk(18)).foregroundColor(T.sub).multilineTextAlignment(.leading)
