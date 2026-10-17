@@ -27,6 +27,11 @@ enum ProfileImages {
         cache.setObject(out, forKey: name as NSString)
     }
 
+    static func remove(_ name: String) {
+        cache.removeObject(forKey: name as NSString)
+        try? FileManager.default.removeItem(at: url(name))
+    }
+
     static func load(_ name: String) -> UIImage? {
         if let c = cache.object(forKey: name as NSString) { return c }
         guard let i = UIImage(contentsOfFile: url(name).path) else { return nil }
@@ -302,6 +307,7 @@ struct GameSettingsView: View {
     @State private var confirmLeave = false
     @State private var customize = false
     @State private var styleSheet = false
+    @State private var avatarStudio = false
     @State private var syncSheet = false
     @State private var favSheet = false
     @State private var showLog = false
@@ -344,6 +350,8 @@ struct GameSettingsView: View {
                     group {
                         row("globe.europe.africa.fill", "Customize World", chevron: true) { customize = true }
                         divider
+                        row("person.crop.circle.badge.plus", "Avatar Studio", chevron: true) { avatarStudio = true }
+                        divider
                         row("paintpalette.fill", "Profile Style", chevron: true) { styleSheet = true }
                         divider
                         row("arrow.triangle.2.circlepath", "Account Sync", chevron: true) { syncSheet = true }
@@ -372,6 +380,7 @@ struct GameSettingsView: View {
         .sheet(isPresented: $aiSheet) { SettingsSheet().zoomed() }
         .sheet(isPresented: $customize) { CustomizeWorldSheet().zoomed() }
         .sheet(isPresented: $styleSheet) { ProfileStyleSheet().zoomed() }
+        .fullScreenCover(isPresented: $avatarStudio) { AvatarStudioView().zoomed() }
         .sheet(isPresented: $syncSheet) { SyncSheet().zoomed() }
         .sheet(isPresented: $favSheet) { FavoritesSheet().zoomed() }
         .fullScreenCover(isPresented: $showLog) { ActivityLogView().zoomed() }

@@ -330,6 +330,7 @@ final class Game: ObservableObject {
         var st = s
         st.persona = p
         s = st
+        AvatarLooks.rename(to: p.handle)
     }
 
     // MARK: Feed

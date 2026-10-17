@@ -775,6 +775,7 @@ struct ProfileTab: View {
     @State private var showHistory = false
     @State private var unlockInfo = false
     @State private var showFollowers = false
+    @State private var showAvatarStudio = false
     @State private var scrolled = false
 
     var body: some View {
@@ -788,10 +789,18 @@ struct ProfileTab: View {
                     .frame(height: 200)
 
                 HStack(alignment: .top) {
-                    Avatar(emoji: p.emoji, key: p.handle, size: 150)
-                        .id(game.profileRev)
-                        .overlay(Circle().stroke(T.bg, lineWidth: 6))
-                        .offset(y: -75)
+                    Button { showAvatarStudio = true } label: {
+                        Avatar(emoji: p.emoji, key: p.handle, size: 150)
+                            .id(game.profileRev)
+                            .overlay(Circle().stroke(T.bg, lineWidth: 6))
+                            .overlay(alignment: .bottomTrailing) {
+                                Image(systemName: "wand.and.stars").font(.system(size: 18, weight: .bold)).foregroundColor(.white)
+                                    .frame(width: 44, height: 44).background(T.blue).clipShape(Circle())
+                                    .overlay(Circle().stroke(T.bg, lineWidth: 4))
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .offset(y: -75)
                     Spacer()
                     Button { edit = true } label: {
                         Text("Edit Profile").font(.jk(22, .medium)).foregroundColor(.white)
@@ -852,6 +861,7 @@ struct ProfileTab: View {
         }
         .fullScreenCover(isPresented: $showStore) { StoreView().zoomed() }
         .fullScreenCover(isPresented: $showFollowers) { FollowersSheet().zoomed() }
+        .fullScreenCover(isPresented: $showAvatarStudio) { AvatarStudioView().zoomed() }
     }
 
     private func achievementsCard(_ st: GameState) -> some View {
