@@ -331,17 +331,10 @@ extension Game {
     }
 
     func offlineDM(_ n: NPC, text: String, _ st: GameState) -> String {
-        let topic = Topics.forWorld(st.world).first ?? "this"
-        let quote = Corpus.quote(from: text, fallback: topic)
         var warm = n.affinity >= 50
         if n.affinity < 50 && n.affinity >= 30 { warm = Bool.random() }
         if n.trait == .hater && n.affinity < 70 { warm = Double.random(in: 0...1) < 0.2 }
-        let f = feeling(st, n.handle)
-        if abs(f) >= 2, Bool.random(), let m = strongestMemory(st, n.handle, positive: f > 0) {
-            return MemLines.dm(m, positive: f > 0)
-        }
-        let bucket = warm ? "dm.warm" : "dm.cold"
-        return Corpus.line(trait: n.trait, bucket: bucket, me: st.persona.handle, topic: topic, quote: quote)
+        return voiceLine(st, n, bucket: warm ? "dm.warm" : "dm.cold", target: nil, toPlayer: true, text: text, heat: 0.45)?.0
             ?? (Lines.dm[n.trait]?.randomElement() ?? "👀")
     }
 
@@ -349,8 +342,6 @@ extension Game {
     private func buildChain(_ st: GameState, target: String?, playerText: String) -> [Comment] {
         let cast = st.npcs.filter { $0.id != "newsdesk" }
         guard !cast.isEmpty else { return [] }
-        let topic = Topics.forWorld(st.world).first ?? "this"
-        let quote = Corpus.quote(from: playerText, fallback: topic)
         let me = st.persona.handle
         var mention: String? = target
         if mention == nil, let w = playerText.split(separator: " ").first, w.hasPrefix("@") {
@@ -368,9 +359,9 @@ extension Game {
         func add(_ n: NPC, _ body: String) {
             out.append(Comment(name: n.name, handle: n.handle, emoji: n.emoji, text: body, verified: n.followers >= 40000))
         }
-        let l0 = Corpus.line(trait: first.trait, bucket: neg ? "comment.neg" : "comment.pos",
-                             me: me, topic: topic, quote: quote)
-            ?? ((neg ? Lines.neg[first.trait] : Lines.pos[first.trait])?.randomElement() ?? "👀")
+        let r0 = voiceLine(st, first, bucket: neg ? "comment.neg" : "comment.pos", target: nil, toPlayer: true, text: playerText, heat: 0.5)
+        let l0 = r0?.0 ?? ((neg ? Lines.neg[first.trait] : Lines.pos[first.trait])?.randomElement() ?? "👀")
+        if let r = r0 { neg = !r.1 }
         add(first, "@\(me) " + l0)
         lastNeg[first.handle] = neg
 
@@ -380,11 +371,9 @@ extension Game {
             let pn = lastNeg[prev.handle] ?? false
             let myNeg = n.trait == .hater ? Double.random(in: 0...1) < 0.7 : Double.random(in: 0...1) < 0.4
             let agree = pn == myNeg ? Double.random(in: 0...1) < 0.85 : Double.random(in: 0...1) < 0.15
-            let l = Corpus.line(trait: n.trait, bucket: agree ? "rebut.agree" : "rebut.fight",
-                                me: me, topic: topic, quote: quote)
-                ?? (agree ? "exactly this" : "no, that's wrong")
-            add(n, "@\(prev.handle) " + l)
-            lastNeg[n.handle] = agree ? pn : !pn
+            let r = voiceLine(st, n, bucket: agree ? "rebut.agree" : "rebut.fight", target: prev.handle, toPlayer: false, text: playerText, heat: 0.5)
+            add(n, "@\(prev.handle) " + (r?.0 ?? (agree ? "exactly this" : "no, that's wrong")))
+            lastNeg[n.handle] = r.map { !$0.1 } ?? (agree ? pn : !pn)
             prev = n
         }
         return out

@@ -84,12 +84,19 @@ enum Corpus {
     /// bucket: comment.pos, comment.neg, rebut.agree, rebut.fight, dm.warm, dm.cold (plus the wild-west
     /// variants roast.hard, roast.nitpick, hype.max, rebut.fight.hot, rebut.defend, dm.hostile,
     /// post.subtweet, post.rant, post.hype which flavor() mixes in).
-    static func line(trait: Trait, bucket: String, me: String, topic: String, quote: String, heat: Double = 0.45) -> String? {
+    static func line(trait: Trait, bucket: String, me: String, topic: String, quote: String, heat: Double = 0.45,
+                     accept: ((String) -> Bool)? = nil) -> String? {
         var h = heat
         if trait == .hater || trait == .chaos { h += 0.2 } else if trait == .wholesome { h -= 0.2 }
         h = min(0.95, max(0.0, h))
         let b = flavor(bucket, h)
-        guard var t = raw("\(trait.rawValue)|\(b)") ?? raw("\(trait.rawValue)|\(bucket)") else { return nil }
+        var pick: String? = nil
+        for _ in 0..<(accept == nil ? 1 : 14) {
+            guard let c = raw("\(trait.rawValue)|\(b)") ?? raw("\(trait.rawValue)|\(bucket)") else { return nil }
+            pick = c
+            if accept?(c) ?? true { break }
+        }
+        guard var t = pick else { return nil }
         t = t.replacingOccurrences(of: "{me}", with: "@" + me)
         t = t.replacingOccurrences(of: "{topic}", with: topic)
         t = t.replacingOccurrences(of: "{quote}", with: quote)

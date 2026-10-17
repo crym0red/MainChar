@@ -118,12 +118,10 @@ extension Game {
     }
 
     private func beefComments(_ st: GameState, a: NPC, b: NPC, topic: String, text: String) -> [Comment] {
-        let quote = Corpus.quote(from: text, fallback: topic)
-        let me = st.persona.handle
         let sides = st.ex.rivalries?.first(where: { $0.id == Game.rivalKey(a.handle, b.handle) })?.sides ?? [:]
         var out: [Comment] = []
         func add(_ n: NPC, _ to: String, _ bucket: String) {
-            let l = Corpus.line(trait: n.trait, bucket: bucket, me: me, topic: topic, quote: quote, heat: 0.85)
+            let l = voiceLine(st, n, bucket: bucket, target: to, toPlayer: false, text: text, heat: 0.85, topic: topic)?.0
                 ?? (bucket == "rebut.agree" ? "exactly this" : "no, that's wrong")
             out.append(Comment(name: n.name, handle: n.handle, emoji: n.emoji, text: "@\(to) " + l, verified: n.followers >= 40000))
         }

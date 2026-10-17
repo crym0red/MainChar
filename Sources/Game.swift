@@ -15,6 +15,7 @@ final class Game: ObservableObject {
     @Published var undoSnap: GameState? = nil
 
     var prefetched: StoryEvent?
+    var voice = VoiceStore()
     private var prefetching = false
     private var fetchingPosts = false
     private var aiDownUntil = Date.distantPast
@@ -28,6 +29,8 @@ final class Game: ObservableObject {
         } else {
             store = Store()
         }
+        if let d = UserDefaults.standard.data(forKey: "clout.voice.v1"),
+           let v = try? JSONDecoder().decode(VoiceStore.self, from: d) { voice = v }
         tickEnergy()
     }
 
@@ -43,6 +46,7 @@ final class Game: ObservableObject {
 
     func flush() {
         if let d = try? JSONEncoder().encode(store) { UserDefaults.standard.set(d, forKey: key) }
+        if let d = try? JSONEncoder().encode(voice) { UserDefaults.standard.set(d, forKey: "clout.voice.v1") }
     }
 
     // MARK: Active save
@@ -360,9 +364,6 @@ final class Game: ObservableObject {
 
     func makeComments(_ st: GameState, auraDelta: Int, count: Int, exclude: String = "", text: String = "") -> [Comment] {
         let pool = Array(st.npcs.filter { $0.id != "newsdesk" && $0.handle != exclude }.shuffled().prefix(count))
-        let topic = Topics.forWorld(st.world).first ?? "this"
-        let quote = Corpus.quote(from: text, fallback: topic)
-        let me = st.persona.handle
         let heat = auraDelta < 0 ? 0.75 : 0.5
         var out: [Comment] = []
         var negOf: [String: Bool] = [:]
@@ -380,14 +381,14 @@ final class Game: ObservableObject {
                 let tn = negOf[target.handle] ?? false
                 let agree = tn == neg ? Double.random(in: 0...1) < 0.85 : Double.random(in: 0...1) < 0.12
                 let bucket = agree ? "rebut.agree" : "rebut.fight"
-                let l = Corpus.line(trait: n.trait, bucket: bucket, me: me, topic: topic, quote: quote, heat: heat)
-                    ?? (agree ? "exactly this" : "no, that's wrong")
-                body = "@\(target.handle) " + l
-                neg = agree ? tn : !tn
+                let r = voiceLine(st, n, bucket: bucket, target: target.handle, toPlayer: false, text: text, heat: heat)
+                body = "@\(target.handle) " + (r?.0 ?? (agree ? "exactly this" : "no, that's wrong"))
+                neg = r.map { !$0.1 } ?? (agree ? tn : !tn)
             } else {
                 let bucket = neg ? "comment.neg" : "comment.pos"
-                body = Corpus.line(trait: n.trait, bucket: bucket, me: me, topic: topic, quote: quote, heat: heat)
-                    ?? ((neg ? Lines.neg[n.trait] : Lines.pos[n.trait])?.randomElement() ?? "👀")
+                let r = voiceLine(st, n, bucket: bucket, target: nil, toPlayer: true, text: text, heat: heat)
+                body = r?.0 ?? ((neg ? Lines.neg[n.trait] : Lines.pos[n.trait])?.randomElement() ?? "👀")
+                if let r = r { neg = !r.1 }
             }
             negOf[n.handle] = neg
             out.append(Comment(name: n.name, handle: n.handle, emoji: n.emoji, text: body, verified: n.followers >= 40000))

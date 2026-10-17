@@ -116,6 +116,107 @@ def expand(t, k=4):
             break
     return list(out)
 
+# ---- distinct voices: each trait fills the slots from its own vocabulary ----
+SLOTS_T = {
+ 'hype': {
+  'A': ["washed","mid","cooked","lowkey trash","trash","goofy","fumbled","sus","tragic","corny","mad weak","clowned","off the rails","a whole L"],
+  'N': ["bozo","goofball","clown","menace","lil bro","chief","dawg","fumbler","hater","noob","bum","scrub"],
+  'U': ["BRO","BRUH","chat","yo","nah fr","bro what","bro...","not like this"],
+  'F': ["lowkey","highkey","straight up","fr","actually","deadass","mad","kinda"],
+  'V': ["log off","touch grass","sit down","run it back","delete that","take the L","uninstall","chill"],
+  'P': ["fire","insane","unreal","legendary","goated","cracked","elite","sick","filthy","untouchable"],
+  'W': ["W","banger","clinic","heater","highlight","flex","moment","bar"]},
+ 'wholesome': {
+  'A': ["unkind","hurtful","thoughtless","careless","discouraging","unnecessary","tone-deaf","rough","rude","draining","heavy","sad"],
+  'N': ["silly goose","bestie (with love)","little gremlin","sweet summer child","buddy","champ","troublemaker","friend","drama magnet"],
+  'U': ["oh my gosh","oh no","goodness","yikes","sweetie","okay wow","hey now","oh honey"],
+  'F': ["genuinely","truly","really","so","honestly","kind of","just","pretty"],
+  'V': ["take a breath","drink some water","be kinder","apologise to them","log off for a bit","go for a walk","call a friend","reset"],
+  'P': ["beautiful","precious","heartwarming","lovely","pure","golden","wonderful","glowing","magical","gorgeous"],
+  'W': ["gift","moment","treasure","post","hug","little miracle","reminder","joy"]},
+ 'gossip': {
+  'A': ["messy","shady","scandalous","sus","fake","two-faced","suspicious","dramatic","petty","shifty","exposed","busted"],
+  'N': ["snake","shade-thrower","fraud","two-faced mess","drama magnet","narcissist","liar","mess","hypocrite","backstabber"],
+  'U': ["oh my god","wait what","not the tea","girl","hold on","um??","oh honey","okay but"],
+  'F': ["allegedly","apparently","literally","reportedly","clearly","supposedly","obviously","technically"],
+  'V': ["spill it","explain yourself","stop lying","come clean","go answer the group chat","delete the evidence","own it","apologise publicly"],
+  'P': ["iconic","juicy","scandalous","delicious","unreal","chef's kiss","unmatched","explosive","cinematic","legendary"],
+  'W': ["scoop","tea","exclusive","plot twist","moment","reveal","drop","episode"]},
+ 'mogul': {
+  'A': ["off-brand","unmarketable","negative-ROI","amateurish","overleveraged","poorly positioned","unscalable","reputationally toxic","bad for business","underperforming","unprofessional","overvalued"],
+  'N': ["liability","amateur","brand risk","bad investment","hack","has-been","rounding error","cost center","dead weight","sunk cost","penny stock","vanity project"],
+  'U': ["be serious","come on","unreal","frankly","spare me","let's be real","excuse me","look"],
+  'F': ["frankly","objectively","strategically","materially","measurably","statistically","commercially","legitimately"],
+  'V': ["rebrand","hire a manager","fire your team","take the loss and exit","step away from the keyboard","sell","book the exit","pivot"],
+  'P': ["bankable","scalable","market-ready","premium","blue-chip","prime","high-yield","best-in-class","investable","category-defining"],
+  'W': ["asset","play","closer","deal","launch","pitch","masterstroke","power move"]},
+ 'chaos': {
+  'A': ["cursed","unhinged","feral","deranged","insane","crusty","haunted","demonic","goblin-tier","unwell","glitchy","lawless"],
+  'N': ["gremlin","goblin","menace","raccoon","clown","glitch","cryptid","disaster","walking bug","fever dream"],
+  'U': ["BRO","AYO","WHAT","i-","SIR","hello??","excuse me??","what the actual"],
+  'F': ["actually","genuinely","literally","fucking","violently","aggressively","insanely","criminally"],
+  'V': ["go touch grass","scream into a pillow","uninstall","lie down","unplug yourself","touch moss","drink water","go to bed"],
+  'P': ["feral","unhinged","cursed (good)","deranged","chaotic","unholy","illegal","demonic","insane","sparkly"],
+  'W': ["fever dream","jumpscare","glitch","chaos","anomaly","spell","incident","miracle"]},
+}
+def expand_t(trait, t, k=4):
+    pools = dict(SLOTS)
+    pools.update(SLOTS_T.get(trait, {}))
+    keys = re.findall(r"\{([ANUFVPW])\}", t)
+    if not keys:
+        return [t]
+    out = set()
+    for _ in range(k * 4):
+        s = t
+        for key in keys:
+            s = s.replace("{%s}" % key, random.choice(pools[key]), 1)
+        out.add(s)
+        if len(out) >= k:
+            break
+    return list(out)
+
+CUSS = re.compile(r"fuck|shit|\bass\b|-ass\b|dick|bitch|\bhell\b|damn|prick|bastard|crap", re.I)
+
+# trait-flavored extra cores (sampled heavily so a mogul never sounds like a wholesome character)
+EXTRA = {
+ 'mogul': {
+  'roast.hard': ["this post is a liability and so is {me}","i've seen pitch decks with more charisma than this","your engagement is a rounding error and this made it negative","no sponsor touches {quote}","this is a {A} move from a {N}","take {me} off the roster, the numbers don't lie","this post cost you more than you'll ever earn from it","i fund winners. this is the opposite of that"],
+  'rebut.fight.hot': ["your argument has negative ROI, {N}","you're not negotiating, you're flailing","i'd debate you but there's no upside","that take is overleveraged and underinformed","bring data or {V}","you're a {N} with a {A} position and it shows"],
+  'dm.hostile': ["your last post killed any chance of a deal. don't message me","take it up with my lawyer, {N}","my team told me to ignore you. i'm doing it","there's no partnership here. there's no 'us'. {V}","this inbox is closed for {A} business"],
+  'hype.max': ["this is a category-defining {W}. i'm in","{me} just made the quarter. screenshot the numbers","bullish. extremely. call me","this is {P} and it prints money","valuation just doubled and nobody's even noticed yet"],
+  'rebut.defend': ["you're all short-selling a winner and it's going to hurt","every {N} in this thread is on the wrong side of this trade","the metrics back {me}, not you","stop piling on, it's bad optics and worse strategy"]},
+ 'wholesome': {
+  'roast.hard': ["i don't say this often, but that was really unkind","i'm not mad, i'm just sad that {me} posted this","please be gentler with people, they read these","this wasn't it, babe. you can do so much better","i love you but that post hurt","that was a {A} thing to post and i think you know it"],
+  'rebut.fight.hot': ["you can disagree without being cruel, you know","this is why i'm worried about this community","please stop being so hurtful, it's not that deep","i'm done being polite: that was {A}","hey, that's {A}. take a breath and rewrite it"],
+  'dm.hostile': ["i don't want to talk right now. please give me space","you really hurt me with that post and i need time","please don't message me for a while","i'm not ready to forgive this yet","i can't pretend it didn't sting"],
+  'hype.max': ["this made me cry happy tears, i'm not kidding","i love you so much for posting this","you are a gift and this post proves it","my heart is so full right now","this is the nicest thing on the internet today"],
+  'rebut.defend': ["please leave them alone, they're trying their best","you're being really unkind and it's not okay","everyone deserves a bit of grace, even {me}","this pile-on is making me sad, stop it"]},
+ 'hater': {
+  'roast.hard': ["{me} posts like it's a personality and it's not","this is the worst post i've seen today and i've been online all morning","nobody asked, nobody cares, delete it","even your followers are embarrassed","it's the confidence for me, you have none of the talent"],
+  'rebut.fight.hot': ["ratio, L, bozo, and wrong","you're embarrassing yourself. keep going","nobody asked, nobody wanted this, {V}","every reply you write makes me hate this site more","imagine losing to a post. {N}."],
+  'dm.hostile': ["don't text me","who gave you this number? unfollow, block, die mad","nope. no. never. {V}","this is a waste of both our time, {N}","leave. me. alone."],
+  'hype.max': ["fuck it, that's good. i hate that it's good","goddamn it, {me}, you actually did it","i despise how much i enjoyed that","don't make me say it twice: that was {P}","whatever. it's {P}. happy now?"],
+  'rebut.defend': ["i hate you all equally, but this person's right","disagree with {me} all you want, you're still wrong","go away, the lot of you","sit down, the post was fine"]},
+ 'gossip': {
+  'roast.hard': ["so i heard {me} posted this and everyone's laughing behind their back","the group chat is cooking {me} alive right now","allegedly everyone unfollowed after this","not me screenshotting this for the archive","people are talking and none of it is nice"],
+  'rebut.fight.hot': ["oh we're doing this? i have receipts, {N}","you really want me to bring up last week? because i will","the tea on you is scalding, babe, sit down","everyone knows what you did and you're acting brand new","keep talking. i have screenshots"],
+  'dm.hostile': ["i know what you said about me. the group chat told me everything","don't text me, i have your messages saved","i'm not mad, i'm just collecting receipts","you're the main topic in my group chat and not in a good way","a little birdie told me what you did, {N}"],
+  'hype.max': ["i'm going to tell everyone about this {W}","the group chat is going wild for {me} right now","exclusive: this post is a {W} and everyone knows it","sources say this is the best thing today","i'm screenshotting this for the hall of fame"],
+  'rebut.defend': ["the real tea is that you're all jealous","i know things about every one of you and i'm still on {me}'s side","y'all are being messy for no reason","sources say the haters are just bitter"]},
+ 'chaos': {
+  'roast.hard': ["AYO who let {me} cook this","this post is a fever dream and i hate it here","i just lost 14 braincells reading that","the way this made me lie down on the floor","{me} is a cryptid and this is a cursed artifact"],
+  'rebut.fight.hot': ["BRO WHAT ARE YOU TALKING ABOUT","you typed that with your whole chest and it's still wrong","i'm sorry, did the raccoon in your brain write this?","SIR this is a thread, not a crime scene","i-- no. no. absolutely not. {V}"],
+  'dm.hostile': ["WHO IS THIS. why are you in my inbox","i'm too feral for this conversation. bye","the goblin in me says no","unsend that. unsend EVERYTHING","you've unlocked my villain arc, congrats"],
+  'hype.max': ["OH MY GOD THIS IS INSANE","i'm screaming into a pillow it's so good","this {W} just rewired my brain","i'm feral, send help, send more of this","i'd let {me} drive the bus into a lake. that's how much i love this"],
+  'rebut.defend': ["LEAVE THEM ALONE YOU GOBLINS","the pile-on is more unhinged than the post","i'm a menace but even i know this is unfair","BRO IT'S JUST A POST, relax"]},
+ 'hype': {
+  'roast.hard': ["bro what was that? you fumbled so hard","chat tell me we didn't just see that","that was mad weak, run it back and fix it","i'm a fan but that's L after L","not you posting THAT, {me}, come on"],
+  'rebut.fight.hot': ["nah bro you're cooked","you just got clapped, take the L","bro said {quote} and walked into traffic","lowkey embarrassing yourself rn","sit down, bro. you're not him"],
+  'dm.hostile': ["bro don't text me rn","nah. we're not cool after that","you fumbled, don't slide in here","i can't hype you after that one, sorry. not sorry","say less, i'm good"],
+  'hype.max': ["LETS FUCKING GO {me}!!!","that's the W of the week, no cap","bro just dropped a clinic","chat, clip it. we're going viral","that was so clean i'm shaking"],
+  'rebut.defend': ["y'all are clowns for dogpiling bro","he's cooking and you're all just mad","lowkey y'all are the problem","bro's been cooking all week, stop hating"]},
+}
+
 T = {}
 T['roast.hard'] = ["{U}, this is {F} {A}","{me} you're a {A} {N} and everyone knows it","who the fuck let {me} post this","this shit is {A}, delete it","{quote}?? that's the dumbest shit i've read all day","you're such a {N}, i can't even be mad, it's just sad","ratio, L, and also you're a {N}","{me} {V}","the fact that you posted {quote} with a straight face is {A}","nobody on this app likes you and this post proves it","this is what happens when a {N} gets a following","you have the personality of wet cardboard and the takes of a {N}","i've seen smarter shit written on bathroom walls","{topic} was doing fine until a {N} like you showed up","holy fuck {me}, read the room","you're not controversial, you're just {A}","every post you make is worse than the last and somehow this is the bottom","this is {A} even for you","can someone tell {me} to {V}","go {V}, nobody asked","you're the reason people mute {topic} posts","i'd say you tried but that would be a lie","{me} thinks they're the main character, meanwhile the whole timeline is rolling its eyes","i unfollowed you three posts ago and still got this on my feed, {U}","you really woke up and chose to be a {N} today","this is giving 'i peaked in 2019' and i'm being generous","bro really posted {quote} and thought it was deep, {U}","i hate that i read the whole thing. that's time i'm never getting back, you {N}","this ain't it, this ain't even close, this is a {A} mess","you're a walking L and this post is the receipt","{F} no one asked for this shit","the cringe is {F} unbearable, {V}","mald, seethe, cope, whatever you need, you're still a {N}","congrats, you made {topic} worse. {F} impressive","{me} fell off so hard they hit the core of the earth","you are {F} the reason {topic} has a bad reputation","tell me you're a {N} without telling me you're a {N}. oh wait, you just did","this post just cost you every follower with a brain","{A} take from a {A} {N}","i've seen better content from a broken printer","i'd roast you harder but you're already doing it to yourself","what the hell is {quote} supposed to mean, you {N}","stop posting. for everyone's sake. {V}","your whole brand is being a {N} and you're not even good at it","this post is a cry for help and not a funny one","yeah that's a hard no from me and every other person with eyes","i can't believe i'm sharing a timeline with this {A} shit","the audacity of a {N} like you to talk about {topic}","imagine being this {A} in public","you post like someone who's never been told no, and it shows, {N}","every {topic} fan just got dumber reading that","this is the digital equivalent of stepping on a lego, {N}","i read {quote} and lost respect for everyone who liked it","{me} you're the human version of a loading screen","you couldn't pull a take out of a hat if the hat was labeled 'take'","you post like the algorithm owes you money","this is {A}. there's no nice way to say it, so i won't try","somebody screenshot this so we can laugh at it in a year, {N}"]
 T['roast.nitpick'] = ["you spelled one word right and called it a post","'{quote}'. that's the line. that's what you went with. why the fuck","the punctuation alone is a war crime","not one but TWO typos in a {F} short post, {U}","you used '{quote}' wrong and nobody's brave enough to tell you except me","the capitalization is all over the place like your life","why is there a random emoji at the end, it ruins the whole thing","this is {A} formatting for a {A} post","the first half is mid and the second half is worse","you could've ended it two lines earlier and saved us all","actually {quote} isn't even a real argument, it's just vibes and bad grammar","i counted, you said 'literally' wrong at least once","it's the 'trust me' energy for me, source: your ass","the timing is off, the tone is off, the {topic} knowledge is off","hot take but you can't even use {topic} correctly","that's not how you use {quote}, did a bot write this","'{quote}' is carrying this entire post and it's {F} struggling","the hashtag-brained energy in this post is {A}","why so many words just to say nothing, {N}","you posted this at 3am and it shows, {F}","i'd critique the structure but there is no structure","you buried the point under so much fluff it died there","the second sentence contradicts the first and the third contradicts both, {U}","you can't just say {quote} and hope it sounds smart","this reads like a first draft that got posted by accident","the vibe is 'i googled {topic} five minutes ago'","your tone says 'confident' but your grammar says 'help'","it's giving group chat energy, it does not belong on a public timeline","half of this is filler and the other half is {A}","who told you {quote} was a good way to open a post, name them","if you're gonna be wrong at least be concise about it","three emojis and zero ideas, congrats","that line break is doing more work than your whole argument","the ratio of words to meaning here is criminal","{quote} isn't clever, it's just loud","you really thought the all caps would make it true","bro invented a new punctuation mark and it's just 'wrong'","this has the structure of a ransom note written by a {N}","there's one good word in this post and it's 'the'","i've read ingredient labels with more personality","it's the confidence in the {F} wrong facts for me","{topic} deserves a better writer than this","you ended it with '...' like you had more to say. you did not","try reading it out loud before posting, you'll hear the problem immediately","the grammar is {A}, the point is {A}, and the post is somehow longer than both","you quoted yourself in your own post, {U}","why is there a hashtag in the middle of a sentence, you {N}","delete the first line, the last line, and the middle. you're welcome"]
@@ -190,7 +291,12 @@ def build_cell(trait, bucket, pool, pol, target):
     tails = tails + [""] * 10
     cores = []
     for tpl in T[bucket]:
-        cores.extend(expand(tpl, 4))
+        if trait == 'wholesome' and CUSS.search(tpl): continue
+        if trait == 'mogul' and re.search(r"fuck", tpl, re.I): continue
+        cores.extend(expand_t(trait, tpl, 4))
+    for tpl in EXTRA.get(trait, {}).get(bucket, []):
+        ex = expand_t(trait, tpl, 4)
+        cores.extend(ex * 4)
     target = int(target * SCALE)
     space = len(opens) * len(cores) * len(tails)
     target = min(target, int(space * 0.6))
@@ -210,6 +316,8 @@ def build_cell(trait, bucket, pool, pol, target):
         line = (o + sep1 + c + sep2 + t).strip()
         line = style(trait, line, pol).replace("\n", " ")
         line = re.sub(r"\b([Aa]) (?=[aeiouAEIOU])", r"\1n ", line)
+        if trait == 'wholesome' and CUSS.search(line): continue
+        if trait == 'mogul' and re.search(r"fuck|shit", line, re.I): continue
         seen.add(line)
     return list(seen)
 
