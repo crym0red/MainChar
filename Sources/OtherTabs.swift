@@ -779,14 +779,10 @@ struct ProfileTab: View {
     var body: some View {
         let st = game.s
         let p = st.persona
-        GeometryReader { geo in
-        ZStack(alignment: .top) {
+        VStack(spacing: 0) {
+            topBar(st, p)
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                GeometryReader { g in
-                    Color.clear.preference(key: ProfileScrollKey.self, value: g.frame(in: .named("profile")).minY)
-                }
-                .frame(height: 0)
                 ProfileBanner().id(game.profileRev)
                     .frame(height: 200)
 
@@ -832,29 +828,6 @@ struct ProfileTab: View {
                 .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 40)
             }
         }
-        .coordinateSpace(name: "profile")
-        .onPreferenceChange(ProfileScrollKey.self) { scrolled = $0 < -120 }
-        .ignoresSafeArea(edges: .top)
-        VStack(spacing: 0) {
-            T.bg.frame(height: geo.safeAreaInsets.top).opacity(scrolled ? 1 : 0)
-            Spacer()
-        }
-        .ignoresSafeArea(edges: .top)
-        .allowsHitTesting(false)
-        HStack(spacing: 10) {
-            if scrolled {
-                Text(p.name).font(.jk(20, .bold)).lineLimit(1)
-                if st.followers >= 10000 { VerifiedSeal(size: 18) }
-            }
-            Spacer()
-            topButton("storefront.fill") { showStore = true }
-            topButton("gearshape.fill") { settings = true }
-        }
-        .padding(.horizontal, 16).padding(.top, geo.safeAreaInsets.top + 4).padding(.bottom, 8)
-        .background(scrolled ? T.bg : Color.clear)
-        .overlay(alignment: .bottom) { if scrolled { Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1) } }
-        .ignoresSafeArea(edges: .top)
-        }
         }
         .background(T.bg)
         .fullScreenCover(isPresented: $edit) { EditProfileSheet().zoomed() }
@@ -873,9 +846,26 @@ struct ProfileTab: View {
 
     private func topButton(_ icon: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: icon).font(.system(size: 20, weight: .semibold)).foregroundColor(.white)
-                .frame(width: 58, height: 44).background(Color.black.opacity(0.55)).clipShape(Capsule())
+            Image(systemName: icon).font(.system(size: 19, weight: .semibold)).foregroundColor(.white)
+                .frame(width: 46, height: 46).background(T.card2)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
+    }
+
+    private func topBar(_ st: GameState, _ p: Persona) -> some View {
+        HStack(spacing: 10) {
+            Text("Profile").font(.jk(26, .heavy))
+            Spacer()
+            HStack(spacing: 5) {
+                Image(systemName: "diamond.fill").font(.system(size: 12)).foregroundColor(T.gold)
+                Text("\(st.ex.gems)").font(.jk(15, .bold)).lineLimit(1).fixedSize()
+            }
+            .padding(.horizontal, 14).frame(height: 40).fixedSize().background(T.card2).clipShape(Capsule())
+            topButton("storefront.fill") { showStore = true }
+            topButton("gearshape.fill") { settings = true }
+        }
+        .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 12)
+        .overlay(alignment: .bottom) { Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1) }
     }
 
     private func statTile(_ icon: String, _ value: String, _ label: String, _ tint: Color) -> some View {

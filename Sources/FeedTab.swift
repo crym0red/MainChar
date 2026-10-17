@@ -455,54 +455,194 @@ struct ReplySheet: View {
     @Environment(\.dismiss) private var dismiss
     let postID: UUID
     @State private var text = ""
+    @State private var replyingTo: String? = nil
+    @State private var liked: Set<UUID> = []
+    @FocusState private var focus: Bool
+
+    private let quick = ["💀", "fr", "ratio", "facts", "nah", "🔥"]
+
+    private func mentionText(_ s: String, size: CGFloat) -> Text {
+        var out = Text("")
+        let parts = s.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
+        for (i, w) in parts.enumerated() {
+            let piece = (i == 0 ? "" : " ") + w
+            if w.hasPrefix("@") || w.hasPrefix("#") || w.hasPrefix("$") {
+                out = out + Text(piece).font(.jk(size, .semibold)).foregroundColor(T.blue)
+            } else {
+                out = out + Text(piece).font(.jk(size)).foregroundColor(.white)
+            }
+        }
+        return out
+    }
+
+    private func send() {
+        let body = text.trimmed
+        guard !body.isEmpty else { return }
+        let full = (replyingTo != nil && !body.lowercased().hasPrefix("@\(replyingTo!.lowercased())")) ? "@\(replyingTo!) " + body : body
+        game.reply(to: postID, text: full)
+        text = ""
+        replyingTo = nil
+    }
 
     var body: some View {
-        NavigationStack {
-            let post = game.s.posts.first { $0.id == postID }
-            VStack(spacing: 0) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
-                        if let p = post {
-                            HStack(alignment: .top, spacing: 10) {
-                                Avatar(emoji: p.emoji, key: p.authorHandle, size: 42).profileTap(p.authorHandle)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(p.authorName).font(.jk(15, .bold))
-                                    Text(p.text).font(.jk(15))
-                                }
-                            }
-                            Divider()
-                            if p.comments.isEmpty { Text("No replies yet.").foregroundColor(T.sub).font(.jk(13)) }
-                            ForEach(p.comments) { c in
-                                HStack(alignment: .top, spacing: 10) {
-                                    Avatar(emoji: c.emoji, key: c.handle, size: 32).profileTap(c.handle)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        HStack(spacing: 4) {
-                                            Text(c.name).font(.jk(13, .bold))
-                                            if c.verified { VerifiedSeal(size: 11) }
-                                            Text("@\(c.handle)").font(.jk(12)).foregroundColor(T.sub)
-                                        }.profileTap(c.handle)
-                                        Text(c.text).font(.jk(14))
-                                    }
-                                }
-                            }
-                        }
-                    }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
+        let st = game.s
+        let post = st.posts.first { $0.id == postID }
+        let me = st.persona
+        VStack(spacing: 0) {
+            HStack {
+                Text("Replies").font(.jk(20, .bold))
+                if let p = post {
+                    Text("\(p.comments.count)").font(.jk(13, .bold)).foregroundColor(T.sub)
+                        .padding(.horizontal, 8).padding(.vertical, 3).background(T.card2).clipShape(Capsule())
                 }
-                HStack {
-                    TextField("Reply…", text: $text).padding(10).background(T.card).clipShape(Capsule())
-                    Button {
-                        game.reply(to: postID, text: text); text = ""
-                    } label: {
-                        Image(systemName: "arrow.up.circle.fill").font(.system(size: 32))
-                            .foregroundColor(text.trimmed.isEmpty ? T.sub : T.blue)
-                    }.disabled(text.trimmed.isEmpty)
-                }.padding(12)
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark").font(.system(size: 13, weight: .bold)).foregroundColor(.white)
+                        .frame(width: 32, height: 32).background(T.card2).clipShape(Circle())
+                }
             }
-            .background(T.bg)
-            .navigationTitle("Replies").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 10)
+
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if let p = post {
+                            header(p)
+                            if !(p.queue ?? []).isEmpty {
+                                Label("Live · \(p.queue?.count ?? 0) more replies incoming", systemImage: "dot.radiowaves.left.and.right")
+                                    .font(.jk(12, .bold)).foregroundColor(T.red)
+                                    .padding(.horizontal, 10).padding(.vertical, 5).background(T.red.opacity(0.15)).clipShape(Capsule())
+                                    .padding(.horizontal, 16).padding(.bottom, 10)
+                            }
+                            if p.comments.isEmpty {
+                                VStack(spacing: 6) {
+                                    Text("💬").font(.system(size: 34))
+                                    Text("No replies yet").font(.jk(15, .semibold))
+                                    Text("Start the thread.").font(.jk(13)).foregroundColor(T.sub)
+                                }
+                                .frame(maxWidth: .infinity).padding(.vertical, 40)
+                            }
+                            ForEach(p.comments) { c in
+                                commentRow(c, mine: c.handle == me.handle)
+                                    .id(c.id)
+                            }
+                            Color.clear.frame(height: 8).id("end")
+                        }
+                    }
+                }
+                .onChange(of: post?.comments.count ?? 0) { _ in
+                    withAnimation { proxy.scrollTo("end", anchor: .bottom) }
+                }
+            }
+            composer(me)
         }
+        .background(T.bg.ignoresSafeArea())
         .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func header(_ p: Post) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                Avatar(emoji: p.emoji, key: p.authorHandle, size: 44).profileTap(p.authorHandle)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 5) {
+                        Text(p.authorName).font(.jk(16, .bold)).lineLimit(1)
+                        if p.verified { VerifiedSeal(size: 13) }
+                        Text("@\(p.authorHandle)").font(.jk(13)).foregroundColor(T.sub).lineLimit(1)
+                    }
+                    if !p.tag.isEmpty { Chip(text: p.tag) }
+                }
+                Spacer(minLength: 0)
+            }
+            Text(p.text).postStyled(p.style, base: 17).fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 18) {
+                Label("\(p.comments.count)", systemImage: "bubble.left")
+                Label(short(p.reposts), systemImage: "arrow.2.squarepath")
+                Label(short(p.likes), systemImage: "heart")
+            }
+            .font(.jk(13, .semibold)).foregroundColor(T.sub)
+        }
+        .padding(14)
+        .background(T.card)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(.horizontal, 16).padding(.bottom, 12)
+    }
+
+    private func commentRow(_ c: Comment, mine: Bool) -> some View {
+        let isLiked = liked.contains(c.id)
+        let sameName = c.name.lowercased() == c.handle.lowercased()
+        return HStack(alignment: .top, spacing: 10) {
+            Avatar(emoji: c.emoji, key: c.handle, size: 36).profileTap(c.handle)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 5) {
+                    Text(mine ? "You" : c.name).font(.jk(14, .bold)).lineLimit(1)
+                    if c.verified { VerifiedSeal(size: 12) }
+                    if !sameName && !mine { Text("@\(c.handle)").font(.jk(12)).foregroundColor(T.sub).lineLimit(1) }
+                }
+                .profileTap(c.handle)
+                mentionText(c.text, size: 15).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 18) {
+                    Button { if isLiked { liked.remove(c.id) } else { liked.insert(c.id) } } label: {
+                        Label(isLiked ? "Liked" : "Like", systemImage: isLiked ? "heart.fill" : "heart")
+                            .foregroundColor(isLiked ? T.red : T.sub)
+                    }
+                    if !mine {
+                        Button { replyingTo = c.handle; focus = true } label: {
+                            Label("Reply", systemImage: "arrowshape.turn.up.left").foregroundColor(T.sub)
+                        }
+                    }
+                }
+                .font(.jk(12, .semibold)).padding(.top, 2)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .background(mine ? T.blue.opacity(0.08) : Color.clear)
+        .overlay(alignment: .bottom) { Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1).padding(.leading, 62) }
+    }
+
+    private func composer(_ me: Persona) -> some View {
+        VStack(spacing: 8) {
+            if let r = replyingTo {
+                HStack(spacing: 6) {
+                    Text("Replying to").font(.jk(12)).foregroundColor(T.sub)
+                    Text("@\(r)").font(.jk(12, .bold)).foregroundColor(T.blue)
+                    Spacer()
+                    Button { replyingTo = nil } label: { Image(systemName: "xmark.circle.fill").foregroundColor(T.sub) }
+                }
+                .padding(.horizontal, 16)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(quick, id: \.self) { q in
+                        Button { text += (text.isEmpty || text.hasSuffix(" ") ? "" : " ") + q } label: {
+                            Text(q).font(.jk(13, .semibold)).foregroundColor(.white)
+                                .padding(.horizontal, 12).padding(.vertical, 6).background(T.card2).clipShape(Capsule())
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+            HStack(spacing: 10) {
+                Avatar(emoji: me.emoji, key: me.handle, size: 34)
+                TextField("Add a reply…", text: $text)
+                    .focused($focus)
+                    .submitLabel(.send)
+                    .onSubmit { send() }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(T.card).clipShape(Capsule())
+                Button { send() } label: {
+                    Image(systemName: "arrow.up.circle.fill").font(.system(size: 34))
+                        .foregroundColor(text.trimmed.isEmpty ? T.sub.opacity(0.6) : T.blue)
+                }
+                .disabled(text.trimmed.isEmpty)
+            }
+            .padding(.horizontal, 16)
+        }
+        .padding(.top, 8).padding(.bottom, 10)
+        .background(T.bg)
+        .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.1)).frame(height: 1) }
     }
 }
 

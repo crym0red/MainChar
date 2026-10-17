@@ -335,3 +335,76 @@ struct LaunchRocket: View {
         .frame(height: 150).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
+
+// MARK: - Characters use the studio too
+
+extension Game {
+    /// Gives an NPC post a font, a GIF, generated text, a snippet or their coin so the feed feels alive.
+    func studioDecorate(_ p: inout Post, _ n: NPC, _ st: GameState) {
+        let scene = CastGen.isScene(st.world)
+        var cats: [Int]
+        switch n.trait {
+        case .hype: cats = [4, 7, 0, 11]
+        case .hater: cats = [10, 2, 3]
+        case .gossip: cats = [8, 9, 10]
+        case .mogul: cats = scene ? [1, 6, 4, 7] : [4, 7, 6]
+        case .chaos: cats = scene ? [0, 2, 1, 7] : [0, 2, 7]
+        case .wholesome: cats = [5, 11]
+        default: cats = [0, 2, 6]
+        }
+        let cat = cats.randomElement() ?? 0
+        if Double.random(in: 0...1) < 0.5 {
+            p.text = String(PostGen.make(cat, scene: scene).prefix(240))
+            p.poll = nil
+            if cat == 11 { p.tag = "Poll" }
+        }
+        // hacker output becomes a terminal attachment
+        if cat == 1, p.text.contains("\n"), Double.random(in: 0...1) < 0.6 {
+            let lines = p.text.components(separatedBy: "\n")
+            p.media = Media(kind: "code", title: "terminal.log", lines: Array(lines.prefix(14)), hue: 0.36)
+            p.text = ["output below", "ran it. you won't like this.", "logs don't lie", "ok so this happened"].randomElement() ?? "logs"
+        }
+        // GIFs and memes
+        if p.media == nil, p.poll == nil, Double.random(in: 0...1) < 0.3 {
+            let pool: [String]
+            switch cat {
+            case 0: pool = ["bounce", "glitch", "spin"]
+            case 1: pool = ["matrix", "typing", "glitch"]
+            case 2: pool = ["shake", "bounce", "ghost"]
+            case 3, 9: pool = ["ghost", "glitch", "pulse"]
+            case 4: pool = ["fire", "rocket", "pulse"]
+            case 5: pool = ["heart", "wave"]
+            case 7: pool = ["rocket", "rain", "chart"]
+            case 8: pool = ["glitch", "pulse"]
+            case 10: pool = ["spin", "shake", "fire"]
+            default: pool = ["typing", "matrix", "bounce", "wave"]
+            }
+            let id = pool.randomElement() ?? "bounce"
+            let cap = Double.random(in: 0...1) < 0.6 ? (["fr", "cooked", "me rn", "ts tuff", "no way", "ratio", "it's over", "we're so back", "real", "pov"].randomElement() ?? "") : ""
+            p.media = Media(kind: "gif", title: id, lines: [cap], hue: GifLib.all.first { $0.id == id }?.hue ?? 0.6)
+        }
+        // their own coin
+        if p.media == nil || p.media?.kind == "gif", let c = (st.ex.market?.coins ?? []).first(where: { $0.creator == n.handle && !$0.rugged }),
+           Double.random(in: 0...1) < 0.3 {
+            p.coin = c.id
+            if !p.text.contains("$\(c.id)") { p.text += " $\(c.id)" }
+        }
+        // fonts and colors
+        if Double.random(in: 0...1) < 0.42 {
+            var s = PostStyle()
+            switch cat {
+            case 1: s.font = 1; s.hex = "30D158"
+            case 0: s.font = [3, 4].randomElement() ?? 4; s.hex = PostStyle.palette.randomElement()
+            case 10, 2: s.font = 4; s.hex = n.trait == .hater ? "FF4D4D" : PostStyle.palette.randomElement()
+            case 5: s.font = 3; s.hex = "FF6EB4"
+            case 9, 3: s.font = 2; s.hex = ["BF5AF2", "64D2FF", "FFFFFF"].randomElement()
+            case 7: s.font = 3; s.hex = ["A3E635", "FFD60A", "30D158"].randomElement()
+            default: s.font = Int.random(in: 0...4); s.hex = PostStyle.palette.randomElement()
+            }
+            if p.text.count < 60 { s.scale = [1.0, 1.3, 1.7].randomElement() ?? 1.0 }
+            else if p.text.count < 110 { s.scale = [1.0, 1.0, 1.3].randomElement() ?? 1.0 }
+            if s.hex == "FFFFFF" { s.hex = nil }
+            if !s.isDefault { p.style = s }
+        }
+    }
+}

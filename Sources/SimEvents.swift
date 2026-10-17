@@ -52,10 +52,11 @@ extension Game {
         }
         let body = text ?? Topics.line(trait: n.trait, topics: topics) ?? Lines.feed[n.trait]?.randomElement() ?? "just vibing"
         var p = makePost(n, body, st)
+        studioDecorate(&p, n, st)
         stampPost(&p, st)
         st.posts.insert(p, at: 0)
         logEvent(&st, &items, quiet: quiet, emoji: n.emoji, title: "\(n.name) posted",
-                 detail: String(body.prefix(90)), post: p.id, handles: [n.handle], weight: 8)
+                 detail: String(p.text.prefix(90)), post: p.id, handles: [n.handle], weight: 8)
     }
 
     // MARK: Arguments
