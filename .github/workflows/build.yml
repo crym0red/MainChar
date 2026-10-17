@@ -32,7 +32,7 @@ jobs:
         id: build
         run: |
           set -o pipefail
-          xcodebuild -project Clout.xcodeproj -scheme Clout -configuration Release \
+          xcodebuild -project MainChar.xcodeproj -scheme MainChar -configuration Release \
             -sdk iphoneos -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             build 2>&1 | tee build.log
@@ -97,10 +97,10 @@ jobs:
       - name: Package IPA
         run: |
           mkdir -p Payload
-          cp -R build/Build/Products/Release-iphoneos/Clout.app Payload/
-          zip -qry Clout.ipa Payload
+          cp -R build/Build/Products/Release-iphoneos/MainChar.app Payload/
+          zip -qry MainChar.ipa Payload
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Clout-ipa
-          path: Clout.ipa
+          name: MainChar-ipa
+          path: MainChar.ipa
