@@ -209,7 +209,7 @@ enum Mk {
     }
 
     static func devSeed(_ handle: String, _ trait: Trait?) -> (rugs: Int, loot: Double) {
-        let h = HK.h(handle) % 4
+        let h = Int(HK.h(handle) % 4)
         var r = 0
         switch trait {
         case .chaos?, .hater?: r = 1 + h % 3
