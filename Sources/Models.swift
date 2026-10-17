@@ -230,6 +230,7 @@ struct Extras: Codable, Hashable {
     var boostUntil: Date? = nil
     var statDelta: [String: Int] = [:]
     var statNote: [String: String] = [:]
+    var autoGems: Bool? = nil
 }
 
 // MARK: - World

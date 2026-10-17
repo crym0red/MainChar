@@ -10,6 +10,7 @@ final class Game: ObservableObject {
     @Published var openChat: String? = nil
     @Published var pendingResult: Outcome? = nil
     @Published var toast: String? = nil
+    @Published var profileRev = 0
     @Published var undoSnap: GameState? = nil
 
     var prefetched: StoryEvent?
@@ -111,6 +112,13 @@ final class Game: ObservableObject {
     func spend(_ n: Int) -> Bool {
         tickEnergy()
         var st = s
+        if st.energy + st.bonus < n, st.ex.autoGems ?? false {
+            let lack = n - (st.energy + st.bonus)
+            if st.ex.gems >= lack * 3 {
+                st.ex.gems -= lack * 3
+                st.bonus += lack
+            }
+        }
         guard st.energy + st.bonus >= n else { return false }
         var need = n
         let b = min(st.bonus, need)
@@ -124,7 +132,11 @@ final class Game: ObservableObject {
         return true
     }
 
-    func canAfford(_ n: Int) -> Bool { s.energy + s.bonus >= n }
+    func canAfford(_ n: Int) -> Bool {
+        let have = s.energy + s.bonus
+        if have >= n { return true }
+        return (s.ex.autoGems ?? false) && s.ex.gems >= (n - have) * 3
+    }
 
     var refillReadyAt: Date { Date(timeIntervalSince1970: UserDefaults.standard.double(forKey: "clout.refillAt")) }
     var canRefill: Bool { s.energy < Game.maxEnergy && Date() >= refillReadyAt }

@@ -596,14 +596,25 @@ struct ProfileTab: View {
     @State private var settings = false
     @State private var showLog = false
     @State private var showStore = false
+    @State private var npcSheet: NPC? = nil
+    @State private var openStory: StoryOpen? = nil
+    @State private var allStories = false
+    @State private var unlockInfo = false
+    @State private var scrolled = false
 
     var body: some View {
         let st = game.s
         let p = st.persona
+        GeometryReader { geo in
+        ZStack(alignment: .top) {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
+                GeometryReader { g in
+                    Color.clear.preference(key: ProfileScrollKey.self, value: g.frame(in: .named("profile")).minY)
+                }
+                .frame(height: 0)
                 ZStack(alignment: .topTrailing) {
-                    T.blue
+                    ProfileBanner().id(game.profileRev)
                     HStack(spacing: 10) {
                         topButton("storefront.fill") { showStore = true }
                         topButton("gearshape.fill") { settings = true }
@@ -614,6 +625,7 @@ struct ProfileTab: View {
 
                 HStack(alignment: .top) {
                     Avatar(emoji: p.emoji, key: p.handle, size: 150)
+                        .id(game.profileRev)
                         .overlay(Circle().stroke(T.bg, lineWidth: 6))
                         .offset(y: -75)
                     Spacer()
@@ -656,11 +668,29 @@ struct ProfileTab: View {
                 .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 40)
             }
         }
+        .coordinateSpace(name: "profile")
+        .onPreferenceChange(ProfileScrollKey.self) { scrolled = $0 < -120 }
         .ignoresSafeArea(edges: .top)
+        VStack(spacing: 0) {
+            T.bg.frame(height: geo.safeAreaInsets.top).opacity(scrolled ? 1 : 0)
+            Spacer()
+        }
+        .ignoresSafeArea(edges: .top)
+        .allowsHitTesting(false)
+        }
+        }
         .background(T.bg)
-        .sheet(isPresented: $edit) { EditProfileSheet() }
+        .fullScreenCover(isPresented: $edit) { EditProfileSheet() }
         .sheet(isPresented: $customize) { CustomizeWorldSheet() }
-        .sheet(isPresented: $settings) { SettingsSheet() }
+        .fullScreenCover(isPresented: $settings) { GameSettingsView() }
+        .sheet(item: $npcSheet) { NPCSheet(npc: $0) }
+        .fullScreenCover(item: $openStory) { o in StoriesFlow(openStory: o.story) }
+        .fullScreenCover(isPresented: $allStories) { AllStoriesSheet() }
+        .alert("More characters", isPresented: $unlockInfo) {
+            Button("Got it", role: .cancel) {}
+        } message: {
+            Text("Characters warm up to you as you post, reply, message them and send gifts. Once they follow you they show up here.")
+        }
         .fullScreenCover(isPresented: $showLog) { ActivityLogView() }
         .fullScreenCover(isPresented: $showStore) { StoreView() }
     }
@@ -762,6 +792,8 @@ struct ProfileTab: View {
             .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(Color.white.opacity(0.09), lineWidth: 1.5))
 
+            relationships(st)
+
             VStack(alignment: .leading, spacing: 10) {
                 Text("Achievements").font(.system(size: 22, weight: .medium))
                 ForEach(Game.badgeDefs) { b in
@@ -777,9 +809,91 @@ struct ProfileTab: View {
         }
     }
 
+    private func relNote(_ n: NPC) -> String {
+        if n.affinity >= 70 { return "They're basically your biggest fan." }
+        if n.affinity >= 40 { return "They like where this is going." }
+        return "They're still making up their mind about you."
+    }
+
+    private func relationships(_ st: GameState) -> some View {
+        let rels = st.npcs.filter { $0.id != "newsdesk" && ($0.followsYou || $0.affinity >= 35) }
+        return VStack(alignment: .leading, spacing: 14) {
+            Text("Relationships (\(rels.count))").font(.system(size: 26, weight: .medium)).padding(.top, 6)
+            ForEach(rels) { n in
+                Button { npcSheet = n } label: {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 14) {
+                            Avatar(emoji: n.emoji, key: n.handle, size: 76)
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 6) {
+                                    Text(n.name).font(.system(size: 25, weight: .semibold)).foregroundColor(.white)
+                                    if n.followers >= 40000 { VerifiedSeal(size: 20) }
+                                }
+                                Text("@\(n.handle)").font(.system(size: 20)).foregroundColor(T.sub)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.system(size: 20, weight: .semibold)).foregroundColor(T.sub)
+                        }
+                        HStack(spacing: 14) {
+                            Bar(value: Double(n.affinity) / 100, color: T.lime, height: 24)
+                            Text("\(n.affinity)%").font(.system(size: 22, weight: .medium)).foregroundColor(.white)
+                                .frame(width: 70, alignment: .trailing)
+                        }
+                        Text(relNote(n)).font(.system(size: 20)).foregroundColor(T.sub).multilineTextAlignment(.leading)
+                    }
+                    .padding(18)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(T.card)
+                    .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Color.white.opacity(0.09), lineWidth: 1.5))
+                }
+                .buttonStyle(.plain)
+            }
+            Button { unlockInfo = true } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "questionmark.circle.fill").font(.system(size: 24))
+                    Text("How do I unlock more characters?").font(.system(size: 19))
+                }
+                .foregroundColor(T.sub)
+            }
+        }
+    }
+
     private func posts(_ st: GameState) -> some View {
         let mine = st.posts.filter { $0.isYou }
-        return VStack(spacing: 0) {
+        let stories = st.ex.stories
+        return VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Your Stories").font(.system(size: 26, weight: .medium))
+                Spacer()
+                Button { allStories = true } label: {
+                    Text("View all").font(.system(size: 22, weight: .medium)).foregroundColor(T.blue)
+                }
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    if stories.isEmpty {
+                        Text("No stories yet. Tap Add story on the feed.").font(.system(size: 18)).foregroundColor(T.sub)
+                            .padding(.vertical, 40)
+                    }
+                    ForEach(stories.prefix(10)) { s in
+                        Button { openStory = StoryOpen(story: s.id) } label: {
+                            ZStack(alignment: .bottomLeading) {
+                                StoryThumb(story: s, width: 120, height: 190)
+                                Text(s.text).font(.system(size: 16)).foregroundColor(.white).lineLimit(1)
+                                    .padding(10).frame(width: 120, alignment: .leading)
+                            }
+                        }
+                    }
+                }
+                .padding(18)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(T.card)
+            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(Color.white.opacity(0.09), lineWidth: 1.5))
+
+            Text("Your Posts").font(.system(size: 26, weight: .medium)).padding(.top, 6)
             if mine.isEmpty { EmptyState(emoji: "✍️", title: "No posts yet", detail: "Tap the compose button on the Feed.") }
             ForEach(mine) { p in
                 PostRow(post: p, onReply: {}, onOpen: {}).padding(.horizontal, -16)
@@ -807,41 +921,7 @@ struct ProfileTab: View {
     }
 }
 
-struct EditProfileSheet: View {
-    @EnvironmentObject var game: Game
-    @Environment(\.dismiss) private var dismiss
-    @State private var p = Persona(name: "", handle: "", bio: "", emoji: "🙂", vibe: .clown)
-    private let emojis = ["😎", "🤩", "😈", "🥹", "🕶️", "🤡", "👑", "🦄", "🐸", "🔥", "🌸", "👽"]
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Emoji") {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack { ForEach(emojis, id: \.self) { e in
-                            Button { p.emoji = e } label: {
-                                Text(e).font(.system(size: 28)).padding(6)
-                                    .background(p.emoji == e ? T.blue.opacity(0.4) : Color.clear).clipShape(Circle())
-                            }.buttonStyle(.plain)
-                        } }
-                    }
-                }
-                Section("Name") { TextField("Name", text: $p.name) }
-                Section("Bio") { TextField("Bio", text: $p.bio, axis: .vertical).lineLimit(1...3) }
-                Section("Vibe") {
-                    Picker("Vibe", selection: $p.vibe) {
-                        ForEach(Vibe.allCases) { Text("\($0.emoji) \($0.label)").tag($0) }
-                    }
-                }
-            }
-            .navigationTitle("Edit Profile").navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { game.updatePersona(p); dismiss() }.disabled(p.name.trimmed.isEmpty)
-                }
-            }
-            .onAppear { p = game.s.persona }
-        }
-    }
+struct ProfileScrollKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }

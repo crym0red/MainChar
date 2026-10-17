@@ -123,6 +123,11 @@ struct Avatar: View {
         .task(id: key) {
             guard photo, img == nil else { return }
             if let c = AvatarMem.cache.object(forKey: key as NSString) { img = c; return }
+            if let custom = ProfileImages.load("avatar_" + key) {
+                AvatarMem.cache.setObject(custom, forKey: key as NSString)
+                img = custom
+                return
+            }
             if let loaded = await AvatarLoader.shared.image(seed: key) {
                 AvatarMem.cache.setObject(loaded, forKey: key as NSString)
                 img = loaded
