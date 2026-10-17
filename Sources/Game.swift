@@ -1,6 +1,6 @@
 import SwiftUI
 
-private func clampI(_ v: Int, _ lo: Int, _ hi: Int) -> Int { min(hi, max(lo, v)) }
+func clampI(_ v: Int, _ lo: Int, _ hi: Int) -> Int { min(hi, max(lo, v)) }
 
 @MainActor
 final class Game: ObservableObject {

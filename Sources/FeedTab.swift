@@ -218,8 +218,9 @@ struct FeedTab: View {
 
     private func header(_ st: GameState) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: "sun.max.fill").font(.system(size: 30)).foregroundColor(T.gold)
-            Text("Day \(st.day)").font(.jk(25, .medium))
+            MCLogo(size: 30)
+            Text("Day \(st.day)").font(.jk(14, .semibold)).foregroundColor(T.sub)
+                .padding(.horizontal, 10).padding(.vertical, 5).background(T.card2).clipShape(Capsule())
             Spacer()
             Button { showStore = true } label: {
                 HStack(spacing: 7) {
