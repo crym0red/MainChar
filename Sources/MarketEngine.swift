@@ -23,6 +23,21 @@ struct Coin: Codable, Identifiable, Hashable {
     var pumpedAt: Date? = nil
     var lastShill: Date? = nil
     var start: Double = 0
+    var pool: Double? = nil
+    var looted: Double? = nil
+    var poolV: Double { pool ?? liq }
+}
+
+struct CoinMsg: Codable, Hashable, Identifiable {
+    var id: String = UUID().uuidString
+    var handle: String
+    var name: String
+    var emoji: String
+    var text: String
+    var at: Date
+    var me = false
+    var dev = false
+    var sys = false
 }
 
 struct Holding: Codable, Hashable, Identifiable {
@@ -40,6 +55,11 @@ struct Market: Codable, Hashable {
     var rugsPulled = 0
     var rugsTaken = 0
     var airdropDay: String? = nil
+    var chats: [String: [CoinMsg]]? = nil
+    var watch: [String]? = nil
+    var lords: [String: Double]? = nil
+    var lootEarned: Double? = nil
+    var lootLost: Double? = nil
 }
 
 enum Mk {
@@ -140,7 +160,9 @@ extension Game {
             for _ in 0..<45 { _ = stepCoin(&c, quiet: true) }
             c.born = Date().addingTimeInterval(-Double.random(in: 1800...40000))
             c.rugged = false
+            c.pool = c.liq
         }
+        c.pool = c.pool ?? c.liq
         return c
     }
 
@@ -177,12 +199,14 @@ extension Game {
         c.price = max(1e-7, c.price * exp(r))
         c.peak = max(c.peak, c.price)
         c.liq = max(5, c.liq * (1 + r * 0.3))
+        c.pool = max(2, c.poolV + r * Double(max(1, c.holders)) * (c.mine ? 0.2 : 0.05))
         c.holders = max(1, c.holders + Int(r * 400) + Int.random(in: -2...3))
         c.hist.append(c.price)
         if c.hist.count > 60 { c.hist.removeFirst() }
         if quiet { return nil }
         let age = Date().timeIntervalSince(c.born) / 3600
         if !c.mine, Double.random(in: 0...1) < c.rugP * (1 + min(age, 12) / 6) {
+            c.looted = c.poolV
             c.price *= 0.015
             c.liq = 3
             c.rugged = true
@@ -215,6 +239,8 @@ extension Game {
         if m.coins.count > 16 { m.coins.removeAll { c in c.rugged && !c.mine && !heldIDs.contains(c.id) } }
         let liveIDs = Set(m.coins.map { $0.id })
         m.holds.removeAll { h in !liveIDs.contains(h.id) }
+        if var ch = m.chats { for k in Array(ch.keys) where !liveIDs.contains(k) { ch[k] = nil }; m.chats = ch }
+        if var w = m.watch { w.removeAll { !liveIDs.contains($0) }; m.watch = w }
         st.ex.market = m
         for (c, e) in events.prefix(3) { coinHeadline(&st, &items, c, e, quiet: quiet) }
     }
@@ -269,7 +295,8 @@ extension Game {
         case .rug:
             guard let author = news ?? cast.first else { return }
             let cn = creator?.name ?? "the deployer"
-            var text = "BREAKING: $\(c.id) rugged. \(cn) pulled the liquidity and the price is down 98%. Holders are cooked."
+            let loot = c.looted ?? c.poolV
+            var text = "BREAKING: $\(c.id) rugged. \(cn) pulled the liquidity, pocketed \(Mk.fmtGems(loot)) gems from the holders and the price is down 98%. Holders are cooked."
             if let ch = creator { text += " @\(ch.handle) has not responded." }
             var p = makePost(author, text, st)
             p.tag = "Breaking"
@@ -283,18 +310,23 @@ extension Game {
             p.likes = max(p.likes * 4, 160)
             p.viral = true
             st.posts.insert(p, at: 0)
-            var detail = "\(cn) pulled the liquidity. Down 98%."
+            var detail = "\(cn) pulled the liquidity and pocketed \(Mk.fmtGems(loot)) gems. Down 98%."
             var w = 60
+            var mm = st.ex.market ?? Market()
+            var lords = mm.lords ?? [:]
+            lords[c.creator, default: 0] += loot
+            mm.lords = lords
+            coinChatBurst(&mm, c, st, loot: loot)
             if let h = held {
-                detail += " You lost \(Mk.fmtGems(h.cost)) gems."
+                detail += " You lost \(Mk.fmtGems(h.cost)) gems and \(cn) kept them."
                 w = 90
-                notify(&st, "event", "You got rugged on $\(c.id)", sub: "-\(Mk.fmtGems(h.cost)) gems", handle: c.creator, emoji: "📉")
-                var m = st.ex.market ?? Market()
-                m.rugsTaken += 1
-                m.realized -= h.cost
-                st.ex.market = m
+                notify(&st, "event", "You got rugged on $\(c.id)", sub: "-\(Mk.fmtGems(h.cost)) gems. \(cn) pocketed \(Mk.fmtGems(loot)) gems total", handle: c.creator, emoji: "📉")
+                mm.rugsTaken += 1
+                mm.realized -= h.cost
+                mm.lootLost = (mm.lootLost ?? 0) + h.cost
                 if h.cost >= 10 { st.aura = max(5, st.aura - 2) }
             }
+            st.ex.market = mm
             if let ch = creator, let v = cast.filter({ $0.handle != ch.handle }).randomElement() {
                 _ = escalateFeud(&st, a: ch, b: v, cause: "the $\(c.id) rug")
             }
@@ -366,6 +398,7 @@ extension Game {
         let qty = net / max(1e-9, m.coins[i].price)
         m.coins[i].price *= 1 + min(0.5, net / max(5, m.coins[i].liq) * 0.8)
         m.coins[i].liq += net * 0.5
+        m.coins[i].pool = m.coins[i].poolV + net
         m.coins[i].holders += 1
         if let h = m.holds.firstIndex(where: { $0.id == ticker }) {
             m.holds[h].qty += qty; m.holds[h].cost += Double(amt)
@@ -385,6 +418,7 @@ extension Game {
         if m.coins[i].rugged { gross = min(gross, m.coins[i].liq * f) }
         let net = gross * 0.98
         if !m.coins[i].rugged { m.coins[i].price *= max(0.5, 1 - gross / max(5, m.coins[i].liq) * 0.8) }
+        if !m.coins[i].rugged { m.coins[i].pool = max(1, m.coins[i].poolV - net) }
         let costPart = m.holds[h].cost * f
         let profit = net - costPart
         m.realized += profit
@@ -419,6 +453,7 @@ extension Game {
         c.vol = 0.06
         c.peak = 0.01
         c.drift = 0.02
+        c.pool = Double(seed)
         m.coins.append(c)
         m.holds.append(Holding(id: t, qty: Double(seed) * 0.98 / 0.01, cost: Double(seed)))
         m.launched += 1
@@ -458,23 +493,28 @@ extension Game {
     func marketRugOwn(_ ticker: String) {
         var st = s
         guard var m = st.ex.market, let i = m.coins.firstIndex(where: { $0.id == ticker }), m.coins[i].mine, !m.coins[i].rugged else { return }
-        let c = m.coins[i]
-        var proceeds = 0.0
-        if let h = m.holds.firstIndex(where: { $0.id == ticker }) {
-            proceeds = min(c.liq * 0.85, m.holds[h].qty * c.price)
-            m.realized += proceeds - m.holds[h].cost
-            m.holds.remove(at: h)
-        }
+        let loot = m.coins[i].poolV
+        let held = m.holds.first { $0.id == ticker }
+        let holders = m.coins[i].holders
+        m.realized += loot - (held?.cost ?? 0)
+        m.holds.removeAll { $0.id == ticker }
+        m.coins[i].looted = loot
         m.coins[i].price *= 0.015
         m.coins[i].liq = 3
         m.coins[i].rugged = true
         m.coins[i].ruggedAt = Date()
         m.coins[i].hist.append(m.coins[i].price)
         m.rugsPulled += 1
-        m.dust += proceeds
+        m.lootEarned = (m.lootEarned ?? 0) + loot
+        var lords = m.lords ?? [:]
+        lords[st.persona.handle, default: 0] += loot
+        m.lords = lords
+        m.dust += loot
         let whole = Int(m.dust)
         m.dust -= Double(whole)
         st.ex.gems += whole
+        let dead = m.coins[i]
+        coinChatBurst(&m, dead, st, loot: loot)
         st.ex.market = m
         let cast = st.npcs.filter { $0.id != "newsdesk" }
         for n in cast.shuffled().prefix(5) {
@@ -484,7 +524,7 @@ extension Game {
         st.followers = max(10, Int(Double(st.followers) * 0.93))
         let news = st.npcs.first { $0.id == "newsdesk" } ?? cast.first
         if let author = news {
-            var p = makePost(author, "BREAKING: $\(ticker) rugged. @\(st.persona.handle) pulled the liquidity and the price is down 98%. Holders want answers.", st)
+            var p = makePost(author, "BREAKING: $\(ticker) rugged. @\(st.persona.handle) pulled the liquidity, walked off with \(Mk.fmtGems(loot)) gems from \(holders) holders and the price is down 98%. Holders want answers.", st)
             p.tag = "Breaking"
             stampPost(&p, st)
             var cs: [Comment] = []
@@ -500,8 +540,157 @@ extension Game {
                 _ = escalateFeud(&st, a: v, b: me, cause: "the $\(ticker) rug")
             }
         }
-        notify(&st, "event", "You rugged $\(ticker)", sub: "+\(Mk.fmtGems(proceeds)) gems, the scene will remember", emoji: "💸")
+        notify(&st, "event", "You rugged $\(ticker)", sub: "+\(Mk.fmtGems(loot)) gems from \(holders) holders, the scene will remember", emoji: "💸")
         s = st
-        showToast("Rugged. +\(Mk.fmtGems(proceeds)) gems")
+        showToast("Rugged. +\(Mk.fmtGems(loot)) gems")
+    }
+
+    func marketToggleWatch(_ t: String) {
+        var st = s
+        var m = st.ex.market ?? Market()
+        var w = m.watch ?? []
+        if let i = w.firstIndex(of: t) { w.remove(at: i) } else { w.append(t) }
+        m.watch = w
+        st.ex.market = m
+        s = st
+    }
+}
+
+// MARK: - Coin chat
+
+enum CoinTalk {
+    static let base: [Trait: [String]] = [
+        .hype: ["$T to the moon", "load the bag now", "this is only the start", "aping more, no stop loss", "anyone selling this is ngmi", "$T 100x szn"],
+        .hater: ["you will 100% lose money", "rug incoming, mark my words", "exit liquidity enjoyer", "this chart is fake", "dev wallet looks sus"],
+        .wholesome: ["be careful with your money friends", "small bag, big hopes", "dyor and stay safe", "love this community honestly", "gm everyone"],
+        .gossip: ["deployer wallet looks suspicious", "heard the dev is dumping", "insiders loaded early", "someone in my dms says this is a rug", "allegedly the dev has done this before"],
+        .mogul: ["liquidity is thin, size accordingly", "i'm market making this one", "not a serious asset", "pool depth is the only metric that matters"],
+        .chaos: ["sold my rent for this lol", "bought the top again", "chart go brrr", "my wife left but the chart is green", "i have no idea what this does"]
+    ]
+    static let up = ["green candle szn", "we are so back", "told you not to sell", "number go up", "who sold i need names", "$T printing", "this is what winning feels like"]
+    static let down = ["its over", "bleeding", "who is dumping", "dev do something", "down bad", "should have sold at the top", "pain", "this is fine"]
+    static let dead = ["rugged. unreal.", "dev wallet is empty", "i'm done with this scene", "told you it was a rug", "gone. all of it", "never trusting a launch again", "we got got"]
+    static let toDev = ["dev where is the roadmap", "dev say something", "dev are you holding", "lock the liquidity dev", "dev we believe in you", "dev dont rug us"]
+    static let rage: [[String]] = [
+        ["so much for that", "wow thanks dev", "lesson learned"],
+        ["what the hell dev", "this is crap i trusted you", "damn the dev really did it"],
+        ["fuck this i got rugged", "dev is a piece of shit", "we got fucked lol", "bullshit i want my gems back"],
+        ["fucking scammer dev i hope your wallet gets drained", "this dev is a gutless fuck and everyone here knows it", "rugged by a raccoon in a hoodie, fuck this coin and fuck you", "dev you absolute sack of shit give us our gems back"]
+    ]
+    static let quick = ["🚀 moon", "rug?", "gm", "buying more", "dev doxx", "sold lol"]
+}
+
+extension Game {
+    func coinSpeaker(_ c: Coin, _ st: GameState) -> (npc: NPC, dev: Bool) {
+        let cast = st.npcs.filter { $0.id != "newsdesk" }
+        if !c.mine, !c.rugged, let dv = cast.first(where: { $0.handle == c.creator }), Double.random(in: 0...1) < 0.08 { return (dv, true) }
+        if cast.isEmpty || Double.random(in: 0...1) < 0.5 { return (Crowd.npc(for: Crowd.make().handle), false) }
+        let n = cast.randomElement() ?? Crowd.npc(for: Crowd.make().handle)
+        return (n, n.handle == c.creator)
+    }
+
+    func coinLine(_ c: Coin, _ who: NPC, dev: Bool, _ st: GameState, replyTo: String? = nil) -> String {
+        let heat = Spicy.heat
+        let n = c.hist.count
+        let ch = n > 8 ? c.price / max(1e-9, c.hist[n - 8]) - 1 : 0
+        let crowd = Crowd.looksLikeCrowd(who.handle)
+        var t: String
+        if dev {
+            let bank = c.rugged ? ["i have nothing to say", "..."] : (ch < -0.08 ? ["relax. liquidity is locked", "dips are for buying", "not selling. ever"] : ["building. ignore the noise", "roadmap drops soon", "told you it was early", "wen listing? soon"])
+            t = bank.randomElement() ?? "gm"
+        } else if c.rugged {
+            let bank = CoinTalk.dead + CoinTalk.rage[min(3, heat)]
+            t = crowd && Double.random(in: 0...1) < 0.5 ? Brainrot.line(about: c.name) : (bank.randomElement() ?? "rugged")
+        } else if c.mine, Double.random(in: 0...1) < 0.25 {
+            t = "@\(st.persona.handle) " + (CoinTalk.toDev.randomElement() ?? "dev say something")
+        } else if crowd, Double.random(in: 0...1) < 0.5 {
+            t = Brainrot.line(about: c.name + " " + c.id)
+        } else if ch > 0.08, Double.random(in: 0...1) < 0.5 {
+            t = CoinTalk.up.randomElement() ?? "green"
+        } else if ch < -0.08, Double.random(in: 0...1) < 0.5 {
+            t = CoinTalk.down.randomElement() ?? "red"
+        } else if who.trait == .hater, heat >= 1, Double.random(in: 0...1) < 0.4 {
+            t = Spicy.jab[heat].randomElement() ?? "cope"
+        } else {
+            t = (CoinTalk.base[who.trait] ?? ["gm"]).randomElement() ?? "gm"
+        }
+        t = t.replacingOccurrences(of: "$T", with: "$\(c.id)")
+        if let r = replyTo, Double.random(in: 0...1) < 0.6, !t.hasPrefix("@") { t = "@\(r) " + t }
+        return t
+    }
+
+    private func putChat(_ m: inout Market, _ ticker: String, _ log: [CoinMsg]) {
+        var l = log
+        if l.count > 40 { l.removeFirst(l.count - 40) }
+        var chats = m.chats ?? [:]
+        chats[ticker] = l
+        m.chats = chats
+    }
+
+    func coinChatTick(_ ticker: String) {
+        var st = s
+        guard var m = st.ex.market, let c = m.coins.first(where: { $0.id == ticker }) else { return }
+        var log = m.chats?[ticker] ?? []
+        let now = Date()
+        var replyTo: String? = nil
+        var p = c.rugged ? 0.3 : 0.55
+        if let li = log.lastIndex(where: { $0.me }), now.timeIntervalSince(log[li].at) < 45, log.count - li - 1 < 3 {
+            replyTo = st.persona.handle
+            p = 0.9
+        }
+        guard Double.random(in: 0...1) < p else { return }
+        let sp = coinSpeaker(c, st)
+        let text = coinLine(c, sp.npc, dev: sp.dev, st, replyTo: replyTo)
+        log.append(CoinMsg(handle: sp.npc.handle, name: sp.npc.name, emoji: sp.npc.emoji, text: text, at: now, dev: sp.dev))
+        putChat(&m, ticker, log)
+        st.ex.market = m
+        s = st
+    }
+
+    func coinChatSeed(_ ticker: String) {
+        var st = s
+        guard var m = st.ex.market, let c = m.coins.first(where: { $0.id == ticker }) else { return }
+        var log = m.chats?[ticker] ?? []
+        guard log.count < 6 else { return }
+        let now = Date()
+        var older: [CoinMsg] = []
+        for k in 0..<(8 - log.count) {
+            let sp = coinSpeaker(c, st)
+            older.append(CoinMsg(handle: sp.npc.handle, name: sp.npc.name, emoji: sp.npc.emoji, text: coinLine(c, sp.npc, dev: sp.dev, st),
+                                 at: now.addingTimeInterval(-Double(k + 1) * Double.random(in: 14...40)), dev: sp.dev))
+        }
+        log = (older + log).sorted { $0.at < $1.at }
+        putChat(&m, ticker, log)
+        st.ex.market = m
+        s = st
+    }
+
+    func coinSay(_ ticker: String, _ text: String) {
+        let t = String(text.trimmed.prefix(140))
+        guard !t.isEmpty else { return }
+        var st = s
+        guard var m = st.ex.market, let i = m.coins.firstIndex(where: { $0.id == ticker }) else { return }
+        var log = m.chats?[ticker] ?? []
+        log.append(CoinMsg(handle: st.persona.handle, name: st.persona.name, emoji: st.persona.emoji, text: t, at: Date(), me: true, dev: m.coins[i].mine))
+        let low = t.lowercased()
+        if !m.coins[i].rugged {
+            if ["moon", "buy", "pump", "bull", "hold", "gem", "lfg"].contains(where: { low.contains($0) }) { m.coins[i].drift = min(0.2, m.coins[i].drift + 0.004) }
+            if ["rug", "sell", "dump", "scam", "exit", "dead"].contains(where: { low.contains($0) }) { m.coins[i].drift = max(-0.2, m.coins[i].drift - 0.006) }
+        }
+        putChat(&m, ticker, log)
+        st.ex.market = m
+        s = st
+    }
+
+    func coinChatBurst(_ m: inout Market, _ c: Coin, _ st: GameState, loot: Double) {
+        var log = m.chats?[c.id] ?? []
+        let now = Date()
+        log.append(CoinMsg(handle: "system", name: "System", emoji: "🚨", text: "$\(c.id) rugged. The deployer pocketed \(Mk.fmtGems(loot)) gems.", at: now.addingTimeInterval(-8), sys: true))
+        for k in 0..<6 {
+            let sp = coinSpeaker(c, st)
+            log.append(CoinMsg(handle: sp.npc.handle, name: sp.npc.name, emoji: sp.npc.emoji, text: coinLine(c, sp.npc, dev: false, st),
+                               at: now.addingTimeInterval(-6 + Double(k))))
+        }
+        putChat(&m, c.id, log)
     }
 }

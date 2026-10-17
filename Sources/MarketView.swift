@@ -57,14 +57,44 @@ struct CoinTile: View {
     }
 }
 
+extension Mk {
+    static func age(_ c: Coin) -> String {
+        let s = Int(Date().timeIntervalSince(c.born))
+        if s < 3600 { return "\(max(1, s / 60))m" }
+        if s < 86400 { return "\(s / 3600)h" }
+        return "\(s / 86400)d"
+    }
+    static func riskColor(_ c: Coin) -> Color {
+        switch risk(c) {
+        case "Low": return Color(red: 0.4, green: 0.95, blue: 0.5)
+        case "Medium": return T.gold
+        case "High": return T.orange
+        case "Yours": return Color(red: 0.67, green: 0.62, blue: 0.95)
+        default: return T.red
+        }
+    }
+    static func ago(_ d: Date) -> String {
+        let s = max(0, Int(Date().timeIntervalSince(d)))
+        if s < 5 { return "now" }
+        if s < 60 { return "\(s)s" }
+        if s < 3600 { return "\(s / 60)m" }
+        return "\(s / 3600)h"
+    }
+}
+
 struct MarketView: View {
     @EnvironmentObject var game: Game
     @EnvironmentObject var nav: Nav
     @State private var seg = 0
+    @State private var sort = 0
+    @State private var query = ""
     @State private var detail: TickerID? = nil
     @State private var launch = false
     private let timer = Timer.publish(every: 2.5, on: .main, in: .common).autoconnect()
     private let lav = Color(red: 0.67, green: 0.62, blue: 0.95)
+    private let green = Color(red: 0.4, green: 0.95, blue: 0.5)
+    private let segs = ["Market", "Holdings", "Yours", "Watch", "Rugs"]
+    private let sorts = ["Hot", "Cap", "New", "Risky"]
 
     var body: some View {
         let st = game.s
@@ -74,7 +104,7 @@ struct MarketView: View {
         let cost = m.holds.reduce(0.0) { $0 + $1.cost }
         let pnl = m.realized + (value - cost)
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 16) {
                 HStack {
                     Image(systemName: "paperplane.fill").font(.system(size: 30, weight: .semibold)).foregroundColor(lav)
                         .rotationEffect(.degrees(-20))
@@ -85,23 +115,16 @@ struct MarketView: View {
                     }
                     .padding(.horizontal, 14).frame(height: 44).background(Color.white.opacity(0.08)).clipShape(Capsule())
                 }
-                Text("New Markets").font(.jk(38, .heavy))
-                HStack(spacing: 10) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Portfolio").font(.jk(12)).foregroundColor(T.sub)
-                        Text("\(Mk.fmtGems(value + Double(st.ex.gems))) gems").font(.jk(18, .bold))
-                        Text("\(pnl >= 0 ? "+" : "")\(Mk.fmtGems(pnl)) all-time").font(.jk(12, .semibold))
-                            .foregroundColor(pnl >= 0 ? Color(red: 0.4, green: 0.95, blue: 0.5) : T.red)
-                    }
-                    Spacer()
-                    pill("gift.fill", "Airdrop") { game.marketAirdrop() }
-                    pill("plus", "Launch") { launch = true }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Market").font(.jk(38, .heavy))
+                    Text("\(m.coins.filter { !$0.rugged }.count) live · \(m.coins.filter { $0.rugged }.count) rugged").font(.jk(13)).foregroundColor(T.sub)
                 }
-                .padding(14).background(Color.white.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                HStack(spacing: 22) {
-                    seg("Market", 0); seg("Holdings", 1); seg("Yours", 2)
-                    Spacer()
-                }
+                portfolio(m, st, value: value, pnl: pnl)
+                trending(m)
+                lords(m, st)
+                segBar
+                if seg == 0 { sortBar }
+                search
                 list(m)
             }
             .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 30)
@@ -112,12 +135,6 @@ struct MarketView: View {
         .onChange(of: nav.coin) { _ in openPending() }
         .fullScreenCover(item: $detail) { CoinDetail(ticker: $0.id).zoomed() }
         .sheet(isPresented: $launch) { LaunchSheet().zoomed() }
-    }
-
-    private func seg(_ t: String, _ i: Int) -> some View {
-        Button { seg = i } label: {
-            Text(t).font(.jk(16, .semibold)).foregroundColor(seg == i ? .white : T.sub)
-        }
     }
 
     private func pill(_ icon: String, _ title: String, _ action: @escaping () -> Void) -> some View {
@@ -134,59 +151,240 @@ struct MarketView: View {
         if let t = nav.coin { detail = TickerID(id: t); nav.coin = nil }
     }
 
+    private func portfolio(_ m: Market, _ st: GameState, value: Double, pnl: Double) -> some View {
+        let total = value + Double(st.ex.gems)
+        let held: [(Coin, Double)] = m.holds.compactMap { h -> (Coin, Double)? in
+            guard let c = m.coins.first(where: { $0.id == h.id }) else { return nil }
+            return (c, h.qty * c.price)
+        }.filter { $0.1 > 0.01 }
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("PORTFOLIO").font(.jk(11, .heavy)).foregroundColor(T.sub)
+                    Text("\(Mk.fmtGems(total)) gems").font(.jk(30, .heavy))
+                    Text("\(pnl >= 0 ? "+" : "")\(Mk.fmtGems(pnl)) all-time").font(.jk(13, .semibold))
+                        .foregroundColor(pnl >= 0 ? green : T.red)
+                }
+                Spacer()
+                VStack(spacing: 8) {
+                    pill("gift.fill", "Airdrop") { game.marketAirdrop() }
+                    pill("plus", "Launch") { launch = true }
+                }
+            }
+            GeometryReader { g in
+                HStack(spacing: 2) {
+                    ForEach(Array(held.enumerated()), id: \.offset) { _, e in
+                        Capsule().fill(Color(hue: e.0.hue, saturation: 0.7, brightness: 0.95))
+                            .frame(width: max(4, g.size.width * CGFloat(e.1 / max(1, total))))
+                    }
+                    Capsule().fill(Color.white.opacity(0.14))
+                }
+            }
+            .frame(height: 8)
+            HStack(spacing: 10) {
+                statCell("Rug loot", "+\(Mk.fmtGems(m.lootEarned ?? 0))", green)
+                statCell("Lost to rugs", "-\(Mk.fmtGems(m.lootLost ?? 0))", T.red)
+                statCell("Pulled / hit", "\(m.rugsPulled) / \(m.rugsTaken)", .white)
+            }
+        }
+        .padding(16)
+        .background(LinearGradient(colors: [lav.opacity(0.28), Color.white.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing))
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private func statCell(_ k: String, _ v: String, _ col: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(k.uppercased()).font(.jk(9, .heavy)).foregroundColor(T.sub)
+            Text(v).font(.jk(15, .bold)).foregroundColor(col).lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading).padding(10)
+        .background(Color.black.opacity(0.28)).clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
     @ViewBuilder
-    private func list(_ m: Market) -> some View {
-        let coins: [Coin] = {
-            switch seg {
-            case 1: return m.coins.filter { c in m.holds.contains(where: { $0.id == c.id }) }
-            case 2: return m.coins.filter { $0.mine }
-            default: return m.coins.sorted { a, b in
-                if a.rugged != b.rugged { return !a.rugged }
-                return Mk.mc(a) > Mk.mc(b)
-            }
-            }
-        }()
-        if coins.isEmpty {
-            EmptyState(emoji: "💸", title: seg == 1 ? "No positions" : (seg == 2 ? "No coins launched" : "Nothing listed"),
-                       detail: seg == 2 ? "Launch your own coin and see who buys in." : "Buy into a coin from the Market tab.")
-        } else {
-            VStack(spacing: 0) {
-                ForEach(Array(coins.enumerated()), id: \.element.id) { i, c in
-                    Button { detail = TickerID(id: c.id) } label: { row(c, rank: seg == 0 && !c.rugged ? i + 1 : nil) }.buttonStyle(.plain)
+    private func trending(_ m: Market) -> some View {
+        let hot = m.coins.filter { !$0.rugged }.sorted { Mk.change($0) > Mk.change($1) }.prefix(6)
+        if !hot.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Trending").font(.jk(20, .bold))
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(Array(hot), id: \.id) { c in
+                            let ch = Mk.change(c)
+                            let col: Color = ch >= 0 ? green : T.red
+                            Button { detail = TickerID(id: c.id) } label: {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack(spacing: 8) {
+                                        CoinTile(c: c, size: 30)
+                                        Text(c.id).font(.jk(16, .bold)).foregroundColor(.white)
+                                    }
+                                    Spark(values: Array(c.hist.suffix(30)), color: col, fill: true).frame(height: 34)
+                                    Text(Mk.pct(ch)).font(.jk(15, .bold)).foregroundColor(col)
+                                }
+                                .padding(12).frame(width: 140, alignment: .leading)
+                                .background(Color.white.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                            }.buttonStyle(.plain)
+                        }
+                    }
                 }
             }
         }
     }
 
-    private func row(_ c: Coin, rank: Int?) -> some View {
+    @ViewBuilder
+    private func lords(_ m: Market, _ st: GameState) -> some View {
+        let top = (m.lords ?? [:]).sorted { $0.value > $1.value }.prefix(3)
+        if !top.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 6) {
+                    Text("Rug Lords").font(.jk(20, .bold))
+                    Text("gems taken from holders").font(.jk(12)).foregroundColor(T.sub)
+                }
+                VStack(spacing: 0) {
+                    ForEach(Array(top.enumerated()), id: \.offset) { i, e in
+                        let n = st.npcs.first { $0.handle == e.key }
+                        let isMe = e.key == st.persona.handle
+                        HStack(spacing: 12) {
+                            Text("\(i + 1)").font(.jk(15, .heavy)).foregroundColor([T.gold, Color(white: 0.8), T.orange][i]).frame(width: 18)
+                            Avatar(emoji: isMe ? st.persona.emoji : (n?.emoji ?? "🙂"), key: e.key, size: 34)
+                            Text(isMe ? "You" : (n?.name ?? e.key)).font(.jk(15, .semibold)).lineLimit(1)
+                            Spacer()
+                            Text("+\(Mk.fmtGems(e.value))").font(.jk(15, .bold)).foregroundColor(green)
+                            Image(systemName: "diamond.fill").font(.system(size: 10)).foregroundColor(T.gold)
+                        }
+                        .padding(.vertical, 9)
+                        .profileTap(e.key)
+                    }
+                }
+                .padding(.horizontal, 14).padding(.vertical, 4)
+                .background(Color.white.opacity(0.05)).clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
+        }
+    }
+
+    private var segBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Array(segs.enumerated()), id: \.offset) { i, t in
+                    Button { seg = i } label: {
+                        Text(t).font(.jk(15, .semibold)).foregroundColor(seg == i ? .black : .white)
+                            .padding(.horizontal, 16).frame(height: 36)
+                            .background(seg == i ? Color.white : Color.white.opacity(0.08)).clipShape(Capsule())
+                    }
+                }
+            }
+        }
+    }
+
+    private var sortBar: some View {
+        HStack(spacing: 8) {
+            Text("Sort").font(.jk(12, .semibold)).foregroundColor(T.sub)
+            ForEach(Array(sorts.enumerated()), id: \.offset) { i, t in
+                Button { sort = i } label: {
+                    Text(t).font(.jk(13, .bold)).foregroundColor(sort == i ? .black : T.sub)
+                        .padding(.horizontal, 12).frame(height: 28)
+                        .background(sort == i ? lav : Color.white.opacity(0.07)).clipShape(Capsule())
+                }
+            }
+            Spacer()
+        }
+    }
+
+    private var search: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").foregroundColor(T.sub)
+            TextField("Search ticker or name", text: $query).font(.jk(15)).autocorrectionDisabled().textInputAutocapitalization(.never)
+            if !query.isEmpty {
+                Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundColor(T.sub) }
+            }
+        }
+        .padding(.horizontal, 14).frame(height: 44).background(Color.white.opacity(0.07)).clipShape(Capsule())
+    }
+
+    @ViewBuilder
+    private func list(_ m: Market) -> some View {
+        let q = query.lowercased().trimmed
+        let coins: [Coin] = {
+            var base: [Coin]
+            switch seg {
+            case 1: base = m.coins.filter { c in m.holds.contains(where: { $0.id == c.id }) }
+            case 2: base = m.coins.filter { $0.mine }
+            case 3: base = m.coins.filter { (m.watch ?? []).contains($0.id) }
+            case 4: base = m.coins.filter { $0.rugged }.sorted { ($0.ruggedAt ?? .distantPast) > ($1.ruggedAt ?? .distantPast) }
+            default:
+                switch sort {
+                case 1: base = m.coins.sorted { Mk.mc($0) > Mk.mc($1) }
+                case 2: base = m.coins.sorted { $0.born > $1.born }
+                case 3: base = m.coins.sorted { $0.rugP > $1.rugP }
+                default: base = m.coins.sorted { Mk.change($0) > Mk.change($1) }
+                }
+                base = base.filter { !$0.rugged } + base.filter { $0.rugged }
+            }
+            if !q.isEmpty { base = base.filter { $0.id.lowercased().contains(q) || $0.name.lowercased().contains(q) } }
+            return base
+        }()
+        if coins.isEmpty {
+            let titles = ["Nothing listed", "No positions", "No coins launched", "Nothing watched", "No rugs yet"]
+            let details = ["Try another search.", "Buy into a coin from the Market tab.", "Launch your own coin and see who buys in.", "Tap the heart on a coin to watch it.", "Nobody has rugged. Give it time."]
+            EmptyState(emoji: seg == 4 ? "🧯" : "💸", title: titles[seg], detail: details[seg])
+        } else {
+            VStack(spacing: 8) {
+                ForEach(Array(coins.enumerated()), id: \.element.id) { i, c in
+                    Button { detail = TickerID(id: c.id) } label: { row(c, m, rank: seg == 0 && sort < 2 && !c.rugged ? i + 1 : nil) }.buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func row(_ c: Coin, _ m: Market, rank: Int?) -> some View {
         let ch = Mk.change(c)
-        let col: Color = c.rugged ? T.red : (ch >= 0 ? Color(red: 0.4, green: 0.95, blue: 0.5) : T.red)
-        return HStack(spacing: 14) {
+        let col: Color = c.rugged ? T.red : (ch >= 0 ? green : T.red)
+        let chat = m.chats?[c.id]?.filter { Date().timeIntervalSince($0.at) < 300 }.count ?? 0
+        return HStack(spacing: 12) {
             ZStack(alignment: .bottomTrailing) {
-                CoinTile(c: c, size: 54)
+                CoinTile(c: c, size: 50)
                 if let r = rank, r <= 3 {
                     ZStack {
-                        Image(systemName: "seal.fill").font(.system(size: 24))
+                        Image(systemName: "seal.fill").font(.system(size: 22))
                             .foregroundColor([T.gold, Color(white: 0.8), T.orange][r - 1])
-                        Text("\(r)").font(.jk(11, .heavy)).foregroundColor(.black)
+                        Text("\(r)").font(.jk(10, .heavy)).foregroundColor(.black)
                     }.offset(x: 6, y: 6)
                 }
             }
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text(c.id).font(.jk(20, .bold)).foregroundColor(.white).lineLimit(1)
-                    if c.rugged { Text("RUGGED").font(.jk(9, .heavy)).foregroundColor(.white).padding(.horizontal, 5).padding(.vertical, 2).background(T.red).clipShape(RoundedRectangle(cornerRadius: 4)) }
-                    else if c.mine { Text("YOURS").font(.jk(9, .heavy)).foregroundColor(.black).padding(.horizontal, 5).padding(.vertical, 2).background(lav).clipShape(RoundedRectangle(cornerRadius: 4)) }
+                    Text(c.id).font(.jk(19, .bold)).foregroundColor(.white).lineLimit(1)
+                    if c.rugged { tag("RUGGED", T.red, .white) }
+                    else if c.mine { tag("YOURS", lav, .black) }
+                    else { tag(Mk.risk(c).uppercased(), Mk.riskColor(c).opacity(0.22), Mk.riskColor(c)) }
+                    if (m.watch ?? []).contains(c.id) { Image(systemName: "heart.fill").font(.system(size: 10)).foregroundColor(T.red) }
                 }
-                Text("\(Mk.fmtMC(Mk.mc(c))) MC").font(.jk(16)).foregroundColor(T.sub)
+                if c.rugged {
+                    Text("Deployer pocketed \(Mk.fmtGems(c.looted ?? c.poolV)) gems").font(.jk(13, .semibold)).foregroundColor(T.red).lineLimit(1)
+                } else {
+                    Text("\(Mk.fmtMC(Mk.mc(c))) MC · \(c.holders) holders").font(.jk(13)).foregroundColor(T.sub).lineLimit(1)
+                }
+                HStack(spacing: 8) {
+                    Text(Mk.age(c)).font(.jk(11, .semibold)).foregroundColor(T.sub)
+                    if chat > 0 {
+                        Label("\(chat)", systemImage: "bubble.left.fill").font(.jk(11, .semibold)).foregroundColor(lav)
+                    }
+                }
             }
             Spacer(minLength: 4)
-            VStack(alignment: .trailing, spacing: 3) {
-                Text(Mk.usdPrice(c.price)).font(.jk(19, .semibold)).foregroundColor(.white)
-                Text(Mk.pct(ch)).font(.jk(17, .semibold)).foregroundColor(col)
+            VStack(alignment: .trailing, spacing: 4) {
+                Spark(values: Array(c.hist.suffix(30)), color: col).frame(width: 62, height: 24)
+                Text(Mk.usdPrice(c.price)).font(.jk(15, .semibold)).foregroundColor(.white)
+                Text(Mk.pct(ch)).font(.jk(13, .semibold)).foregroundColor(col)
             }
         }
-        .padding(.vertical, 12)
+        .padding(12)
+        .background(Color.white.opacity(0.05)).clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private func tag(_ t: String, _ bg: Color, _ fg: Color) -> some View {
+        Text(t).font(.jk(9, .heavy)).foregroundColor(fg).padding(.horizontal, 5).padding(.vertical, 2)
+            .background(bg).clipShape(RoundedRectangle(cornerRadius: 4))
     }
 }
 
@@ -196,7 +394,7 @@ struct CoinDetail: View {
     let ticker: String
     @State private var range = 0
     @State private var trade = false
-    @State private var fav = false
+    @State private var chat = false
     private let lav = Color(red: 0.67, green: 0.62, blue: 0.95)
     private let green = Color(red: 0.4, green: 0.95, blue: 0.5)
     private let ranges = ["LIVE", "1D", "1W", "1M", "1Y", "ALL"]
@@ -217,11 +415,21 @@ struct CoinDetail: View {
             }
         }
         .sheet(isPresented: $trade) { TradeSheet(ticker: ticker).zoomed() }
+        .sheet(isPresented: $chat) { CoinChatSheet(ticker: ticker).zoomed() }
     }
 
     private func slice(_ c: Coin) -> [Double] {
         let n = [20, 30, 45, 60, 60, 60][range]
         return Array(c.hist.suffix(n))
+    }
+
+    private func stat(_ k: String, _ v: String, _ col: Color = .white) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(k.uppercased()).font(.jk(10, .heavy)).foregroundColor(T.sub)
+            Text(v).font(.jk(16, .bold)).foregroundColor(col).lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+        .background(Color.white.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
     @ViewBuilder
@@ -230,100 +438,114 @@ struct CoinDetail: View {
         let col: Color = c.rugged ? T.red : (ch >= 0 ? green : T.red)
         let delta = ((c.hist.first.map { c.price - $0 }) ?? 0) * Mk.supply
         let held = m.holds.first { $0.id == c.id }
+        let watching = (m.watch ?? []).contains(c.id)
+        let npc = st.npcs.first { $0.handle == c.creator }
+        let isMe = c.creator == st.persona.handle
+        let prior = m.coins.filter { $0.creator == c.creator && $0.rugged && $0.id != c.id }.count
+        let cname = isMe ? "You" : (npc?.name ?? c.creator)
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
                 Button { dismiss() } label: {
                     Image(systemName: "chevron.left").font(.system(size: 22, weight: .semibold)).foregroundColor(.white).frame(width: 44, height: 44)
                 }
                 Spacer()
-                Button { fav.toggle() } label: {
-                    Image(systemName: fav ? "heart.fill" : "heart").font(.system(size: 20)).foregroundColor(fav ? T.red : .white)
+                Button { game.marketToggleWatch(c.id) } label: {
+                    Image(systemName: watching ? "heart.fill" : "heart").font(.system(size: 20)).foregroundColor(watching ? T.red : .white)
                         .frame(width: 54, height: 54).background(Color.white.opacity(0.08)).clipShape(Circle())
                 }
-                HStack(spacing: 18) {
-                    Image(systemName: "square.and.arrow.up").font(.system(size: 20))
-                    Image(systemName: "ellipsis").font(.system(size: 20, weight: .bold))
+                Button { chat = true } label: {
+                    Image(systemName: "bubble.left.and.bubble.right.fill").font(.system(size: 18)).foregroundColor(.white)
+                        .frame(width: 54, height: 54).background(Color.white.opacity(0.08)).clipShape(Circle())
                 }
-                .foregroundColor(.white).padding(.horizontal, 20).frame(height: 54)
-                .background(Color.white.opacity(0.08)).clipShape(Capsule())
             }
             .padding(.horizontal, 16)
             VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(c.id).font(.jk(44, .heavy))
-                    Text(c.name.uppercased()).font(.jk(15, .semibold)).foregroundColor(T.sub).lineLimit(1)
+                HStack(alignment: .center, spacing: 10) {
+                    CoinTile(c: c, size: 44)
+                    Text(c.id).font(.jk(40, .heavy))
+                    Text(c.name.uppercased()).font(.jk(14, .semibold)).foregroundColor(T.sub).lineLimit(1)
                 }
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(Mk.fmtMC(Mk.mc(c))).font(.jk(44, .heavy))
-                    Image(systemName: "arrow.left.arrow.right").font(.system(size: 16, weight: .semibold)).foregroundColor(T.sub)
-                    Text("MC").font(.jk(18, .semibold)).foregroundColor(T.sub)
-                }
+                Text(Mk.fmtMC(Mk.mc(c))).font(.jk(44, .heavy))
                 Text("\(delta >= 0 ? "+" : "-")\(Mk.fmtMC(abs(delta))) (\(Mk.pct(ch)))")
                     .font(.jk(22, .semibold)).foregroundColor(col)
-                if c.rugged {
-                    Label("Rugged. The liquidity is gone.", systemImage: "exclamationmark.triangle.fill")
-                        .font(.jk(14, .semibold)).foregroundColor(T.red).padding(.top, 4)
-                }
             }
             .padding(.horizontal, 16)
-            Spark(values: slice(c), color: col, dot: true).frame(height: 300).padding(.vertical, 10)
+            if c.rugged {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Rugged. The liquidity is gone.", systemImage: "exclamationmark.triangle.fill")
+                        .font(.jk(15, .bold)).foregroundColor(T.red)
+                    Text("\(cname) pulled the pool and pocketed \(Mk.fmtGems(c.looted ?? c.poolV)) gems from every holder.")
+                        .font(.jk(14)).foregroundColor(.white.opacity(0.85))
+                    if let h = held { Text("Your position lost \(Mk.fmtGems(h.cost)) gems.").font(.jk(13, .semibold)).foregroundColor(T.red) }
+                }
+                .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                .background(T.red.opacity(0.14)).clipShape(RoundedRectangle(cornerRadius: 16))
+                .padding(.horizontal, 16)
+            }
+            Spark(values: slice(c), color: col, fill: true, dot: true).frame(height: 260).padding(.vertical, 10)
             HStack(spacing: 4) {
                 ForEach(Array(ranges.enumerated()), id: \.offset) { i, r in
                     Button { range = i } label: {
                         HStack(spacing: 4) {
                             if i == 0 { Circle().fill(range == 0 ? green : T.sub).frame(width: 6, height: 6) }
-                            Text(r).font(.jk(17, .semibold))
+                            Text(r).font(.jk(16, .semibold))
                         }
                         .foregroundColor(range == i ? .white : T.sub)
-                        .padding(.horizontal, 12).frame(height: 40)
+                        .padding(.horizontal, 12).frame(height: 38)
                         .background(range == i ? Color.white.opacity(0.1) : Color.clear).clipShape(Capsule())
                     }
                 }
                 Spacer()
-                Image(systemName: "slider.horizontal.3").foregroundColor(T.sub).padding(.trailing, 6)
             }
             .padding(.horizontal, 12)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+                stat("Pool", "\(Mk.fmtGems(c.poolV)) gems", T.gold)
+                stat("Holders", "\(c.holders)")
+                stat("Risk", Mk.risk(c), Mk.riskColor(c))
+                stat("Age", Mk.age(c))
+                stat("Peak", Mk.usdPrice(c.peak))
+                stat("Fee", "2%")
+            }
+            .padding(.horizontal, 16)
+            HStack(spacing: 12) {
+                if isMe {
+                    Avatar(emoji: st.persona.emoji, key: st.persona.handle, size: 40)
+                } else {
+                    Avatar(emoji: npc?.emoji ?? "🙂", key: c.creator, size: 40)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Deployer").font(.jk(11, .heavy)).foregroundColor(T.sub)
+                    Text(cname).font(.jk(16, .bold))
+                }
+                Spacer()
+                if prior > 0 {
+                    Text("\(prior) prior rug\(prior == 1 ? "" : "s")").font(.jk(12, .heavy)).foregroundColor(T.red)
+                        .padding(.horizontal, 10).padding(.vertical, 5).background(T.red.opacity(0.15)).clipShape(Capsule())
+                } else {
+                    Text("Clean record").font(.jk(12, .heavy)).foregroundColor(green)
+                        .padding(.horizontal, 10).padding(.vertical, 5).background(green.opacity(0.15)).clipShape(Capsule())
+                }
+            }
+            .padding(12).background(Color.white.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 16))
+            .padding(.horizontal, 16)
+            .profileTap(c.creator)
             Button { trade = true } label: {
                 HStack(spacing: 10) {
                     Image(systemName: held != nil ? "wallet.pass.fill" : "arrow.left.arrow.right")
-                    Text(held != nil ? "Your position: \(Mk.fmtGems((held?.qty ?? 0) * c.price)) gems" : "Trade \(c.id)").font(.jk(20, .semibold))
+                    Text(held != nil ? "Your position: \(Mk.fmtGems((held?.qty ?? 0) * c.price)) gems" : "Trade \(c.id)").font(.jk(19, .semibold))
                 }
-                .foregroundColor(.white.opacity(0.85)).frame(maxWidth: .infinity).frame(height: 62)
+                .foregroundColor(.white.opacity(0.85)).frame(maxWidth: .infinity).frame(height: 58)
                 .background(Color.white.opacity(0.07)).clipShape(Capsule())
                 .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1))
             }
             .padding(.horizontal, 16)
-            HStack {
-                HStack(spacing: 6) {
-                    Text("Live Chat").font(.jk(30, .bold))
-                    Image(systemName: "chevron.right").font(.system(size: 18, weight: .semibold))
-                }
-                Spacer()
-                HStack(spacing: 6) {
-                    Circle().fill(green).frame(width: 9, height: 9)
-                    Text("\(c.holders) here").font(.jk(20, .semibold)).foregroundColor(green)
-                }
-            }
-            .padding(.horizontal, 16).padding(.top, 8)
-            VStack(spacing: 10) {
-                ForEach(Array(chatLines(c, st).enumerated()), id: \.offset) { _, l in
-                    HStack(spacing: 14) {
-                        Avatar(emoji: l.0.emoji, key: l.0.handle, size: 40)
-                        Text(l.1).font(.jk(19)).foregroundColor(.white)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 14).padding(.vertical, 14)
-                    .background(Color.white.opacity(0.07)).clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .profileTap(l.0.handle)
-                }
-            }
-            .padding(.horizontal, 16)
+            CoinChatPreview(ticker: c.id, open: $chat).padding(.horizontal, 16)
         }
     }
 
     private func bar(_ c: Coin) -> some View {
         HStack(spacing: 14) {
-            Text("\(Mk.fmtMC(Mk.mc(c))) market cap").font(.jk(21, .semibold)).lineLimit(1).minimumScaleFactor(0.7)
+            Text("\(Mk.fmtMC(Mk.mc(c))) market cap").font(.jk(20, .semibold)).lineLimit(1).minimumScaleFactor(0.7)
             Button { trade = true } label: {
                 Text(c.rugged ? "Rugged" : "Buy").font(.jk(24, .bold)).foregroundColor(c.rugged ? .white : .black)
                     .frame(maxWidth: .infinity).frame(height: 60)
@@ -333,26 +555,203 @@ struct CoinDetail: View {
         .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 12)
         .background(LinearGradient(colors: [Color.black.opacity(0), Color.black], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
     }
+}
 
-    private func chatLines(_ c: Coin, _ st: GameState) -> [(NPC, String)] {
-        let cast = st.npcs.filter { $0.id != "newsdesk" }
-        guard !cast.isEmpty else { return [] }
-        let bucket = Int(Date().timeIntervalSince1970 / 9)
-        let lines: [Trait: [String]] = [
-            .hype: ["$\(c.id) to the moon", "load the bag now", "this is only the start", "aping more, no stop loss"],
-            .hater: ["You will 100% lose money", "rug incoming, mark my words", "exit liquidity enjoyer", "this chart is fake"],
-            .wholesome: ["be careful with your money friends", "small bag, big hopes", "dyor and stay safe"],
-            .gossip: ["deployer wallet looks suspicious", "heard the dev is dumping", "insiders loaded early"],
-            .mogul: ["liquidity is thin, size accordingly", "i'm market making this one", "not a serious asset"],
-            .chaos: ["sold my rent for this lol", "bought the top again", "chart go brrr"]
-        ]
-        let dead = ["rugged. unreal.", "dev wallet is empty", "i'm done with this scene", "told you it was a rug"]
-        return (0..<4).map { k in
-            let h = HK.h(c.id + "\(bucket - 3 + k)")
-            let n = cast[Int(h % UInt32(cast.count))]
-            let pool = c.rugged ? dead : (lines[n.trait] ?? ["gm"])
-            return (n, pool[Int((h >> 8) % UInt32(pool.count))])
+// MARK: - Coin chat
+
+struct CoinBubble: View {
+    let msg: CoinMsg
+    private let lav = Color(red: 0.67, green: 0.62, blue: 0.95)
+
+    private func styled(_ s: String) -> Text {
+        var out = Text("")
+        for (i, sub) in s.split(separator: " ", omittingEmptySubsequences: false).enumerated() {
+            let w = String(sub)
+            var t = Text((i == 0 ? "" : " ") + w)
+            if w.hasPrefix("$") { t = t.foregroundColor(lav) } else if w.hasPrefix("@") { t = t.foregroundColor(T.gold) }
+            out = out + t
         }
+        return out
+    }
+
+    var body: some View {
+        if msg.sys {
+            Text(msg.text).font(.jk(13, .bold)).foregroundColor(T.red).multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity).padding(10)
+                .background(T.red.opacity(0.12)).clipShape(RoundedRectangle(cornerRadius: 14))
+        } else if msg.me {
+            HStack {
+                Spacer(minLength: 50)
+                VStack(alignment: .trailing, spacing: 3) {
+                    HStack(spacing: 6) {
+                        if msg.dev { badge("DEV") }
+                        Text("You").font(.jk(12, .bold)).foregroundColor(T.sub)
+                        Text(Mk.ago(msg.at)).font(.jk(11)).foregroundColor(T.sub)
+                    }
+                    styled(msg.text).font(.jk(16)).foregroundColor(.black)
+                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        .background(lav).clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                }
+            }
+        } else {
+            HStack(alignment: .top, spacing: 10) {
+                Avatar(emoji: msg.emoji, key: msg.handle, size: 34).profileTap(msg.handle)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(msg.name).font(.jk(12, .bold)).foregroundColor(T.sub).lineLimit(1)
+                        if msg.dev { badge("DEV") }
+                        Text(Mk.ago(msg.at)).font(.jk(11)).foregroundColor(T.sub)
+                    }
+                    styled(msg.text).font(.jk(16)).foregroundColor(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        .background(Color.white.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                }
+                Spacer(minLength: 30)
+            }
+        }
+    }
+
+    private func badge(_ t: String) -> some View {
+        Text(t).font(.jk(9, .heavy)).foregroundColor(.black).padding(.horizontal, 5).padding(.vertical, 2)
+            .background(lav).clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+}
+
+struct CoinChatPreview: View {
+    @EnvironmentObject var game: Game
+    let ticker: String
+    @Binding var open: Bool
+    private let timer = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
+    private let green = Color(red: 0.4, green: 0.95, blue: 0.5)
+    private let lav = Color(red: 0.67, green: 0.62, blue: 0.95)
+
+    var body: some View {
+        let m = game.s.ex.market
+        let log = m?.chats?[ticker] ?? []
+        let holders = m?.coins.first(where: { $0.id == ticker })?.holders ?? 0
+        VStack(alignment: .leading, spacing: 12) {
+            Button { open = true } label: {
+                HStack {
+                    HStack(spacing: 6) {
+                        Text("Live Chat").font(.jk(28, .bold))
+                        Image(systemName: "chevron.right").font(.system(size: 17, weight: .semibold))
+                    }
+                    Spacer()
+                    HStack(spacing: 6) {
+                        Circle().fill(green).frame(width: 9, height: 9)
+                        Text("\(holders) here").font(.jk(18, .semibold)).foregroundColor(green)
+                    }
+                }
+                .foregroundColor(.white)
+            }
+            VStack(spacing: 10) {
+                ForEach(log.suffix(6)) { CoinBubble(msg: $0) }
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(CoinTalk.quick, id: \.self) { q in
+                        Button { game.coinSay(ticker, q) } label: {
+                            Text(q).font(.jk(14, .semibold)).foregroundColor(.white)
+                                .padding(.horizontal, 14).frame(height: 36).background(Color.white.opacity(0.1)).clipShape(Capsule())
+                        }
+                    }
+                }
+            }
+            Button { open = true } label: {
+                HStack {
+                    Text("Say something to the room").font(.jk(16)).foregroundColor(T.sub)
+                    Spacer()
+                    Image(systemName: "arrow.up.circle.fill").font(.system(size: 26)).foregroundColor(lav)
+                }
+                .padding(.horizontal, 16).frame(height: 50)
+                .background(Color.white.opacity(0.07)).clipShape(Capsule())
+            }
+        }
+        .onReceive(timer) { _ in if !open { game.coinChatTick(ticker) } }
+        .onAppear { game.coinChatSeed(ticker) }
+    }
+}
+
+struct CoinChatSheet: View {
+    @EnvironmentObject var game: Game
+    @Environment(\.dismiss) private var dismiss
+    let ticker: String
+    @State private var text = ""
+    @FocusState private var focus: Bool
+    private let timer = Timer.publish(every: 2.5, on: .main, in: .common).autoconnect()
+    private let lav = Color(red: 0.67, green: 0.62, blue: 0.95)
+    private let green = Color(red: 0.4, green: 0.95, blue: 0.5)
+
+    private func send() {
+        let t = text.trimmed
+        guard !t.isEmpty else { return }
+        game.coinSay(ticker, t)
+        text = ""
+    }
+
+    var body: some View {
+        let m = game.s.ex.market
+        let log = m?.chats?[ticker] ?? []
+        let c = m?.coins.first(where: { $0.id == ticker })
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                if let c = c { CoinTile(c: c, size: 36) }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("$\(ticker) chat").font(.jk(20, .bold))
+                    HStack(spacing: 6) {
+                        Circle().fill(c?.rugged == true ? T.red : green).frame(width: 7, height: 7)
+                        Text(c?.rugged == true ? "Room is mourning" : "\(c?.holders ?? 0) here").font(.jk(12, .semibold)).foregroundColor(T.sub)
+                    }
+                }
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark").font(.system(size: 14, weight: .bold)).foregroundColor(.white)
+                        .frame(width: 36, height: 36).background(Color.white.opacity(0.1)).clipShape(Circle())
+                }
+            }
+            .padding(16)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 10) {
+                        ForEach(log) { CoinBubble(msg: $0).id($0.id) }
+                    }
+                    .padding(.horizontal, 16).padding(.bottom, 8)
+                }
+                .onChange(of: log.count) { _ in
+                    if let id = log.last?.id { withAnimation { proxy.scrollTo(id, anchor: .bottom) } }
+                }
+                .onAppear {
+                    if let id = log.last?.id { proxy.scrollTo(id, anchor: .bottom) }
+                }
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(CoinTalk.quick, id: \.self) { q in
+                        Button { game.coinSay(ticker, q) } label: {
+                            Text(q).font(.jk(14, .semibold)).foregroundColor(.white)
+                                .padding(.horizontal, 14).frame(height: 34).background(Color.white.opacity(0.1)).clipShape(Capsule())
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+            .padding(.vertical, 8)
+            HStack(spacing: 10) {
+                TextField("Message the room", text: $text).font(.jk(16)).focused($focus)
+                    .submitLabel(.send).onSubmit { send(); focus = true }
+                    .padding(.horizontal, 16).frame(height: 48)
+                    .background(Color.white.opacity(0.08)).clipShape(Capsule())
+                Button { send() } label: {
+                    Image(systemName: "arrow.up").font(.system(size: 17, weight: .bold)).foregroundColor(.black)
+                        .frame(width: 48, height: 48).background(text.trimmed.isEmpty ? Color.white.opacity(0.2) : lav).clipShape(Circle())
+                }
+            }
+            .padding(.horizontal, 16).padding(.bottom, 14)
+        }
+        .background(Color(red: 0.07, green: 0.07, blue: 0.08))
+        .presentationDetents([.large])
+        .onReceive(timer) { _ in game.coinChatTick(ticker) }
+        .onAppear { game.coinChatSeed(ticker) }
     }
 }
 
@@ -426,7 +825,7 @@ struct TradeSheet: View {
                             .background(st.ex.gems >= buyAmt ? lav : Color.white.opacity(0.12)).clipShape(Capsule())
                     }
                     .disabled(st.ex.gems < buyAmt)
-                    Text("You have \(st.ex.gems) gems. 2% fee, big buys move the price.").font(.jk(12)).foregroundColor(T.sub)
+                    Text("You have \(st.ex.gems) gems. 2% fee, big buys move the price. If \(c.mine ? "you rug" : "the deployer rugs"), the whole pool goes to \(c.mine ? "you" : "them").").font(.jk(12)).foregroundColor(T.sub)
                 }
                 .padding(14).background(Color.white.opacity(0.07)).clipShape(RoundedRectangle(cornerRadius: 16))
             }
@@ -455,13 +854,13 @@ struct TradeSheet: View {
                             .foregroundColor(T.red).frame(maxWidth: .infinity).padding(.vertical, 14)
                             .background(T.red.opacity(0.15)).clipShape(Capsule())
                     }
-                    Text("Rugging cashes out the pool, but the scene will turn on you.").font(.jk(12)).foregroundColor(T.sub)
+                    Text("Rugging pays you the whole pool, \(Mk.fmtGems(c.poolV)) gems from every holder. The scene will turn on you.").font(.jk(12)).foregroundColor(T.sub)
                 }
                 .padding(14).background(Color.white.opacity(0.07)).clipShape(RoundedRectangle(cornerRadius: 16))
                 .alert("Pull the rug on $\(c.id)?", isPresented: $confirmRug) {
                     Button("Rug it", role: .destructive) { game.marketRugOwn(c.id); dismiss() }
                     Button("Hold", role: .cancel) {}
-                } message: { Text("You cash out. Holders lose 98%. You take an aura and follower hit and make enemies.") }
+                } message: { Text("You take the whole pool, \(Mk.fmtGems(c.poolV)) gems. Holders lose 98%. You take an aura and follower hit and make enemies.") }
             }
         }
         .padding(16).padding(.bottom, 20)
@@ -523,7 +922,7 @@ struct LaunchSheet: View {
                         }
                     }
                 }
-                Text("Your seed goes into the pool and you start holding it. Other characters buy in when your hype is up. Shill to keep it moving. You can pull the rug any time, and the scene will remember.")
+                Text("Your seed goes into the pool and you start holding it. Other characters buy in when your hype is up, and their gems sit in the pool. Shill and chat to keep it moving. Pull the rug and the whole pool is yours, and the scene will remember.")
                     .font(.jk(13)).foregroundColor(T.sub)
                 if let e = err { Text(e).font(.jk(14, .semibold)).foregroundColor(T.red) }
                 BigButton(title: "Launch $\(ticker.uppercased().filter { $0.isLetter || $0.isNumber }) for \(seed) gems", color: purple) {
