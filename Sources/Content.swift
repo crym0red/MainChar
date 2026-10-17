@@ -66,13 +66,26 @@ struct ContentSection: View {
 
 let appZoom: CGFloat = 0.75
 
+enum WinInsets {
+    static var window: UIWindow? {
+        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }.first { $0.isKeyWindow }
+    }
+    static var top: CGFloat { window?.safeAreaInsets.top ?? 0 }
+    static var bottom: CGFloat { window?.safeAreaInsets.bottom ?? 0 }
+    static var height: CGFloat { window?.bounds.height ?? 0 }
+}
+
 struct Zoomed: ViewModifier {
     func body(content: Content) -> some View {
         GeometryReader { g in
-            let ins = g.safeAreaInsets
+            // the real device insets, clipped to the part of the screen this view actually covers
+            let fr = g.frame(in: .global)
+            let top = max(0, WinInsets.top - max(0, fr.minY))
+            let bottom = max(0, WinInsets.bottom - max(0, WinInsets.height - fr.maxY))
             content
-                .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: ins.top / appZoom) }
-                .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: ins.bottom / appZoom) }
+                .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: top / appZoom) }
+                .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: bottom / appZoom) }
                 .frame(width: g.size.width / appZoom, height: g.size.height / appZoom)
                 .scaleEffect(appZoom, anchor: .topLeading)
                 .frame(width: g.size.width, height: g.size.height, alignment: .topLeading)

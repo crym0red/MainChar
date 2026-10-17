@@ -305,6 +305,7 @@ struct Extras: Codable, Hashable {
     var simFolUsed: Double? = nil
     var npcStories: [NPCStory]? = nil
     var npcLives: [NPCLive]? = nil
+    var castGen: Int? = nil
 }
 
 // MARK: - World

@@ -89,6 +89,8 @@ actor AvatarLoader {
         if !waiters.isEmpty { waiters.removeFirst().resume() } else { active -= 1 }
     }
 
+    static var femNames: Set<String> { fem }
+    static var malNames: Set<String> { mal }
     private static let fem: Set<String> = ["luna","mina","priya","sofia","sophia","emma","olivia","ava","mia","zoe","chloe","nora","lena","maya","ella","ivy","aria","lily","grace","hannah","nina","anna","sara","sarah","julia","kate","amy","ruby","tara","rosa","eva","isla","leah","jade","iris","vera","cleo","nia","ana","lucia","elena","amara","kira","yuki","sana","lila","rin","jess","jenny","lisa","maria","alice","bella","faith","holly","jasmine","kayla","laura","megan","nadia","paige","riley","willow","stella","hazel","june","ruth","cora","dani","ivana","mara","ines","noor","zara"]
     private static let mal: Set<String> = ["jonah","theo","dev","sam","max","leo","noah","liam","ethan","jack","finn","owen","eli","kai","ben","dan","tom","tim","nick","alex_m","marco","ravi","omar","hugo","cole","miles","jay","rex","ty","zane","felix","arlo","oscar","isaac","adam","luca","niko","remy","sean","gus","ian","joel","drew","carl","raj","ali","jin","tariq","diego","mateo","andre","victor","walt","nate"]
 

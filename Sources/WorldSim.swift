@@ -178,7 +178,7 @@ extension Game {
         rollBudget(&st)
         guard (st.ex.simAuraUsed ?? 0) < Game.dailyAuraBudget,
               (st.ex.simFolUsed ?? 0) < Game.dailyFolBudget else { return }
-        guard Double.random(in: 0...1) < 0.06 else { return }
+        guard Double.random(in: 0...1) < 0.5 else { return }
         var items: [DigestItem] = []
         let fb = st.followers, ab = st.aura
         simTick(&st, &items, quiet: true)
@@ -201,8 +201,9 @@ extension Game {
             if q < 0.42 { simOffer(&st, &items, cast, quiet); return }
         }
         let pre = Double.random(in: 0...1)
-        if pre < 0.12 { simStory(&st, &items, cast, quiet); return }
-        if pre < 0.20 { simGoLive(&st, &items, cast, quiet); return }
+        if pre < 0.16 { simStory(&st, &items, cast, quiet); return }
+        if pre < 0.27 { simGoLive(&st, &items, cast, quiet); return }
+        if pre < 0.42, CastGen.isScene(st.world) { simScene(&st, &items, cast, quiet); return }
         let r = Double.random(in: 0...1)
         if r < 0.24 { simPost(&st, &items, cast, quiet) }
         else if r < 0.48 { simBeef(&st, &items, cast, quiet) }

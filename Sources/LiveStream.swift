@@ -79,8 +79,12 @@ extension Game {
         guard cast.count >= 2 else { return }
         var items: [DigestItem] = []
         var tries = 0
-        while (st.ex.npcStories ?? []).count < 3 && tries < 8 { simStory(&st, &items, cast, true); tries += 1 }
-        if (st.ex.npcLives ?? []).isEmpty, Double.random(in: 0...1) < 0.6 { simGoLive(&st, &items, cast, true) }
+        while (st.ex.npcStories ?? []).count < 10 && tries < 20 { simStory(&st, &items, cast, true); tries += 1 }
+        tries = 0
+        while (st.ex.npcLives ?? []).count < 3 && tries < 6 { simGoLive(&st, &items, cast, true); tries += 1 }
+        if st.posts.count < 16 {
+            st.posts.insert(contentsOf: fallbackPosts(st, 14), at: 0)
+        }
         s = st
     }
 

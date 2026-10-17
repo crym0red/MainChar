@@ -29,6 +29,25 @@ final class Game: ObservableObject {
         } else {
             store = Store()
         }
+        for i in store.saves.indices {
+            var st = store.saves[i]
+            let w = st.world
+            if CastGen.isScene(w), st.ex.castGen != 2 {
+                // replace the generic filler characters with scene characters
+                let keep = Set(w.cast.map { $0.handle } + ["newsdesk"])
+                let gone = Set(st.npcs.filter { !keep.contains($0.handle) && !keep.contains($0.id) }.map { $0.handle })
+                if !gone.isEmpty {
+                    st.npcs.removeAll { gone.contains($0.handle) }
+                    st.ex.npcStories = (st.ex.npcStories ?? []).filter { !gone.contains($0.handle) }
+                    st.ex.npcLives = (st.ex.npcLives ?? []).filter { !gone.contains($0.handle) }
+                    st.ex.rivalries = (st.ex.rivalries ?? []).filter { !gone.contains($0.a) && !gone.contains($0.b) }
+                    st.ex.memories = (st.ex.memories ?? []).filter { !gone.contains($0.handle) }
+                }
+                st.ex.castGen = 2
+            }
+            CastGen.pad(&st.npcs, world: w, avoid: [st.persona.handle])
+            store.saves[i] = st
+        }
         if let d = UserDefaults.standard.data(forKey: "clout.voice.v1"),
            let v = try? JSONDecoder().decode(VoiceStore.self, from: d) { voice = v }
         tickEnergy()
@@ -243,10 +262,12 @@ final class Game: ObservableObject {
             npcs[j].followsYou = true
             npcs[j].affinity = 45
         }
+        CastGen.pad(&npcs, world: w, avoid: [persona.handle])
         npcs.append(w.news)
         var st = GameState(world: w, persona: persona, followers: followers)
         st.intro = intro ?? fallbackIntro(w, persona)
         st.npcs = npcs
+        st.ex.castGen = 2
         st.skills = w.skills
         st.milestones = w.milestones.map { var m = $0; m.done = false; m.skipped = false; return m }
         st.quests = w.quests.map { var q = $0; q.done = false; return q }
@@ -313,7 +334,7 @@ final class Game: ObservableObject {
 
     // MARK: Feed
 
-    private func fallbackPosts(_ st: GameState, _ n: Int) -> [Post] {
+    func fallbackPosts(_ st: GameState, _ n: Int) -> [Post] {
         let pool = st.npcs.filter { $0.id != "newsdesk" }.shuffled()
         guard !pool.isEmpty else { return [] }
         let topics = Topics.forWorld(st.world)
