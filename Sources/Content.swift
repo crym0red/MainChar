@@ -55,6 +55,9 @@ struct ContentSection: View {
                 Text("Moderate").tag(1)
                 Text("Uncensored").tag(2)
             }.pickerStyle(.segmented)
+            Toggle("Unfiltered (turn every filter off)", isOn: Binding(
+                get: { level == 2 && !slurs && !selfHarm && !violence },
+                set: { on in level = on ? 2 : level; slurs = !on; selfHarm = !on; violence = !on }))
             Toggle("Block slurs and hateful language", isOn: $slurs)
             Toggle("Block content encouraging self-harm", isOn: $selfHarm)
             Toggle("Block explicit real-world violence threats", isOn: $violence)

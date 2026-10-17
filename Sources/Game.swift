@@ -4,7 +4,7 @@ func clampI(_ v: Int, _ lo: Int, _ hi: Int) -> Int { min(hi, max(lo, v)) }
 
 @MainActor
 final class Game: ObservableObject {
-    @Published var store: Store { didSet { schedulePersist() } }
+    @Published var store: Store { didSet { schedulePersist(); SyncClient.shared.poke(self) } }
     @Published var typing: Set<String> = []
     @Published var aiNote = ""
     @Published var openChat: String? = nil
@@ -393,6 +393,9 @@ final class Game: ObservableObject {
             }
             negOf[n.handle] = neg
             out.append(Comment(name: n.name, handle: n.handle, emoji: n.emoji, text: body, verified: n.followers >= 40000))
+        }
+        if count >= 2 {
+            for c in crowdComments(Int.random(in: 1...max(2, count)), about: text) { out.insert(c, at: Int.random(in: 0...out.count)) }
         }
         return out
     }

@@ -769,6 +769,8 @@ struct ProfileTab: View {
     @State private var edit = false
     @State private var customize = false
     @State private var styleSheet = false
+    @State private var syncSheet = false
+    @State private var favSheet = false
     @State private var settings = false
     @State private var showLog = false
     @State private var showStore = false
@@ -833,6 +835,8 @@ struct ProfileTab: View {
                 VStack(spacing: 12) {
                     wideButton("globe.europe.africa.fill", "Customize World") { customize = true }
                     wideButton("paintpalette.fill", "Profile Style") { styleSheet = true }
+                    wideButton("arrow.triangle.2.circlepath", "Account Sync") { syncSheet = true }
+                    wideButton("star.fill", "Favorites") { favSheet = true }
                     wideButton("book.closed.fill", "Activity Log") { showLog = true }
                 }
                 .padding(.horizontal, 16).padding(.top, 18)
@@ -848,6 +852,8 @@ struct ProfileTab: View {
             }
         }
         .sheet(isPresented: $styleSheet) { ProfileStyleSheet().zoomed() }
+        .sheet(isPresented: $syncSheet) { SyncSheet().zoomed() }
+        .sheet(isPresented: $favSheet) { FavoritesSheet().zoomed() }
         .coordinateSpace(name: "profile")
         .onPreferenceChange(ProfileScrollKey.self) { scrolled = $0 < -120 }
         .ignoresSafeArea(edges: .top)

@@ -174,6 +174,11 @@ struct PostDetailView: View {
                                 Spacer()
                             }
                             Text(p.text).font(.jk(26)).lineSpacing(4)
+                            if let m = p.media { MediaCard(m: m) }
+                            if let q = p.quote { QuoteCard(q: q) }
+                            if !(p.queue ?? []).isEmpty {
+                                Label("Live: new replies are arriving", systemImage: "dot.radiowaves.left.and.right").font(.jk(14, .bold)).foregroundColor(T.red)
+                            }
                             HStack(spacing: 6) {
                                 Text(stamp).foregroundColor(T.sub)
                                 Text("· \(short(p.likes * 12 / 10 + 40)) Views").foregroundColor(.white)
@@ -201,7 +206,7 @@ struct PostDetailView: View {
                         }
                         ForEach(p.comments) { c in
                             HStack(alignment: .top, spacing: 12) {
-                                Avatar(emoji: c.emoji, key: c.handle, size: 52)
+                                Avatar(emoji: c.emoji, key: c.handle, size: 52).profileTap(c.handle)
                                 VStack(alignment: .leading, spacing: 6) {
                                     HStack(spacing: 6) {
                                         Text(c.name).font(.jk(18, .bold)).lineLimit(1)

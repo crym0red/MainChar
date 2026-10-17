@@ -96,6 +96,8 @@ struct Post: Identifiable, Codable, Hashable {
     var quote: Quote? = nil
     var reacts: [String: Int]? = nil
     var myReact: String? = nil
+    var rtBy: String? = nil
+    var queue: [QComment]? = nil
 }
 
 struct Poll: Codable, Hashable {

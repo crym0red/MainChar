@@ -78,13 +78,20 @@ extension Game {
     func repost(_ id: UUID) {
         var st = s
         guard let i = st.posts.firstIndex(where: { $0.id == id }) else { return }
+        let src = st.posts[i]
+        if src.isYou { showToast("That's already your post"); return }
+        if st.posts.contains(where: { $0.rtBy == st.persona.name && $0.text == src.text && $0.authorHandle == src.authorHandle }) { showToast("Already reposted"); return }
         st.posts[i].reposts += 1
+        var c = src
+        c.id = UUID(); c.rtBy = st.persona.name; c.queue = nil; c.liked = false; c.myReact = nil
+        stampPost(&c, st)
+        st.posts.insert(c, at: 0)
         bump(&st, "react")
-        if let j = st.npcs.firstIndex(where: { $0.handle == st.posts[i].authorHandle }) {
-            st.npcs[j].affinity = clampI(st.npcs[j].affinity + 1, 0, 100)
+        if let j = st.npcs.firstIndex(where: { $0.handle == src.authorHandle }) {
+            st.npcs[j].affinity = clampI(st.npcs[j].affinity + 2, 0, 100)
         }
         s = st
-        showToast("Reposted")
+        showToast("Reposted to your timeline")
     }
 
     func vote(_ id: UUID, _ opt: Int) {

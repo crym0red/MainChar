@@ -31,9 +31,9 @@ struct GameShell: View {
             set: { if !$0 { game.dismissDigest() } })) {
             AwayDigestSheet().zoomed()
         })
-        .onAppear { game.checkStreak(); game.catchUp() }
+        .onAppear { game.checkStreak(); game.catchUp(); Task { await SyncClient.shared.syncAll(game) } }
         .onChange(of: scenePhase) { phase in
-            if phase == .active { game.checkStreak(); game.catchUp() }
+            if phase == .active { game.checkStreak(); game.catchUp(); Task { await SyncClient.shared.syncAll(game) } }
             else { game.stampSim() }
         }
     }
@@ -98,6 +98,7 @@ struct FeedTab: View {
     @State private var mode = 0
     @State private var topic: String? = nil
     private let timer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
+    private let liveTimer = Timer.publish(every: 8, on: .main, in: .common).autoconnect()
     private let olive = Color(red: 0.47, green: 0.38, blue: 0.08)
 
     var body: some View {
@@ -136,6 +137,7 @@ struct FeedTab: View {
             .toolbar(.hidden, for: .navigationBar)
         }
         .onReceive(timer) { _ in game.ambientTick() }
+        .onReceive(liveTimer) { _ in game.liveTick() }
         .onChange(of: game.openPostID) { id in
             if let id = id { path = [id]; game.openPostID = nil }
         }
@@ -382,6 +384,10 @@ struct PostRow: View {
             Avatar(emoji: post.emoji, key: post.authorHandle, size: 52, photo: !isNews)
                 .profileTap(post.authorHandle)
             VStack(alignment: .leading, spacing: 6) {
+                if let by = post.rtBy {
+                    Label(by == st.persona.name ? "You reposted" : "\(by) reposted", systemImage: "arrow.2.squarepath")
+                        .font(.jk(12, .semibold)).foregroundColor(T.sub)
+                }
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 5) {
                         HStack(spacing: 5) {
@@ -389,10 +395,11 @@ struct PostRow: View {
                             if post.verified { VerifiedSeal(size: 16) }
                             Text("@\(post.authorHandle)").font(.jk(16)).foregroundColor(T.sub).lineLimit(1)
                         }.profileTap(post.authorHandle)
+                        if let ts = post.ts { Text("· " + agoString(ts).replacingOccurrences(of: " ago", with: "")).font(.jk(14)).foregroundColor(T.sub).lineLimit(1).fixedSize() }
                         Spacer(minLength: 0)
                         Menu {
                             Button { game.toggleSave(post.id) } label: {
-                                Label(saved ? "Remove bookmark" : "Bookmark", systemImage: "bookmark")
+                                Label(saved ? "Remove favorite" : "Favorite", systemImage: "star")
                             }
                             Button(role: .destructive) { game.hide(post.id) } label: { Label("Hide post", systemImage: "eye.slash") }
                         } label: {
@@ -551,6 +558,12 @@ struct NPCSheet: View {
                 }
                 .padding(.horizontal, 16)
                 Text(live.bio).font(.jk(15)).padding(.horizontal, 16)
+                HStack(spacing: 14) {
+                    Label(Crowd.city(live.handle), systemImage: "mappin.and.ellipse")
+                    Label("Joined " + Crowd.joined(live.handle), systemImage: "calendar")
+                    Label(live.trait.rawValue.capitalized, systemImage: "sparkles")
+                }
+                .font(.jk(12)).foregroundColor(T.sub).padding(.horizontal, 16)
                 HStack(spacing: 8) {
                     Chip(text: live.trait.rawValue.capitalized)
                     if live.followsYou { Chip(text: "Follows you", color: T.blue.opacity(0.8)) }

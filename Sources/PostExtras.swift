@@ -4,8 +4,10 @@ import SwiftUI
 
 struct MediaCard: View {
     let m: Media
+    @State private var open = false
     var body: some View {
         let c = Color(hue: m.hue, saturation: 0.7, brightness: 1)
+        let shown: [String] = (open || m.lines.count <= 8) ? m.lines : Array(m.lines.prefix(7))
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: m.kind == "code" ? "chevron.left.forwardslash.chevron.right" : (m.kind == "leak" ? "lock.open.fill" : "chart.bar.fill"))
@@ -13,9 +15,14 @@ struct MediaCard: View {
                 Text(m.title.uppercased()).font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(c)
                 Spacer()
             }
-            ForEach(Array(m.lines.enumerated()), id: \.offset) { _, l in
+            ForEach(Array(shown.enumerated()), id: \.offset) { _, l in
                 Text(l).font(.system(size: 14, weight: m.kind == "stats" ? .bold : .regular, design: .monospaced))
                     .foregroundColor(l.hasPrefix("+ ") ? T.lime : (l.hasPrefix("- ") ? T.red : .white))
+            }
+            if m.lines.count > 8 {
+                Button { withAnimation { open.toggle() } } label: {
+                    Text(open ? "Collapse file" : "Show full file (\(m.lines.count) lines)").font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(c)
+                }
             }
         }
         .padding(12).frame(maxWidth: .infinity, alignment: .leading)
@@ -105,6 +112,10 @@ struct PostExtras: View {
             if let m = post.media { MediaCard(m: m) }
             if let q = post.quote { QuoteCard(q: q) }
             if let p = post.poll { PollCard(post: post, poll: p) }
+            if !(post.queue ?? []).isEmpty {
+                Label("Live: replies arriving", systemImage: "dot.radiowaves.left.and.right").font(.jk(11, .bold)).foregroundColor(T.red)
+                    .padding(.horizontal, 8).padding(.vertical, 4).background(T.red.opacity(0.15)).clipShape(Capsule())
+            }
             let cs = chips(st)
             if !cs.isEmpty {
                 HStack(spacing: 6) {

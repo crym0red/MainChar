@@ -92,10 +92,7 @@ struct HubView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Text("MainChar")
-                .font(.jk(30, .black))
-                .foregroundStyle(LinearGradient(colors: [Color(red: 0.80, green: 0.62, blue: 1.0), Color(red: 0.55, green: 0.45, blue: 1.0)],
-                                                startPoint: .leading, endPoint: .trailing))
+            MCLogo(size: 32)
             Spacer()
             Button { withAnimation { searching.toggle(); if !searching { query = "" } } } label: {
                 Image(systemName: "magnifyingglass").font(.system(size: 20)).foregroundColor(T.sub)

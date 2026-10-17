@@ -264,7 +264,7 @@ struct Avatar: View {
                 }
                 .frame(width: size, height: size)
             } else {
-                HackerAvatar(key: key, size: size)
+                PortraitAvatar(key: key, size: size)
             }
         }
         .frame(width: size, height: size)
@@ -290,6 +290,13 @@ struct ProfileTap: ViewModifier {
             .contentShape(Rectangle())
             .onTapGesture {
                 if let n = game.s.npcs.first(where: { $0.handle == handle }), n.id != "newsdesk" { npc = n }
+                else if handle != game.s.persona.handle, Crowd.looksLikeCrowd(handle) {
+                    var st = game.s
+                    let n = Crowd.npc(for: handle)
+                    st.npcs.append(n)
+                    game.s = st
+                    npc = n
+                }
             }
             .sheet(item: $npc) { NPCSheet(npc: $0).zoomed() }
     }
