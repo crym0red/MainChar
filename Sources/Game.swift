@@ -1,0 +1,700 @@
+import SwiftUI
+
+private func clampI(_ v: Int, _ lo: Int, _ hi: Int) -> Int { min(hi, max(lo, v)) }
+
+@MainActor
+final class Game: ObservableObject {
+    @Published var store: Store { didSet { schedulePersist() } }
+    @Published var typing: Set<String> = []
+    @Published var aiNote = ""
+    @Published var openChat: String? = nil
+
+    var prefetched: StoryEvent?
+    private var prefetching = false
+    private var fetchingPosts = false
+    private var aiDownUntil = Date.distantPast
+    private var saveTask: Task<Void, Never>?
+    private let key = "clout.store.v4"
+
+    init() {
+        if let d = UserDefaults.standard.data(forKey: "clout.store.v4"),
+           let st = try? JSONDecoder().decode(Store.self, from: d) {
+            store = st
+        } else {
+            store = Store()
+        }
+        tickEnergy()
+    }
+
+    // MARK: Persistence
+
+    private func schedulePersist() {
+        saveTask?.cancel()
+        saveTask = Task {
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            if !Task.isCancelled { self.flush() }
+        }
+    }
+
+    func flush() {
+        if let d = try? JSONEncoder().encode(store) { UserDefaults.standard.set(d, forKey: key) }
+    }
+
+    // MARK: Active save
+
+    var activeIndex: Int? {
+        guard let id = store.activeID else { return nil }
+        return store.saves.firstIndex { $0.id == id }
+    }
+    var playing: Bool { activeIndex != nil }
+
+    var s: GameState {
+        get { if let i = activeIndex { return store.saves[i] }; return .blank }
+        set { if let i = activeIndex { store.saves[i] = newValue } }
+    }
+
+    func saveIndex(_ id: UUID) -> Int? { store.saves.firstIndex { $0.id == id } }
+
+    // MARK: AI availability
+
+    var aiOK: Bool { AIConfig.enabled && Date() > aiDownUntil }
+    private func markDown() {
+        aiDownUntil = Date().addingTimeInterval(60)
+        aiNote = "AI is offline right now. Using built-in content."
+    }
+
+    func testAI() async -> String {
+        do {
+            let r = try await AI.chat(system: "Reply with one short word.", user: "Say ok.")
+            aiDownUntil = .distantPast
+            aiNote = ""
+            return "Connected: " + String(r.trimmed.prefix(40))
+        } catch {
+            return "Failed: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: Energy
+
+    static let maxEnergy = 10
+    static let regenSeconds: Double = 600
+
+    func tickEnergy() {
+        for i in store.saves.indices {
+            var st = store.saves[i]
+            if st.energy >= Game.maxEnergy { continue }
+            let gained = Int(Date().timeIntervalSince(st.lastEnergyTick) / Game.regenSeconds)
+            if gained > 0 {
+                st.energy = min(Game.maxEnergy, st.energy + gained)
+                st.lastEnergyTick = st.lastEnergyTick.addingTimeInterval(Double(gained) * Game.regenSeconds)
+                if st.energy >= Game.maxEnergy { st.lastEnergyTick = Date() }
+                store.saves[i] = st
+            }
+        }
+    }
+
+    /// Pure display helper: (energy, seconds until next point, or nil if full)
+    func liveEnergy(at now: Date) -> (Int, Int?) {
+        let st = s
+        if st.energy >= Game.maxEnergy { return (Game.maxEnergy, nil) }
+        let el = now.timeIntervalSince(st.lastEnergyTick)
+        let gained = Int(el / Game.regenSeconds)
+        let e = min(Game.maxEnergy, st.energy + max(0, gained))
+        if e >= Game.maxEnergy { return (e, nil) }
+        let into = el - Double(max(0, gained)) * Game.regenSeconds
+        return (e, max(0, Int(Game.regenSeconds - into)))
+    }
+
+    private func spend(_ n: Int) -> Bool {
+        tickEnergy()
+        var st = s
+        guard st.energy + st.bonus >= n else { return false }
+        var need = n
+        let b = min(st.bonus, need)
+        st.bonus -= b
+        need -= b
+        if need > 0 {
+            if st.energy >= Game.maxEnergy { st.lastEnergyTick = Date() }
+            st.energy -= need
+        }
+        s = st
+        return true
+    }
+
+    func canAfford(_ n: Int) -> Bool { s.energy + s.bonus >= n }
+
+    var refillReadyAt: Date { Date(timeIntervalSince1970: UserDefaults.standard.double(forKey: "clout.refillAt")) }
+    var canRefill: Bool { s.energy < Game.maxEnergy && Date() >= refillReadyAt }
+    func refill() {
+        guard canRefill else { return }
+        var st = s
+        st.energy = Game.maxEnergy
+        st.lastEnergyTick = Date()
+        s = st
+        UserDefaults.standard.set(Date().addingTimeInterval(3 * 3600).timeIntervalSince1970, forKey: "clout.refillAt")
+    }
+
+    // MARK: XP / notifications
+
+    static func xpNeed(_ level: Int) -> Int { 30 + 3 * level }
+
+    private func notify(_ st: inout GameState, _ kind: String, _ text: String, sub: String = "", handle: String = "", emoji: String = "🔔") {
+        st.notifs.insert(Notif(kind: kind, text: text, sub: sub, handle: handle, emoji: emoji, day: st.day), at: 0)
+        if st.notifs.count > 60 { st.notifs.removeLast(st.notifs.count - 60) }
+    }
+
+    private func gainXP(_ st: inout GameState, _ n: Int) {
+        st.xp += n
+        while st.xp >= Game.xpNeed(st.level) {
+            st.xp -= Game.xpNeed(st.level)
+            st.level += 1
+            st.points += 3
+            st.bonus += 1
+            notify(&st, "level", "You reached level \(st.level)", sub: "+3 skill points, +1 bonus energy", emoji: "⭐️")
+        }
+    }
+
+    private func logIt(_ st: inout GameState, _ emoji: String, _ title: String, _ detail: String) {
+        st.log.insert(LogEntry(day: st.day, emoji: emoji, title: title, detail: detail), at: 0)
+        if st.log.count > 100 { st.log.removeLast(st.log.count - 100) }
+    }
+
+    func markNotifsRead() {
+        var st = s
+        guard st.notifs.contains(where: { $0.unread }) else { return }
+        for i in st.notifs.indices { st.notifs[i].unread = false }
+        s = st
+    }
+
+    var unreadNotifs: Int { s.notifs.filter { $0.unread }.count }
+
+    // MARK: Aura
+
+    private func settleAura(_ st: inout GameState) -> (Bool, Bool) {
+        if st.aura <= 0 {
+            st.followers = max(15, Int(Double(st.followers) * 0.7))
+            st.aura = 15
+            st.cancelledCount += 1
+            notify(&st, "event", "You got cancelled", sub: "Lost 30% of your followers. Aura reset to 15%.", emoji: "🚫")
+            logIt(&st, "🚫", "Cancelled", "Lost 30% of followers")
+            return (true, false)
+        }
+        if st.aura >= 100 {
+            st.followers = Int(Double(st.followers) * 1.2)
+            st.aura = 70
+            st.icon += 1
+            notify(&st, "event", "Icon status unlocked", sub: "+20% followers. Aura settled at 70%.", emoji: "👑")
+            logIt(&st, "👑", "Icon status", "+20% followers")
+            return (false, true)
+        }
+        return (false, false)
+    }
+
+    // MARK: Text helpers
+
+    func npcName(_ t: Trait, _ st: GameState) -> String {
+        st.npcs.first { $0.trait == t && $0.id != "newsdesk" }?.name
+            ?? st.npcs.first { $0.id != "newsdesk" }?.name ?? "someone"
+    }
+
+    func fill(_ t: String, _ st: GameState) -> String {
+        var r = t.replacingOccurrences(of: "{me}", with: st.persona.name)
+        for tr in Trait.allCases {
+            r = r.replacingOccurrences(of: "{\(tr.rawValue)}", with: npcName(tr, st))
+        }
+        return r
+    }
+
+    func fill(_ t: String) -> String { fill(t, s) }
+
+    // MARK: Starting games / worlds
+
+    func start(world: WorldDef, persona: Persona, asNPC: String? = nil) {
+        var w = world
+        w.news.id = "newsdesk"
+        var npcs = w.cast
+        var followers = 150
+        if let h = asNPC, let idx = npcs.firstIndex(where: { $0.handle == h }) {
+            followers = max(150, min(5000, npcs[idx].followers / 20))
+            npcs.remove(at: idx)
+        }
+        npcs.append(w.news)
+        var st = GameState(world: w, persona: persona, followers: followers)
+        st.npcs = npcs
+        st.skills = w.skills
+        st.milestones = w.milestones.map { var m = $0; m.done = false; m.skipped = false; return m }
+        st.quests = w.quests.map { var q = $0; q.done = false; return q }
+        st.posts = fallbackPosts(st, 5)
+        notify(&st, "event", "Welcome to \(w.title)", sub: w.goal, emoji: w.emoji)
+        store.saves.insert(st, at: 0)
+        store.activeID = st.id
+        prefetch()
+        fetchAIPosts()
+    }
+
+    func resume(_ id: UUID) {
+        guard saveIndex(id) != nil else { return }
+        store.activeID = id
+        tickEnergy()
+        prefetch()
+    }
+
+    func exitToHub() { store.activeID = nil; flush() }
+
+    func deleteSave(_ id: UUID) {
+        store.saves.removeAll { $0.id == id }
+        if store.activeID == id { store.activeID = nil }
+    }
+
+    func savePreset(_ w: WorldDef) {
+        store.presets.removeAll { $0.id == w.id }
+        store.presets.insert(w, at: 0)
+    }
+
+    func deletePreset(_ id: String) { store.presets.removeAll { $0.id == id } }
+
+    func resetAll() {
+        store = Store()
+        prefetched = nil
+        flush()
+    }
+
+    func buildWorld(goal: String, setting: String) async -> (WorldDef, Bool) {
+        if AIConfig.enabled {
+            if let w = try? await AI.generateWorld(goal: goal, setting: setting) { return (w, true) }
+            markDown()
+        }
+        return (WorldDef.generic(goal: goal, setting: setting), false)
+    }
+
+    func updateWorld(title: String, goal: String, setting: String) {
+        var st = s
+        if !title.trimmed.isEmpty { st.world.title = title.trimmed }
+        st.world.goal = goal.trimmed
+        st.world.setting = setting.trimmed
+        s = st
+    }
+
+    func updatePersona(_ p: Persona) {
+        var st = s
+        st.persona = p
+        s = st
+    }
+
+    // MARK: Feed
+
+    private func fallbackPosts(_ st: GameState, _ n: Int) -> [Post] {
+        let pool = st.npcs.filter { $0.id != "newsdesk" }
+        guard !pool.isEmpty else { return [] }
+        var out: [Post] = []
+        for _ in 0..<n {
+            guard let npc = pool.randomElement() else { break }
+            let text = Lines.feed[npc.trait]?.randomElement() ?? "just vibing"
+            out.append(makePost(npc, text, st))
+        }
+        return out
+    }
+
+    private func makePost(_ npc: NPC, _ text: String, _ st: GameState) -> Post {
+        let likes = max(8, Int(Double(npc.followers) * Double.random(in: 0.01...0.06)))
+        let cmts = Int.random(in: 0...2)
+        return Post(authorHandle: npc.handle, authorName: npc.name, emoji: npc.emoji, text: text,
+                    likes: likes, reposts: likes / 8,
+                    comments: makeComments(st, auraDelta: 1, count: cmts, exclude: npc.handle),
+                    day: st.day, isYou: false, verified: npc.followers >= 40000 || npc.id == "newsdesk")
+    }
+
+    private func makeComments(_ st: GameState, auraDelta: Int, count: Int, exclude: String = "") -> [Comment] {
+        let pool = st.npcs.filter { $0.id != "newsdesk" && $0.handle != exclude }.shuffled().prefix(count)
+        return pool.map { n in
+            let roll = Double.random(in: 0...1)
+            let neg: Bool = n.trait == .hater ? roll < 0.7 : (auraDelta < 0 ? roll < 0.55 : roll < 0.1)
+            let line = (neg ? Lines.neg[n.trait] : Lines.pos[n.trait])?.randomElement() ?? "👀"
+            return Comment(name: n.name, handle: n.handle, emoji: n.emoji, text: line, verified: n.followers >= 40000)
+        }
+    }
+
+    func refreshFeed(ai: Bool = true) {
+        var st = s
+        st.posts.insert(contentsOf: fallbackPosts(st, 3), at: 0)
+        if st.posts.count > 80 { st.posts.removeLast(st.posts.count - 80) }
+        s = st
+        if ai { fetchAIPosts() }
+    }
+
+    func fetchAIPosts() {
+        guard playing, aiOK, !fetchingPosts else { return }
+        fetchingPosts = true
+        let st = s
+        let (sys, usr) = AIPrompt.posts(st)
+        let sid = st.id
+        Task {
+            do {
+                let items = try await AI.generatePosts(system: sys, user: usr)
+                self.applyAIPosts(items, sid)
+            } catch {
+                self.markDown()
+            }
+            self.fetchingPosts = false
+        }
+    }
+
+    private func applyAIPosts(_ items: [(String, String)], _ sid: UUID) {
+        guard let i = saveIndex(sid) else { return }
+        var st = store.saves[i]
+        var added: [Post] = []
+        for (h, t) in items {
+            if let npc = st.npcs.first(where: { $0.handle == h && $0.id != "newsdesk" }) {
+                added.append(makePost(npc, t, st))
+            }
+        }
+        guard !added.isEmpty else { return }
+        st.posts.insert(contentsOf: added, at: 0)
+        if st.posts.count > 80 { st.posts.removeLast(st.posts.count - 80) }
+        store.saves[i] = st
+    }
+
+    func like(_ id: UUID) {
+        var st = s
+        guard let i = st.posts.firstIndex(where: { $0.id == id }) else { return }
+        st.posts[i].liked.toggle()
+        st.posts[i].likes += st.posts[i].liked ? 1 : -1
+        s = st
+    }
+
+    func toggleSave(_ id: UUID) {
+        var st = s
+        if st.saved.contains(id) { st.saved.remove(id) } else { st.saved.insert(id) }
+        s = st
+    }
+
+    func hide(_ id: UUID) {
+        var st = s
+        st.hidden.insert(id)
+        s = st
+    }
+
+    func reply(to id: UUID, text: String) {
+        let t = text.trimmed
+        guard !t.isEmpty else { return }
+        var st = s
+        guard let i = st.posts.firstIndex(where: { $0.id == id }) else { return }
+        st.posts[i].comments.append(Comment(name: st.persona.name, handle: st.persona.handle, emoji: st.persona.emoji, text: t))
+        if let j = st.npcs.firstIndex(where: { $0.handle == st.posts[i].authorHandle }) {
+            st.npcs[j].affinity = min(100, st.npcs[j].affinity + 2)
+        }
+        gainXP(&st, 3)
+        s = st
+    }
+
+    // MARK: Posting
+
+    @discardableResult
+    func publish(kind: PostKind, text: String, quest: UUID? = nil) -> Outcome? {
+        let t = text.trimmed
+        guard !t.isEmpty else { return nil }
+        guard spend(kind.cost) else { return nil }
+        var st = s
+        let delta = Int.random(in: kind.aura)
+        let base = Double(max(30, st.followers)) / 10.0
+        var mult = kind.reach * st.persona.vibe.likeMult * Double.random(in: 0.7...1.3)
+        mult *= 1 + Double(st.stats["humor"] ?? 30) / 300
+        var likes = max(3, Int(base * mult))
+        let viral = Double.random(in: 0...1) < (kind == .drama ? 0.3 : 0.07)
+        if viral { likes *= 4 }
+        var gain = max(1, Int(Double(likes) * 0.06 * kind.followMult))
+        if delta < 0 { gain = max(1, gain * 3 / 4) }
+        let before = st.followers
+        let comments = makeComments(st, auraDelta: delta, count: Int.random(in: 2...3))
+        let post = Post(authorHandle: st.persona.handle, authorName: st.persona.name, emoji: st.persona.emoji,
+                        text: t, likes: likes, reposts: likes / 7, comments: comments, day: st.day, isYou: true,
+                        verified: st.followers >= 10000, viral: viral, tag: kind.label)
+        st.posts.insert(post, at: 0)
+        st.followers += gain
+        st.aura += delta
+        st.lastAuraDelta = delta
+        st.totalPosts += 1
+        if viral { st.viralCount += 1 }
+
+        let stat: StatKind
+        switch kind {
+        case .meme: stat = .humor
+        case .wholesome, .collab: stat = .charm
+        case .hotTake, .drama: stat = .edge
+        case .flex: stat = .charm
+        case .apology: stat = .mystery
+        }
+        st.stats[stat.rawValue] = clampI((st.stats[stat.rawValue] ?? 30) + 1, 0, 100)
+
+        var xp = 8 + (viral ? 10 : 0)
+        if let qid = quest, let qi = st.quests.firstIndex(where: { $0.id == qid && !$0.done }) {
+            st.quests[qi].done = true
+            xp += st.quests[qi].xp
+            notify(&st, "milestone", "Side quest complete", sub: st.quests[qi].text, emoji: "✅")
+        }
+        gainXP(&st, xp)
+
+        if kind == .collab, let i = st.npcs.indices.filter({ !st.npcs[$0].followsYou && st.npcs[$0].id != "newsdesk" }).randomElement() {
+            st.npcs[i].followsYou = true
+            notify(&st, "follow", "\(st.npcs[i].name) followed you", sub: "@\(st.npcs[i].handle)", handle: st.npcs[i].handle, emoji: st.npcs[i].emoji)
+        }
+        if let c = comments.first {
+            notify(&st, "reply", "\(c.name) replied to your post", sub: c.text, handle: c.handle, emoji: c.emoji)
+        }
+        let (cancelled, icon) = settleAura(&st)
+        logIt(&st, kind.icon, "Posted a \(kind.label)", String(t.prefix(80)))
+        let net = st.followers - before
+        s = st
+        checkBadges()
+
+        var detail = "+\(short(likes)) likes · \(net >= 0 ? "+" : "")\(short(net)) followers · aura \(delta >= 0 ? "+" : "")\(delta)%"
+        var title = viral ? "Went viral!" : "Posted"
+        var emoji = viral ? "🔥" : kind.icon
+        if cancelled { title = "Cancelled"; emoji = "🚫"; detail = "Aura hit 0. Lost 30% of followers." }
+        if icon { title = "Icon status!"; emoji = "👑"; detail = "Aura hit 100%. +20% followers." }
+        return Outcome(emoji: emoji, title: title, detail: detail)
+    }
+
+    // MARK: Events
+
+    func ensureEvent() {
+        guard playing, s.currentEvent == nil, s.result == nil else { return }
+        if let p = prefetched {
+            s.currentEvent = p
+            prefetched = nil
+        } else {
+            useScripted()
+        }
+        prefetch()
+    }
+
+    private func useScripted() {
+        var st = s
+        let pool = Story.all.filter { !st.seen.contains($0.id) }
+        let e: StoryEvent
+        if let p = pool.randomElement() {
+            e = p
+        } else {
+            st.seen = []
+            e = Story.all[Int.random(in: 0..<Story.all.count)]
+        }
+        st.seen.append(e.id)
+        st.currentEvent = e
+        s = st
+    }
+
+    func prefetch() {
+        guard playing, aiOK, prefetched == nil, !prefetching else { return }
+        prefetching = true
+        let (sys, usr) = AIPrompt.event(s)
+        Task {
+            do {
+                self.prefetched = try await AI.generateEvent(system: sys, user: usr)
+            } catch {
+                self.markDown()
+            }
+            self.prefetching = false
+        }
+    }
+
+    func choose(_ i: Int) {
+        var st = s
+        guard let e = st.currentEvent, st.result == nil, e.choices.indices.contains(i) else { return }
+        let c = e.choices[i]
+        let before = st.followers
+        st.aura += c.aura
+        st.lastAuraDelta = c.aura
+        st.followers = max(0, Int((Double(st.followers) * (1 + c.fol / 100)).rounded()))
+
+        var sc: [StatChange] = []
+        for d in c.stats {
+            st.stats[d.kind.rawValue] = clampI((st.stats[d.kind.rawValue] ?? 30) + d.v * 2, 0, 100)
+            sc.append(StatChange(kind: d.kind, up: d.v > 0))
+        }
+        var nc: [NPCChange] = []
+        for d in c.npc {
+            for j in st.npcs.indices where st.npcs[j].trait == d.trait && st.npcs[j].id != "newsdesk" {
+                st.npcs[j].affinity = clampI(st.npcs[j].affinity + d.d * 8, 0, 100)
+                nc.append(NPCChange(emoji: st.npcs[j].emoji, handle: st.npcs[j].handle, up: d.d > 0))
+                if d.d > 0, st.npcs[j].affinity >= 40, !st.npcs[j].followsYou {
+                    st.npcs[j].followsYou = true
+                    notify(&st, "follow", "\(st.npcs[j].name) followed you", sub: "@\(st.npcs[j].handle)", handle: st.npcs[j].handle, emoji: st.npcs[j].emoji)
+                }
+            }
+        }
+
+        if let news = st.npcs.first(where: { $0.id == "newsdesk" }) {
+            let likes = max(40, Int(Double(max(st.followers, 100)) * Double.random(in: 0.2...0.6)))
+            var p = makePost(news, fill(c.news, st), st)
+            p.likes = likes
+            p.reposts = likes / 6
+            p.tag = "Breaking"
+            st.posts.insert(p, at: 0)
+        }
+
+        let (cancelled, icon) = settleAura(&st)
+        let rec = ResultRecord(emoji: e.emoji, text: fill(c.result, st), auraDelta: c.aura, auraAfter: st.aura,
+                               followerDelta: st.followers - before, stats: sc, npcs: nc,
+                               cancelled: cancelled, iconUnlocked: icon)
+        logIt(&st, e.emoji, "Event", String(fill(e.text, st).prefix(80)))
+        st.recent.append(String(fill(e.text, st).prefix(100)))
+        if st.recent.count > 6 { st.recent.removeFirst(st.recent.count - 6) }
+        st.eventsDone += 1
+        gainXP(&st, 15 + max(0, c.aura))
+        st.result = rec
+        s = st
+        checkBadges()
+    }
+
+    func continueStory() {
+        var st = s
+        st.day += 1
+        st.currentEvent = nil
+        st.result = nil
+        if Bool.random(),
+           let i = st.npcs.indices.filter({ !st.npcs[$0].followsYou && st.npcs[$0].id != "newsdesk" }).randomElement() {
+            st.npcs[i].followsYou = true
+            notify(&st, "follow", "\(st.npcs[i].name) followed you", sub: "@\(st.npcs[i].handle)", handle: st.npcs[i].handle, emoji: st.npcs[i].emoji)
+        }
+        s = st
+        refreshFeed()
+        prefetch()
+    }
+
+    // MARK: DMs
+
+    func startChat(_ handle: String) {
+        var st = s
+        if st.threads[handle] == nil {
+            st.threads[handle] = []
+            s = st
+        }
+    }
+
+    func markChatRead(_ handle: String) {
+        if s.unread.contains(handle) {
+            var st = s
+            st.unread.remove(handle)
+            s = st
+        }
+    }
+
+    func sendDM(handle: String, text: String) {
+        let t = text.trimmed
+        guard !t.isEmpty, !typing.contains(handle) else { return }
+        var st = s
+        guard let n = st.npcs.first(where: { $0.handle == handle }) else { return }
+        st.threads[handle, default: []].append(DMMessage(fromYou: true, text: t))
+        s = st
+        typing.insert(handle)
+        let sid = st.id
+        let hist = st.threads[handle] ?? []
+        let (sys, usr) = AIPrompt.dm(st, npc: n, history: hist)
+        let useAI = aiOK
+        Task {
+            var reply: String? = nil
+            if useAI {
+                do { reply = try await AI.reply(system: sys, user: usr) } catch { self.markDown() }
+            }
+            if reply == nil { try? await Task.sleep(nanoseconds: 1_300_000_000) }
+            let msg = reply ?? (Lines.dm[n.trait]?.randomElement() ?? "👀")
+            self.deliver(sid, handle, msg)
+        }
+    }
+
+    private func deliver(_ sid: UUID, _ handle: String, _ text: String) {
+        typing.remove(handle)
+        guard let i = saveIndex(sid) else { return }
+        var st = store.saves[i]
+        st.threads[handle, default: []].append(DMMessage(fromYou: false, text: text))
+        if let j = st.npcs.firstIndex(where: { $0.handle == handle }) {
+            st.npcs[j].affinity = min(100, st.npcs[j].affinity + 3)
+        }
+        if openChat != handle { st.unread.insert(handle) }
+        store.saves[i] = st
+    }
+
+    // MARK: Goals
+
+    func upgrade(_ skillID: UUID) {
+        var st = s
+        guard st.points > 0, let i = st.skills.firstIndex(where: { $0.id == skillID }) else { return }
+        st.skills[i].value += 1
+        st.points -= 1
+        s = st
+    }
+
+    func canClaim(_ m: Milestone, _ st: GameState) -> Bool {
+        m.reqs.allSatisfy { r in
+            st.skills.indices.contains(r.skill) && st.skills[r.skill].value >= r.level
+        }
+    }
+
+    var nextMilestone: Milestone? { s.milestones.first { !$0.done && !$0.skipped } }
+
+    var goalProgress: Double {
+        let ms = s.milestones
+        guard !ms.isEmpty else { return 0 }
+        return Double(ms.filter { $0.done || $0.skipped }.count) / Double(ms.count)
+    }
+
+    func claim(_ id: UUID) {
+        var st = s
+        guard let i = st.milestones.firstIndex(where: { $0.id == id }), !st.milestones[i].done,
+              canClaim(st.milestones[i], st) else { return }
+        st.milestones[i].done = true
+        st.followers = Int(Double(st.followers) * 1.15)
+        st.bonus += 1
+        notify(&st, "milestone", "Milestone reached", sub: st.milestones[i].text, emoji: "🏁")
+        logIt(&st, "🏁", "Milestone", st.milestones[i].text)
+        gainXP(&st, 40)
+        s = st
+        checkBadges()
+    }
+
+    func skip(_ id: UUID) {
+        var st = s
+        guard let i = st.milestones.firstIndex(where: { $0.id == id }), !st.milestones[i].done else { return }
+        st.milestones[i].skipped = true
+        s = st
+    }
+
+    // MARK: Badges
+
+    static let badgeDefs: [Badge] = [
+        Badge(id: "first", title: "First Post", emoji: "🎉"),
+        Badge(id: "k1", title: "1K Followers", emoji: "🌱"),
+        Badge(id: "k10", title: "10K Followers", emoji: "📈"),
+        Badge(id: "k100", title: "100K Followers", emoji: "💯"),
+        Badge(id: "m1", title: "1M Followers", emoji: "🏆"),
+        Badge(id: "viral", title: "Went Viral", emoji: "🔥"),
+        Badge(id: "icon", title: "Icon Status", emoji: "👑"),
+        Badge(id: "cancel", title: "Got Cancelled", emoji: "🚫"),
+        Badge(id: "lvl5", title: "Level 5", emoji: "⭐️"),
+        Badge(id: "goal", title: "Goal Reached", emoji: "🎯")
+    ]
+
+    func checkBadges() {
+        var st = s
+        var earned: [String] = []
+        if st.totalPosts >= 1 { earned.append("first") }
+        if st.followers >= 1000 { earned.append("k1") }
+        if st.followers >= 10_000 { earned.append("k10") }
+        if st.followers >= 100_000 { earned.append("k100") }
+        if st.followers >= 1_000_000 { earned.append("m1") }
+        if st.viralCount > 0 { earned.append("viral") }
+        if st.icon > 0 { earned.append("icon") }
+        if st.cancelledCount > 0 { earned.append("cancel") }
+        if st.level >= 5 { earned.append("lvl5") }
+        if !st.milestones.isEmpty && st.milestones.allSatisfy({ $0.done || $0.skipped }) { earned.append("goal") }
+        var changed = false
+        for id in earned where !st.achievements.contains(id) {
+            st.achievements.insert(id)
+            changed = true
+            if let b = Game.badgeDefs.first(where: { $0.id == id }) {
+                notify(&st, "milestone", "Achievement: \(b.title)", emoji: b.emoji)
+            }
+        }
+        if changed { s = st }
+    }
+}
