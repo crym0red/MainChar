@@ -431,7 +431,7 @@ final class TacScene {
 
         view.scene = scene
         view.pointOfView = camNode
-        view.antialiasingMode = .multisampling4X
+        view.antialiasingMode = .multisampling2X
         view.rendersContinuously = true
         view.preferredFramesPerSecond = 60
         view.backgroundColor = .black

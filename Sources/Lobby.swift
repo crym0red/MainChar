@@ -43,10 +43,16 @@ struct LobbyView: View {
         }
         .onAppear {
             OrientationLock.set(landscape: true)
-            if bg == nil {
-                let b = TacScene()
-                b.build(TacticalEngine())
-                bg = b
+            ensureBg()
+        }
+        .onChange(of: nav.tacPlay) { v in
+            if v != nil {
+                bg?.view.isPlaying = false
+                bg?.view.scene = nil
+                bg = nil
+            } else {
+                OrientationLock.set(landscape: true)
+                ensureBg()
             }
         }
         .fullScreenCover(isPresented: Binding(get: { nav.tacPlay != nil }, set: { if !$0 { nav.tacPlay = nil } })) {
@@ -55,6 +61,13 @@ struct LobbyView: View {
         .sheet(isPresented: Binding(get: { sheet != nil }, set: { if !$0 { sheet = nil } })) {
             sheetBody.environmentObject(game).preferredColorScheme(.dark)
         }
+    }
+
+    private func ensureBg() {
+        guard bg == nil, nav.tacPlay == nil else { return }
+        let b = TacScene()
+        b.build(TacticalEngine())
+        bg = b
     }
 
     // MARK: top
