@@ -1600,7 +1600,6 @@ struct TacticalPlay: View {
             if engine.over { overView }
         }
         .statusBarHidden(true)
-        .onDisappear { OrientationLock.set(landscape: false) }
         .onAppear {
             OrientationLock.set(landscape: true)
             engine.fp = false

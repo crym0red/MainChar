@@ -6,17 +6,7 @@ struct GameShell: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        VStack(spacing: 0) {
-            ZStack {
-                T.bg.ignoresSafeArea()
-                switch nav.tab {
-                case 1: ArmoryView()
-                default: SurvivalHub()
-                }
-            }
-            .frame(maxHeight: .infinity)
-            SurvivalBar()
-        }
+        LobbyView()
         .tint(.white)
         .fullScreenCover(isPresented: Binding(get: { game.playing && game.s.intro?.done == false }, set: { _ in })) {
             IntroFlow().zoomed()

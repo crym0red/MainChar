@@ -927,6 +927,7 @@ struct SurvivalHub: View {
 
 struct ArmoryView: View {
     @EnvironmentObject var game: Game
+    var section = 0
 
     var body: some View {
         let st = game.s
@@ -934,11 +935,21 @@ struct ArmoryView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Text("Armory").font(.jk(30, .heavy))
+                    Text(section == 0 ? "Store" : "Gear Up").font(.jk(30, .heavy))
                     Spacer()
                     Text("💎 \(st.ex.gems)").font(.jk(18, .bold))
                 }
-                Text("GUNS").font(.jk(11, .heavy)).foregroundColor(T.sub)
+                if section == 0 { gunRows(d) }
+                if section == 1 { upRows(d) }
+            }
+            .padding(16).padding(.bottom, 30)
+        }
+        .background(T.bg.ignoresSafeArea())
+    }
+
+    @ViewBuilder private func gunRows(_ d: SurvData) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("GUNS").font(.jk(11, .heavy)).foregroundColor(T.sub)
                 ForEach(Guns.all.filter { $0.id != "pistol" }, id: \.id) { g in
                     let owned = d.guns.contains(g.id)
                     HStack(spacing: 12) {
@@ -957,14 +968,16 @@ struct ArmoryView: View {
                     }
                     .padding(12).background(T.card).clipShape(RoundedRectangle(cornerRadius: 16))
                 }
-                Text("UPGRADES").font(.jk(11, .heavy)).foregroundColor(T.sub).padding(.top, 6)
-                up("hp", "❤️", "Max health", "+15 per level", d.hp, 25)
-                up("dmg", "💢", "Damage", "+8% per level", d.dmg, 35)
-                up("spd", "👟", "Move speed", "+4% per level", d.spd, 30)
-                up("mag", "📦", "Magazine size", "+10% per level", d.mag, 25)
-                up("loot", "💎", "Gem luck", "+10% gems per level", d.loot, 40)
-            }
-            .padding(16).padding(.bottom, 30)
+        }
+    }
+
+    @ViewBuilder private func upRows(_ d: SurvData) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("UPGRADES").font(.jk(11, .heavy)).foregroundColor(T.sub)
+            up("dmg", "💢", "Damage", "+8% per level", d.dmg, 35)
+            up("spd", "👟", "Move speed", "+4% per level", d.spd, 30)
+            up("mag", "📦", "Magazine size", "+10% per level", d.mag, 25)
+            up("loot", "💎", "Gem luck", "+10% gems per level", d.loot, 40)
         }
     }
 

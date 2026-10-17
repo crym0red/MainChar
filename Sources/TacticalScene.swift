@@ -691,3 +691,12 @@ extension TacticalEngine {
         }
     }
 }
+
+extension TacScene {
+    func orbit(_ time: Double) {
+        let a = time * 0.12
+        let cx: Double = 850, cz: Double = 600
+        camNode.position = SCNVector3(Float(cx + cos(a) * 520), 300, Float(cz + sin(a) * 420))
+        camNode.look(at: SCNVector3(Float(cx), 20, Float(cz)))
+    }
+}
