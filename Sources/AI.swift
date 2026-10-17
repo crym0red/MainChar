@@ -424,6 +424,7 @@ enum AIPrompt {
         let user = """
         \(worldBlock(s))
         \(s.persona.name) is the player with \(short(s.followers)) followers. Your affinity with them is \(npc.affinity)/100.
+        \(Game.briefFor(s, npc.handle))
         Conversation so far:
         \(hist)
         Write only \(npc.name)'s next message.

@@ -171,6 +171,7 @@ extension Game {
             st.npcs[j].followsYou = true
             notify(&st, "follow", "\(n.name) is now following you", sub: n.bio, handle: n.handle, emoji: n.emoji)
         }
+        remember(&st, n.handle, "gift", "you sent me a gift", mood: 2)
         logIt(&st, "💝", "Sent a gift to \(n.name)", "gift")
         s = st
         showToast("Gift sent to \(n.name)")
@@ -335,6 +336,10 @@ extension Game {
         var warm = n.affinity >= 50
         if n.affinity < 50 && n.affinity >= 30 { warm = Bool.random() }
         if n.trait == .hater && n.affinity < 70 { warm = Double.random(in: 0...1) < 0.2 }
+        let f = feeling(st, n.handle)
+        if abs(f) >= 2, Bool.random(), let m = strongestMemory(st, n.handle, positive: f > 0) {
+            return MemLines.dm(m, positive: f > 0)
+        }
         let bucket = warm ? "dm.warm" : "dm.cold"
         return Corpus.line(trait: n.trait, bucket: bucket, me: st.persona.handle, topic: topic, quote: quote)
             ?? (Lines.dm[n.trait]?.randomElement() ?? "👀")

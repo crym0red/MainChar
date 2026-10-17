@@ -219,6 +219,50 @@ struct Story: Codable, Hashable, Identifiable {
     var comments: [Comment] = []
 }
 
+struct HistoryItem: Codable, Hashable, Identifiable {
+    var id = UUID()
+    var day: Int
+    var emoji: String
+    var title: String
+    var detail: String
+    var date: Date = Date()
+}
+
+struct DigestItem: Codable, Hashable, Identifiable {
+    var id = UUID()
+    var emoji: String
+    var title: String
+    var detail: String
+    var postID: UUID? = nil
+}
+
+struct Digest: Codable, Hashable {
+    var items: [DigestItem]
+    var followerDelta: Int
+    var auraDelta: Int
+    var minutes: Int
+}
+
+struct Rivalry: Codable, Hashable, Identifiable {
+    var id: String
+    var a: String
+    var b: String
+    var heat: Int
+    var cause: String? = nil
+    var lastDay: Int? = nil
+}
+
+struct Memory: Codable, Hashable, Identifiable {
+    var id = UUID()
+    var handle: String
+    var kind: String
+    var text: String
+    var mood: Int
+    var day: Int
+    var ref: UUID? = nil
+    var aired: Int? = nil
+}
+
 /// Everything added after v1 lives here so older saves keep decoding.
 struct Extras: Codable, Hashable {
     var stories: [Story] = []
@@ -231,6 +275,15 @@ struct Extras: Codable, Hashable {
     var statDelta: [String: Int] = [:]
     var statNote: [String: String] = [:]
     var autoGems: Bool? = nil
+    var history: [HistoryItem]? = nil
+    var rivalries: [Rivalry]? = nil
+    var lastSim: Date? = nil
+    var digest: Digest? = nil
+    var memories: [Memory]? = nil
+    var hot: String? = nil
+    var spotlight: Int? = nil
+    var spotGain: Int? = nil
+    var fame: Int? = nil
 }
 
 // MARK: - World

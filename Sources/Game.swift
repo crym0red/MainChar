@@ -11,6 +11,7 @@ final class Game: ObservableObject {
     @Published var pendingResult: Outcome? = nil
     @Published var toast: String? = nil
     @Published var profileRev = 0
+    @Published var openPostID: UUID? = nil
     @Published var undoSnap: GameState? = nil
 
     var prefetched: StoryEvent?
@@ -213,6 +214,7 @@ final class Game: ObservableObject {
             st.aura = 15
             st.cancelledCount += 1
             notify(&st, "event", "You got cancelled", sub: "Lost 30% of your followers. Aura reset to 15%.", emoji: "🚫")
+            addHistory(&st, "🚫", "\(st.persona.name) got cancelled", "The timeline turned on them. Aura reset to 15%.")
             logIt(&st, "🚫", "Cancelled", "Lost 30% of followers")
             return (true, false)
         }
@@ -221,6 +223,7 @@ final class Game: ObservableObject {
             st.aura = 70
             st.icon += 1
             notify(&st, "event", "Icon status unlocked", sub: "+20% followers. Aura settled at 70%.", emoji: "👑")
+            addHistory(&st, "👑", "\(st.persona.name) reached icon status", "Aura hit 100%. The whole world noticed.")
             logIt(&st, "👑", "Icon status", "+20% followers")
             return (false, true)
         }
@@ -482,6 +485,8 @@ final class Game: ObservableObject {
         if let j = st.npcs.firstIndex(where: { $0.handle == st.posts[i].authorHandle }) {
             st.npcs[j].affinity = min(100, st.npcs[j].affinity + 2)
         }
+        let replied = st.posts[i]
+        rememberReply(&st, post: replied, text: t)
         gainXP(&st, 3)
         let sid = st.id
         let target = st.npcs.first(where: { $0.handle == st.posts[i].authorHandle && $0.id != "newsdesk" })?.handle
@@ -505,7 +510,7 @@ final class Game: ObservableObject {
         mult *= 1 + Double(st.stats["humor"] ?? 30) / 300
         mult *= takePower(&st)
         var likes = max(3, Int(base * mult))
-        let viral = Double.random(in: 0...1) < (kind == .drama ? 0.3 : 0.07)
+        let viral = Double.random(in: 0...1) < (kind == .drama ? 0.3 : 0.07) + viralBoost(st, t)
         if viral { likes *= 4 }
         var gain = max(1, Int(Double(likes) * 0.06 * kind.followMult))
         if delta < 0 { gain = max(1, gain * 3 / 4) }
@@ -520,6 +525,8 @@ final class Game: ObservableObject {
         st.lastAuraDelta = delta
         st.totalPosts += 1
         if viral { st.viralCount += 1 }
+        rememberPost(&st, post: post, comments: comments, delta: delta, kind: kind, text: t)
+        if viral { goViral(&st, post) }
 
         let stat: StatKind
         switch kind {
@@ -770,6 +777,7 @@ final class Game: ObservableObject {
         guard let n = st.npcs.first(where: { $0.handle == handle }) else { return }
         st.threads[handle, default: []].append(DMMessage(fromYou: true, text: t))
         logIt(&st, "💬", "Messaged \(n.name)", "dm", kind: "dm", body: t, handle: n.handle)
+        remember(&st, n.handle, "chat", "you actually texted me", mood: 1)
         s = st
         typing.insert(handle)
         let sid = st.id
@@ -833,6 +841,7 @@ final class Game: ObservableObject {
         st.bonus += 1
         st.ex.gems += 3
         notify(&st, "milestone", "Milestone reached", sub: st.milestones[i].text, emoji: "🏁")
+        addHistory(&st, "🏁", "Milestone reached", st.milestones[i].text)
         logIt(&st, "🏁", "Milestone", st.milestones[i].text)
         gainXP(&st, 40)
         s = st

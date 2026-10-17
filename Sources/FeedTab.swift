@@ -20,9 +20,15 @@ struct GameShell: View {
             IntroFlow()
         }
         .toastOverlay()
-        .onAppear { game.checkStreak() }
+        .background(Color.clear.fullScreenCover(isPresented: Binding(
+            get: { game.playing && game.s.ex.digest != nil && game.s.intro?.done != false },
+            set: { if !$0 { game.dismissDigest() } })) {
+            AwayDigestSheet()
+        })
+        .onAppear { game.checkStreak(); game.catchUp() }
         .onChange(of: scenePhase) { phase in
-            if phase == .active { game.checkStreak() }
+            if phase == .active { game.checkStreak(); game.catchUp() }
+            else { game.stampSim() }
         }
     }
 }
@@ -79,7 +85,10 @@ struct FeedTab: View {
             .navigationDestination(for: UUID.self) { PostDetailView(postID: $0) }
             .toolbar(.hidden, for: .navigationBar)
         }
-        .onReceive(timer) { _ in game.tickEnergy() }
+        .onReceive(timer) { _ in game.tickEnergy(); game.ambientTick() }
+        .onChange(of: game.openPostID) { id in
+            if let id = id { path = [id]; game.openPostID = nil }
+        }
         .onAppear {
             game.refreshIfStale()
             if let id = game.pendingResult?.postID, path.last != id { path = [id] }
@@ -387,6 +396,7 @@ struct NPCSheet: View {
                 Text("Relationship").font(.system(size: 12)).foregroundColor(T.sub)
                 Bar(value: Double(live.affinity) / 100, color: T.lime)
             }.padding(.horizontal, 28)
+            MemoryBlock(handle: live.handle)
             if game.s.ex.gifts > 0 {
                 BigButton(title: "Send gift 💝 (\(game.s.ex.gifts) left)", color: T.card2) {
                     game.sendGift(live.handle)
@@ -401,7 +411,7 @@ struct NPCSheet: View {
             Spacer()
         }
         .background(T.bg)
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
     }
 }
 

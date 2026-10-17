@@ -599,6 +599,7 @@ struct ProfileTab: View {
     @State private var npcSheet: NPC? = nil
     @State private var openStory: StoryOpen? = nil
     @State private var allStories = false
+    @State private var showHistory = false
     @State private var unlockInfo = false
     @State private var scrolled = false
 
@@ -686,6 +687,7 @@ struct ProfileTab: View {
         .sheet(item: $npcSheet) { NPCSheet(npc: $0) }
         .fullScreenCover(item: $openStory) { o in StoriesFlow(openStory: o.story) }
         .fullScreenCover(isPresented: $allStories) { AllStoriesSheet() }
+        .fullScreenCover(isPresented: $showHistory) { WorldHistoryView() }
         .alert("More characters", isPresented: $unlockInfo) {
             Button("Got it", role: .cancel) {}
         } message: {
@@ -818,6 +820,15 @@ struct ProfileTab: View {
     private func relationships(_ st: GameState) -> some View {
         let rels = st.npcs.filter { $0.id != "newsdesk" && ($0.followsYou || $0.affinity >= 35) }
         return VStack(alignment: .leading, spacing: 14) {
+            Button { showHistory = true } label: {
+                HStack {
+                    Text("🌍").font(.system(size: 24))
+                    Text("World History").font(.system(size: 17, weight: .semibold))
+                    Spacer()
+                    Image(systemName: "chevron.right").foregroundColor(T.sub)
+                }
+                .padding(14).background(RoundedRectangle(cornerRadius: 16).fill(T.card))
+            }.buttonStyle(.plain)
             Text("Relationships (\(rels.count))").font(.system(size: 26, weight: .medium)).padding(.top, 6)
             ForEach(rels) { n in
                 Button { npcSheet = n } label: {
