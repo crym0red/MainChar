@@ -970,14 +970,14 @@ final class TacticalEngine {
             w.fill(Path(a), with: .color(Color(red: 0.3, green: 0.2, blue: 0.1)))
             w.fill(Path(b), with: .color(Color(red: 0.3, green: 0.2, blue: 0.1)))
         }
-        // walls
-        for o in TMap.walls {
-            w.fill(Path(o.offsetBy(dx: 0, dy: 9)), with: .color(.black.opacity(0.45)))
-            w.fill(Path(o), with: .color(Color(red: 0.1, green: 0.12, blue: 0.16)))
-            w.fill(Path(o.offsetBy(dx: 0, dy: -4)), with: .color(Color(red: 0.8, green: 0.82, blue: 0.84)))
-            w.stroke(Path(o.offsetBy(dx: 0, dy: -4)), with: .color(Color(red: 0.35, green: 0.38, blue: 0.42)), lineWidth: 1.5)
+        // walls + props, depth sorted, extruded
+        var items: [(CGFloat, Int, Int)] = []
+        for (i, o) in TMap.walls.enumerated() where o.insetBy(dx: -60, dy: -60).intersects(cam) { items.append((o.maxY, 0, i)) }
+        for (i, pr) in TMap.props.enumerated() where pr.r.insetBy(dx: -60, dy: -60).intersects(cam) { items.append((pr.r.maxY, 1, i)) }
+        items.sort { $0.0 < $1.0 }
+        for it in items {
+            if it.1 == 0 { drawWall(&w, TMap.walls[it.2]) } else { drawProp3(&w, TMap.props[it.2]) }
         }
-        for pr in TMap.props where pr.r.intersects(cam) { drawProp(&w, pr) }
         for k in packs where !k.taken {
             w.fill(Path(ellipseIn: CGRect(x: k.pos.x - 13, y: k.pos.y - 13, width: 26, height: 26)), with: .color(Color(red: 0.2, green: 0.8, blue: 0.4).opacity(0.9)))
             w.fill(Path(CGRect(x: k.pos.x - 3, y: k.pos.y - 8, width: 6, height: 16)), with: .color(.white))
@@ -997,6 +997,8 @@ final class TacticalEngine {
             x.move(to: CGPoint(x: p.pos.x + 8, y: p.pos.y - 8)); x.addLine(to: CGPoint(x: p.pos.x - 8, y: p.pos.y + 8))
             w.stroke(x, with: .color((p.team == me.team ? Color.blue : Color.red).opacity(0.6)), lineWidth: 3)
         }
+        let lg = Gradient(colors: [Color(red: 1, green: 0.85, blue: 0.55).opacity(0.16), Color.clear])
+        w.fill(Path(ellipseIn: CGRect(x: focus.pos.x - 260, y: focus.pos.y - 260, width: 520, height: 520)), with: .radialGradient(lg, center: focus.pos, startRadius: 0, endRadius: 260))
         // vision darkness
         let vp = focus.pos
         var poly = Path()
@@ -1025,14 +1027,15 @@ final class TacticalEngine {
         for p in players where p.alive && (p.team == me.team || p.spotted) { drawPlayer(&w, p) }
         for s in smokeClouds {
             let fade = Double(min(1, s.life / 1.5))
-            for i in 0..<7 {
-                let ang = CGFloat(i) * 0.9 + time * 0.25
-                let cx = s.pos.x + cos(ang) * s.r * 0.45
-                let cy = s.pos.y + sin(ang) * s.r * 0.45
-                let rr = s.r * 0.6
-                w.fill(Path(ellipseIn: CGRect(x: cx - rr, y: cy - rr, width: rr * 2, height: rr * 2)), with: .color(Color(white: 0.7).opacity(0.9 * fade)))
+            for i in 0..<9 {
+                let ang = CGFloat(i) * 0.7 + time * 0.2
+                let dist = s.r * (i == 0 ? 0 : 0.5)
+                let cx = s.pos.x + cos(ang) * dist
+                let cy = s.pos.y + sin(ang) * dist
+                let rr = s.r * (i == 0 ? 0.9 : 0.62)
+                let g = Gradient(colors: [Color(white: 0.9).opacity(0.97 * fade), Color(white: 0.72).opacity(0.85 * fade), Color(white: 0.6).opacity(0)])
+                w.fill(Path(ellipseIn: CGRect(x: cx - rr, y: cy - rr, width: rr * 2, height: rr * 2)), with: .radialGradient(g, center: CGPoint(x: cx, y: cy), startRadius: 0, endRadius: rr))
             }
-            w.fill(Path(ellipseIn: CGRect(x: s.pos.x - s.r * 0.7, y: s.pos.y - s.r * 0.7, width: s.r * 1.4, height: s.r * 1.4)), with: .color(Color(white: 0.75).opacity(0.95 * fade)))
         }
         for b in booms {
             let k = 1 - b.life / 0.45
@@ -1051,6 +1054,8 @@ final class TacticalEngine {
             w.fill(dm, with: .color(Color.orange.opacity(al)))
             w.draw(Text(pg.text).font(.system(size: 12, weight: .heavy)).foregroundColor(Color.yellow.opacity(al)), at: CGPoint(x: pg.pos.x, y: pg.pos.y - 44))
         }
+        let vg = Gradient(colors: [Color.clear, Color.black.opacity(0.5)])
+        ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .radialGradient(vg, center: CGPoint(x: size.width / 2, y: size.height / 2), startRadius: min(size.width, size.height) * 0.45, endRadius: max(size.width, size.height) * 0.72))
         // minimap (screen space)
         drawMinimap(&ctx)
         if me.hurt > 0 {
@@ -1335,6 +1340,58 @@ final class TacticalEngine {
         }
         if !me.alive {
             ctx.draw(Text("SPECTATING " + focus.name.uppercased()).font(.system(size: 12, weight: .heavy)).foregroundColor(.white.opacity(0.7)), at: CGPoint(x: size.width / 2, y: size.height - 70))
+        }
+    }
+
+    private func propLift(_ k: PropKind) -> CGFloat {
+        switch k {
+        case .bed: return 8
+        case .couch: return 14
+        case .table: return 12
+        case .counter: return 18
+        case .crate: return 18
+        case .car: return 18
+        case .shelf: return 28
+        case .barrel: return 16
+        case .sandbag: return 10
+        case .tv: return 14
+        case .plant: return 12
+        }
+    }
+
+    private func drawWall(_ w: inout GraphicsContext, _ o: CGRect) {
+        let h: CGFloat = 26
+        w.fill(Path(CGRect(x: o.minX - 2, y: o.maxY, width: o.width + 6, height: 14)), with: .color(.black.opacity(0.22)))
+        w.fill(Path(CGRect(x: o.minX, y: o.maxY, width: o.width + 3, height: 8)), with: .color(.black.opacity(0.22)))
+        let face = CGRect(x: o.minX, y: o.maxY - h, width: o.width, height: h)
+        w.fill(Path(face), with: .color(Color(red: 0.3, green: 0.33, blue: 0.4)))
+        if o.width > o.height {
+            var ln = Path()
+            var y = face.minY + 8
+            while y < face.maxY { ln.move(to: CGPoint(x: face.minX, y: y)); ln.addLine(to: CGPoint(x: face.maxX, y: y)); y += 8 }
+            w.stroke(ln, with: .color(.black.opacity(0.28)), lineWidth: 1)
+        }
+        let top = o.offsetBy(dx: 0, dy: -h)
+        w.fill(Path(top), with: .color(Color(red: 0.66, green: 0.69, blue: 0.74)))
+        w.stroke(Path(top), with: .color(Color(red: 0.36, green: 0.4, blue: 0.46)), lineWidth: 1.5)
+        w.fill(Path(CGRect(x: top.minX, y: top.minY, width: top.width, height: min(3, top.height))), with: .color(.white.opacity(0.35)))
+    }
+
+    private func drawProp3(_ w: inout GraphicsContext, _ pr: TProp) {
+        let lift = propLift(pr.k)
+        let r = pr.r
+        w.fill(Path(roundedRect: r.offsetBy(dx: 5, dy: 8).insetBy(dx: -2, dy: -2), cornerRadius: 6), with: .color(.black.opacity(0.3)))
+        let c = fpColor(pr.k)
+        let side = Color(red: Double(c.0 * 0.5), green: Double(c.1 * 0.5), blue: Double(c.2 * 0.5))
+        if pr.k == .barrel || pr.k == .plant {
+            w.fill(Path(ellipseIn: r), with: .color(side))
+            w.fill(Path(CGRect(x: r.minX, y: r.midY - lift, width: r.width, height: lift + r.height / 2)), with: .color(side))
+        } else {
+            w.fill(Path(roundedRect: CGRect(x: r.minX, y: r.maxY - lift, width: r.width, height: lift), cornerRadius: 3), with: .color(side))
+        }
+        w.drawLayer { l in
+            l.translateBy(x: 0, y: -lift)
+            drawProp(&l, TProp(r: r, k: pr.k))
         }
     }
 
