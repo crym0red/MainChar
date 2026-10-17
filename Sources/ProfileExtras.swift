@@ -334,17 +334,6 @@ struct GameSettingsView: View {
                     }
                     header("Gameplay").padding(.top, 8)
                     group {
-                        row("bolt.fill", "Get free energy", trailing: game.canRefill ? "Ready" : "Used", chevron: true) {
-                            if game.canRefill { game.refill(); game.showToast("Energy refilled") }
-                            else { game.showToast("Free refill is on cooldown") }
-                        }
-                        divider
-                        row("arrow.2.squarepath", "Auto-use Gems for Energy", trailing: (st.ex.autoGems ?? false) ? "On" : "Off") {
-                            var s2 = game.s
-                            s2.ex.autoGems = !(s2.ex.autoGems ?? false)
-                            game.s = s2
-                        }
-                        divider
                         row("character.bubble.fill", "Language", trailing: "English") {}
                     }
                     group {

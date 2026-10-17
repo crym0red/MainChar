@@ -268,7 +268,7 @@ struct WorldHistoryView: View {
             }
             if !done {
                 Button { msg = game.mediate(r.id) } label: {
-                    Text("Step in · 2 energy").font(.jk(14, .semibold)).foregroundColor(.black)
+                    Text("Step in").font(.jk(14, .semibold)).foregroundColor(.black)
                         .padding(.horizontal, 14).padding(.vertical, 8)
                         .background(Capsule().fill(Color.white))
                 }

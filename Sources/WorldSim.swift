@@ -75,6 +75,7 @@ extension Game {
         // short absences accumulate instead of being thrown away
         guard away >= Game.minAway else { return }
 
+        pruneLive(&st)
         rollBudget(&st)
         let hrs = min(away, 48 * 3600) / 3600
         let ticks = min(14, max(1, Int(hrs * 1.5) + 1))
@@ -173,6 +174,7 @@ extension Game {
             st.ex.lastSim = now
             s = st
         }
+        pruneLive(&st)
         rollBudget(&st)
         guard (st.ex.simAuraUsed ?? 0) < Game.dailyAuraBudget,
               (st.ex.simFolUsed ?? 0) < Game.dailyFolBudget else { return }
@@ -198,6 +200,9 @@ extension Game {
             if q < 0.30 { simScrutiny(&st, &items, cast, quiet); return }
             if q < 0.42 { simOffer(&st, &items, cast, quiet); return }
         }
+        let pre = Double.random(in: 0...1)
+        if pre < 0.12 { simStory(&st, &items, cast, quiet); return }
+        if pre < 0.20 { simGoLive(&st, &items, cast, quiet); return }
         let r = Double.random(in: 0...1)
         if r < 0.24 { simPost(&st, &items, cast, quiet) }
         else if r < 0.48 { simBeef(&st, &items, cast, quiet) }

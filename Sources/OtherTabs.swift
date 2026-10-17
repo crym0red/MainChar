@@ -35,7 +35,7 @@ struct GoalsTab: View {
         .alert("How does this work?", isPresented: $how) {
             Button("Got it", role: .cancel) {}
         } message: {
-            Text("Posts, stories and events earn XP. Each level gives skill points, bonus energy and gems. Spend points on skills to unlock milestones and push your main goal forward.")
+            Text("Posts, stories and events earn XP. Each level gives skill points and gems. Spend points on skills to unlock milestones and push your main goal forward.")
         }
     }
 

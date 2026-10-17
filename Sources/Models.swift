@@ -303,6 +303,8 @@ struct Extras: Codable, Hashable {
     var simDay: String? = nil
     var simAuraUsed: Int? = nil
     var simFolUsed: Double? = nil
+    var npcStories: [NPCStory]? = nil
+    var npcLives: [NPCLive]? = nil
 }
 
 // MARK: - World
@@ -355,7 +357,7 @@ enum PostKind: String, Codable, CaseIterable, Identifiable {
         case .meme: return "Safe reach."
         case .wholesome: return "Aura goes up. Slow follower gain."
         case .hotTake: return "Good reach. Aura swings."
-        case .drama: return "2 energy. Huge reach. Huge aura swing."
+        case .drama: return "Huge reach. Huge aura swing."
         case .flex: return "Strong follows. Aura dips."
         case .collab: return "Tag someone. They may follow you."
         case .apology: return "Big aura recovery. Unlocks below 30% aura."

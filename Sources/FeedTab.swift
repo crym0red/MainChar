@@ -88,6 +88,9 @@ struct FeedTab: View {
     @State private var replyTo: UUID? = nil
     @State private var confirmExit = false
     @State private var showStore = false
+    @State private var liveOpen: LiveOpen? = nil
+    @State private var storyNPC: IDBox? = nil
+    @State private var goLive = false
     @State private var path: [UUID] = []
     private let timer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
     private let olive = Color(red: 0.47, green: 0.38, blue: 0.08)
@@ -98,7 +101,6 @@ struct FeedTab: View {
             ZStack(alignment: .bottom) {
                 VStack(spacing: 0) {
                     header(st)
-                    energyRow(st)
                     Divider().background(Color.white.opacity(0.12))
                     ScrollView {
                         LazyVStack(spacing: 0) {
@@ -122,12 +124,13 @@ struct FeedTab: View {
             .navigationDestination(for: UUID.self) { PostDetailView(postID: $0) }
             .toolbar(.hidden, for: .navigationBar)
         }
-        .onReceive(timer) { _ in game.tickEnergy(); game.ambientTick() }
+        .onReceive(timer) { _ in game.ambientTick() }
         .onChange(of: game.openPostID) { id in
             if let id = id { path = [id]; game.openPostID = nil }
         }
         .onAppear {
             game.refreshIfStale()
+            game.seedPresence()
             if let id = game.pendingResult?.postID, path.last != id { path = [id] }
         }
         .onChange(of: game.pendingResult) { r in
@@ -137,6 +140,14 @@ struct FeedTab: View {
         .fullScreenCover(isPresented: $showStore) { StoreView().zoomed() }
         .sheet(isPresented: $showEvent) { EventSheet().zoomed() }
         .sheet(isPresented: $showExplore) { ExploreSheet().zoomed() }
+        .fullScreenCover(item: $liveOpen) { o in LiveView(mode: o.mode, onClose: { liveOpen = nil }).zoomed() }
+        .fullScreenCover(item: $storyNPC) { b in NPCStoryViewer(storyID: b.id, onClose: { storyNPC = nil }).zoomed() }
+        .confirmationDialog("Go live", isPresented: $goLive, titleVisibility: .visible) {
+            ForEach(["Just Chatting", "Hot Takes", "Q&A", "Callout Stream"], id: \.self) { t in
+                Button(t) { liveOpen = LiveOpen(mode: .host(t)) }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
         .fullScreenCover(item: $storyOpen) { o in StoriesFlow(openStory: o.story).zoomed() }
         .sheet(item: $npcSheet) { n in NPCSheet(npc: n).zoomed() }
         .sheet(item: Binding(get: { replyTo.map { IDBox(id: $0) } }, set: { replyTo = $0?.id })) { b in
@@ -153,19 +164,16 @@ struct FeedTab: View {
             Image(systemName: "sun.max.fill").font(.system(size: 30)).foregroundColor(T.gold)
             Text("Day \(st.day)").font(.jk(25, .medium))
             Spacer()
-            Button { game.refill() } label: {
-                HStack(spacing: 6) {
-                    Text(game.canRefill ? "Free refill" : "Refill used").font(.jk(16, .medium))
-                    Image(systemName: "bolt.fill").foregroundColor(T.gold)
+            Button { showStore = true } label: {
+                HStack(spacing: 7) {
+                    GemIcon(size: 26)
+                    Text("\(st.ex.gems)").font(.jk(18, .semibold)).foregroundColor(gemPurple)
+                    Image(systemName: "plus").font(.system(size: 13, weight: .bold)).foregroundColor(.white)
+                        .frame(width: 24, height: 24).background(Color(red: 0.55, green: 0.30, blue: 0.90)).clipShape(Circle())
                 }
-                .foregroundColor(game.canRefill ? .white : T.sub)
-                .padding(.horizontal, 16).padding(.vertical, 12)
+                .padding(.leading, 14).padding(.trailing, 8).frame(height: 50)
                 .background(T.card2).clipShape(Capsule())
-                .overlay(alignment: .topTrailing) {
-                    if game.canRefill { Circle().fill(T.red).frame(width: 12, height: 12).offset(x: 2, y: -2) }
-                }
             }
-            .disabled(!game.canRefill)
             Button { showStore = true } label: {
                 Image(systemName: "storefront.fill").font(.system(size: 22)).foregroundColor(.white.opacity(0.85))
                     .frame(width: 50, height: 50).background(T.card2).clipShape(RoundedRectangle(cornerRadius: 14))
@@ -176,56 +184,6 @@ struct FeedTab: View {
             }
         }
         .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 6)
-    }
-
-    private func energyRow(_ st: GameState) -> some View {
-        TimelineView(.periodic(from: .now, by: 1)) { ctx in
-            let (e, secs) = game.liveEnergy(at: ctx.date)
-            let s2 = game.s
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 18) {
-                    Text("Bonus").foregroundColor(T.sub)
-                    if let secs = secs {
-                        Text("Refill in \(clockString(secs))").foregroundColor(T.sub).monospacedDigit()
-                    } else {
-                        Text("Energy full").foregroundColor(T.sub)
-                    }
-                }
-                .font(.jk(17)).padding(.leading, 62)
-                HStack(spacing: 10) {
-                    Image(systemName: "bolt.fill").font(.system(size: 38)).foregroundColor(T.gold)
-                    HStack(spacing: 3) {
-                        Text("\(s2.bonus)").font(.jk(20, .bold)).foregroundColor(T.gold)
-                            .frame(width: 64, height: 40).background(olive).clipShape(RoundedRectangle(cornerRadius: 5))
-                        GeometryReader { g in
-                            ZStack(alignment: .leading) {
-                                RoundedRectangle(cornerRadius: 5).fill(Color.white.opacity(0.05))
-                                RoundedRectangle(cornerRadius: 5).fill(olive)
-                                    .frame(width: g.size.width * CGFloat(e) / CGFloat(Game.maxEnergy))
-                                Text("\(e)/\(Game.maxEnergy)").font(.jk(20, .bold)).foregroundColor(T.gold).padding(.leading, 14)
-                            }
-                        }.frame(height: 40)
-                    }
-                    .padding(4)
-                    .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.white.opacity(0.28), lineWidth: 2))
-                    Button { game.refill() } label: {
-                        Image(systemName: "plus").font(.system(size: 22, weight: .bold)).foregroundColor(T.gold)
-                            .frame(width: 46, height: 46).background(olive).clipShape(RoundedRectangle(cornerRadius: 12))
-                    }.disabled(!game.canRefill)
-                    Spacer(minLength: 0)
-                    HStack(spacing: 6) {
-                        GemIcon(size: 30)
-                        Text("\(s2.ex.gems)").font(.jk(17, .medium)).foregroundColor(gemPurple)
-                    }
-                    Button { showStore = true } label: {
-                        Image(systemName: "plus").font(.system(size: 18, weight: .bold)).foregroundColor(.white)
-                            .frame(width: 40, height: 40).background(Color(red: 0.55, green: 0.30, blue: 0.90))
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                    }
-                }
-            }
-            .padding(.horizontal, 16).padding(.bottom, 10)
-        }
     }
 
     private func stories(_ st: GameState) -> some View {
@@ -241,6 +199,15 @@ struct FeedTab: View {
                         Text("Your story").font(.jk(14)).foregroundColor(T.sub)
                     }.frame(width: 80)
                 }
+                Button { goLive = true } label: {
+                    VStack(spacing: 6) {
+                        ZStack {
+                            Circle().stroke(T.red, lineWidth: 3).frame(width: 78, height: 78)
+                            Image(systemName: "dot.radiowaves.left.and.right").font(.system(size: 30)).foregroundColor(T.red)
+                        }
+                        Text("Go live").font(.jk(14)).foregroundColor(T.sub)
+                    }.frame(width: 80)
+                }
                 Rectangle().fill(Color.white.opacity(0.15)).frame(width: 1, height: 84)
                 Button { showExplore = true } label: {
                     VStack(spacing: 6) {
@@ -251,18 +218,48 @@ struct FeedTab: View {
                         Text("Explore").font(.jk(14)).foregroundColor(T.sub)
                     }.frame(width: 84)
                 }
-                ForEach(st.npcs.filter { $0.id != "newsdesk" }) { n in
-                    Button { npcSheet = n } label: {
+                ForEach(npcRow(st)) { n in
+                    let live = (st.ex.npcLives ?? []).contains { $0.handle == n.handle && $0.ends > Date() }
+                    let story = (st.ex.npcStories ?? []).first { $0.handle == n.handle }
+                    Button {
+                        if live { liveOpen = LiveOpen(mode: .watch(n.handle)) }
+                        else if let s = story { storyNPC = IDBox(id: s.id) }
+                        else { npcSheet = n }
+                    } label: {
                         VStack(spacing: 6) {
-                            Avatar(emoji: n.emoji, key: n.handle, size: 74, ring: true)
+                            Avatar(emoji: n.emoji, key: n.handle, size: 74, ring: !live && story == nil)
+                                .overlay {
+                                    if live { Circle().stroke(T.red, lineWidth: 3.5).frame(width: 82, height: 82) }
+                                    else if let s = story {
+                                        Circle().stroke(s.seen == true ? Color.white.opacity(0.3) : T.lime, lineWidth: 3.5).frame(width: 82, height: 82)
+                                    }
+                                }
+                                .overlay(alignment: .bottom) {
+                                    if live {
+                                        Text("LIVE").font(.jk(10, .bold)).foregroundColor(.white)
+                                            .padding(.horizontal, 7).padding(.vertical, 2)
+                                            .background(T.red).clipShape(Capsule()).offset(y: 8)
+                                    }
+                                }
                             Text(n.name.components(separatedBy: " ").first ?? n.name)
                                 .font(.jk(14)).foregroundColor(T.sub).lineLimit(1)
-                        }.frame(width: 80)
+                        }.frame(width: 84)
                     }
+                    .contextMenu { Button("Profile") { npcSheet = n } }
                 }
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
         }
+    }
+
+    private func npcRow(_ st: GameState) -> [NPC] {
+        let cast = st.npcs.filter { $0.id != "newsdesk" }
+        func rank(_ n: NPC) -> Int {
+            if (st.ex.npcLives ?? []).contains(where: { $0.handle == n.handle && $0.ends > Date() }) { return 0 }
+            if let s = (st.ex.npcStories ?? []).first(where: { $0.handle == n.handle }) { return s.seen == true ? 2 : 1 }
+            return 3
+        }
+        return cast.enumerated().sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }.map { $0.element }
     }
 
     private func floating(_ st: GameState) -> some View {
@@ -515,15 +512,7 @@ struct ComposeSheet: View {
                             Spacer()
                             Text("\(240 - text.count)").font(.jk(12)).foregroundColor(T.sub)
                         }
-                        HStack {
-                            Image(systemName: "bolt.fill").foregroundColor(T.gold)
-                            Text("\(kind.cost) energy").font(.jk(13, .semibold))
-                            Spacer()
-                            if !game.canAfford(kind.cost) {
-                                Text("Not enough energy").font(.jk(12)).foregroundColor(T.orange)
-                            }
-                        }
-                        BigButton(title: "Post", enabled: !text.trimmed.isEmpty && game.canAfford(kind.cost)) {
+                        BigButton(title: "Post", enabled: !text.trimmed.isEmpty) {
                             if let o = game.publish(kind: kind, text: text, quest: seed.quest) {
                                 game.pendingResult = o
                                 nav.tab = 0

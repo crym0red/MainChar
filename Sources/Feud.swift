@@ -124,7 +124,6 @@ extension Game {
         guard let r = (st0.ex.rivalries ?? []).first(where: { $0.id == id }), r.status != "resolved",
               let a = st0.npcs.first(where: { $0.handle == r.a }),
               let b = st0.npcs.first(where: { $0.handle == r.b }) else { return "That feud is already over." }
-        guard spend(2) else { return "You need 2 energy to step in." }
         var st = s
         let charm = Double(st.stats["charm"] ?? 30)
         let warmth = Double(feeling(st, a.handle) + feeling(st, b.handle))

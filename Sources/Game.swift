@@ -114,33 +114,10 @@ final class Game: ObservableObject {
         return (e, max(0, Int(Game.regenSeconds - into)))
     }
 
-    func spend(_ n: Int) -> Bool {
-        tickEnergy()
-        var st = s
-        if st.energy + st.bonus < n, st.ex.autoGems ?? false {
-            let lack = n - (st.energy + st.bonus)
-            if st.ex.gems >= lack * 3 {
-                st.ex.gems -= lack * 3
-                st.bonus += lack
-            }
-        }
-        guard st.energy + st.bonus >= n else { return false }
-        var need = n
-        let b = min(st.bonus, need)
-        st.bonus -= b
-        need -= b
-        if need > 0 {
-            if st.energy >= Game.maxEnergy { st.lastEnergyTick = Date() }
-            st.energy -= need
-        }
-        s = st
-        return true
-    }
+    func spend(_ n: Int) -> Bool { true }
 
     func canAfford(_ n: Int) -> Bool {
-        let have = s.energy + s.bonus
-        if have >= n { return true }
-        return (s.ex.autoGems ?? false) && s.ex.gems >= (n - have) * 3
+        return true
     }
 
     var refillReadyAt: Date { Date(timeIntervalSince1970: UserDefaults.standard.double(forKey: "clout.refillAt")) }
@@ -171,7 +148,7 @@ final class Game: ObservableObject {
             st.points += 3
             st.bonus += 1
             st.ex.gems += 2
-            notify(&st, "level", "You reached level \(st.level)", sub: "+3 skill points, +1 bonus energy, +2 gems", emoji: "⭐️")
+            notify(&st, "level", "You reached level \(st.level)", sub: "+3 skill points, +2 gems", emoji: "⭐️")
         }
     }
 

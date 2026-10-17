@@ -72,7 +72,6 @@ struct StoreView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     streakCard(st)
-                    section("Energy", [.energy, .coffee], st)
                     section("Boosts", [.gift], st)
                     section("Powerups", [.viral, .boost], st)
                 }
