@@ -344,6 +344,7 @@ struct Memory: Codable, Hashable, Identifiable {
 /// Everything added after v1 lives here so older saves keep decoding.
 struct Extras: Codable, Hashable {
     var surv: SurvData? = nil
+    var tac: TacData? = nil
     var stories: [UserStory] = []
     var gems = 5
     var streak = 1

@@ -822,6 +822,7 @@ extension Game {
 struct SurvivalHub: View {
     @EnvironmentObject var game: Game
     @State private var play = false
+    @State private var tacDiff: Int? = nil
 
     var body: some View {
         let st = game.s
@@ -846,6 +847,7 @@ struct SurvivalHub: View {
                         .frame(maxWidth: .infinity).frame(height: 66)
                         .background(Color(red: 0.4, green: 0.95, blue: 0.5)).clipShape(Capsule())
                 }
+                tacticalCard
                 VStack(alignment: .leading, spacing: 8) {
                     Text("HOW IT WORKS").font(.jk(11, .heavy)).foregroundColor(T.sub)
                     Text("Left thumb moves. Right thumb aims and fires. The characters from your world are the horde. Haters sprint, moguls tank, gossips spit, chaos explodes, and every fifth wave brings a boss. Every third wave is night. Gems you bank buy upgrades and guns in the Armory.")
@@ -857,6 +859,33 @@ struct SurvivalHub: View {
             .padding(.horizontal, 16).padding(.bottom, 30)
         }
         .fullScreenCover(isPresented: $play) { SurvivalPlay().environmentObject(game).preferredColorScheme(.dark) }
+        .fullScreenCover(isPresented: Binding(get: { tacDiff != nil }, set: { if !$0 { tacDiff = nil } })) {
+            TacticalPlay(diff: tacDiff ?? 1).environmentObject(game).preferredColorScheme(.dark)
+        }
+    }
+
+    private var tacticalCard: some View {
+        let t = game.s.ex.tac ?? TacData()
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("TACTICAL 5v5").font(.jk(11, .heavy)).foregroundColor(T.sub)
+                Spacer()
+                Text("\(t.wins)W  \(t.losses)L  \u{00B7}  \(t.rating)").font(.jk(12, .bold)).foregroundColor(.white.opacity(0.85))
+            }
+            Text("First to 3 rounds. Attack or defend sites A and B against bots. Plant, defuse, hold angles.")
+                .font(.jk(14)).foregroundColor(.white.opacity(0.85))
+            HStack(spacing: 8) {
+                ForEach(Array(["Easy", "Normal", "Hard"].enumerated()), id: \.offset) { i, n in
+                    Button { tacDiff = i } label: {
+                        Text(n).font(.jk(15, .heavy)).foregroundColor(.black)
+                            .frame(maxWidth: .infinity).frame(height: 44)
+                            .background(Color(red: 0.4, green: 0.7, blue: 1)).clipShape(Capsule())
+                    }
+                }
+            }
+        }
+        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+        .background(T.card).clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
     private func cell(_ k: String, _ v: String) -> some View {
