@@ -451,7 +451,9 @@ final class TacticalEngine {
     var actHeld = false
     var wantNade = false
     var wantSmoke = false
-    var fp = true
+    var fp = false
+    var view3D = true
+    var project: ((CGPoint, CGFloat) -> CGPoint?)? = nil
     var lookDelta: CGFloat = 0
     var hitT: CGFloat = 0
     var wantReload = false
@@ -930,6 +932,7 @@ final class TacticalEngine {
     // MARK: drawing
 
     func draw(_ ctx: inout GraphicsContext, _ size: CGSize) {
+        if view3D { drawOverlay3D(&ctx, size); return }
         if fp { drawFP(&ctx, size); return }
         let focus: TPlayer = me.alive ? me : (players.first { $0.team == me.team && $0.alive } ?? me)
         let camX = min(max(0, focus.pos.x - size.width / 2), max(0, TMap.W - size.width))
@@ -1523,6 +1526,8 @@ final class TacticalEngine {
         }
     }
 
+    func drawMinimapPublic(_ ctx: inout GraphicsContext) { drawMinimap(&ctx) }
+
     private func drawMinimap(_ ctx: inout GraphicsContext) {
         let s: CGFloat = 0.085
         let ox: CGFloat = 12, oy: CGFloat = 110
@@ -1570,15 +1575,21 @@ struct TacticalPlay: View {
     @State private var rStart: CGPoint? = nil
     @State private var rKnob: CGPoint = .zero
     @State private var collected = false
-    @State private var fp = true
+    @State private var mode = 0
+    @State private var bridge: TacScene? = nil
+    private var fp: Bool { mode == 1 }
     @State private var lastLook: CGFloat = 0
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
+            if let b = bridge, mode == 0 {
+                TacSceneView(bridge: b).ignoresSafeArea().allowsHitTesting(false)
+            }
             TimelineView(.animation) { tl in
                 Canvas { ctx, size in
                     engine.step(tl.date)
+                    if mode == 0 { bridge?.sync(engine) }
                     engine.draw(&ctx, size)
                 }
             }
@@ -1592,12 +1603,17 @@ struct TacticalPlay: View {
         .onDisappear { OrientationLock.set(landscape: false) }
         .onAppear {
             OrientationLock.set(landscape: true)
-            engine.fp = fp
+            engine.fp = false
+            engine.view3D = true
             let st = game.s
             let cast = st.npcs.filter { $0.id != "newsdesk" }
             let owned = (st.ex.surv ?? SurvData()).guns
             let gun = owned.contains("rifle") ? "rifle" : (owned.contains("smg") ? "smg" : "pistol")
             engine.setup(cast: cast, persona: st.persona, gun: gun, diff: diff)
+            let b = TacScene()
+            b.build(engine)
+            bridge = b
+            engine.project = { [weak b] p, h in b?.project(p, h) }
             Task { @MainActor in
                 engine.sprites[st.persona.handle] = SurvivalSprites.render(emoji: st.persona.emoji, key: st.persona.handle, size: 64)
                 for p in engine.players where !p.isPlayer {
@@ -1771,8 +1787,8 @@ struct TacticalPlay: View {
                                 .gesture(DragGesture(minimumDistance: 0).onChanged { _ in e.actHeld = true }.onEnded { _ in e.actHeld = false })
                         }
                     }
-                    Button { fp.toggle(); e.fp = fp } label: {
-                        Text(fp ? "3D" : "Map").font(.jk(12, .bold)).foregroundColor(.white)
+                    Button { mode = (mode + 1) % 3; e.fp = (mode == 1); e.view3D = (mode == 0) } label: {
+                        Text(mode == 0 ? "3D" : (mode == 1 ? "FP" : "Map")).font(.jk(12, .bold)).foregroundColor(.white)
                             .padding(.horizontal, 12).frame(height: 38).background(Color.black.opacity(0.55)).clipShape(Capsule())
                     }
                     Button { e.paused = true } label: {

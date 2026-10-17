@@ -819,38 +819,90 @@ extension Game {
 
 // MARK: - Hub + Armory + Tab bar
 
+struct TacMapPreview: View {
+    var body: some View {
+        Canvas { ctx, size in
+            let s = size.width / TMap.W
+            func R(_ r: CGRect) -> CGRect { CGRect(x: r.minX * s, y: r.minY * s, width: r.width * s, height: r.height * s) }
+            let cols: [Color] = [
+                Color(red: 0.45, green: 0.31, blue: 0.19), Color(red: 0.34, green: 0.36, blue: 0.38),
+                Color(red: 0.27, green: 0.24, blue: 0.33), Color(red: 0.5, green: 0.54, blue: 0.56),
+                Color(red: 0.28, green: 0.19, blue: 0.13), Color(red: 0.4, green: 0.4, blue: 0.42)
+            ]
+            for rm in TMap.rooms {
+                ctx.fill(Path(R(rm.r)), with: .color(cols[rm.mat]))
+                ctx.draw(Text(rm.name.uppercased()).font(.system(size: 8, weight: .heavy)).foregroundColor(.white.opacity(0.35)), at: CGPoint(x: rm.r.midX * s, y: (rm.r.minY + 28) * s))
+            }
+            for pr in TMap.props {
+                ctx.fill(Path(roundedRect: R(pr.r), cornerRadius: 2), with: .color(Color(red: 0.2, green: 0.22, blue: 0.27).opacity(0.85)))
+            }
+            for d in TMap.doors { ctx.fill(Path(R(d)), with: .color(Color(red: 0.62, green: 0.5, blue: 0.32))) }
+            for w in TMap.walls { ctx.fill(Path(R(w).insetBy(dx: -0.5, dy: -0.5)), with: .color(Color(red: 0.8, green: 0.83, blue: 0.87))) }
+            for i in 0..<2 {
+                let r = TMap.site(i)
+                ctx.fill(Path(R(r)), with: .color(Color(red: 0.15, green: 0.45, blue: 0.85).opacity(0.3)))
+                ctx.stroke(Path(R(r).insetBy(dx: 2, dy: 2)), with: .color(Color.yellow), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                ctx.draw(Text(i == 0 ? "A" : "B").font(.system(size: 18, weight: .heavy)).foregroundColor(.white), at: CGPoint(x: r.midX * s, y: r.midY * s))
+            }
+            for p in TMap.atkSpawn { ctx.fill(Path(ellipseIn: CGRect(x: p.x * s - 4, y: p.y * s - 4, width: 8, height: 8)), with: .color(Color(red: 0.25, green: 0.6, blue: 1))) }
+            for p in TMap.defSpawn { ctx.fill(Path(ellipseIn: CGRect(x: p.x * s - 4, y: p.y * s - 4, width: 8, height: 8)), with: .color(Color(red: 1, green: 0.25, blue: 0.3))) }
+        }
+        .aspectRatio(TMap.W / TMap.H, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+}
+
 struct SurvivalHub: View {
     @EnvironmentObject var game: Game
-    @State private var play = false
     @State private var tacDiff: Int? = nil
+    @State private var pick = 1
 
     var body: some View {
         let st = game.s
-        let d = st.ex.surv ?? SurvData()
+        let t = st.ex.tac ?? TacData()
         ScrollView {
-            VStack(spacing: 18) {
+            VStack(spacing: 16) {
                 VStack(spacing: 4) {
                     Text("MAINCHAR").font(.jk(14, .heavy)).foregroundColor(T.sub).tracking(4)
-                    Text("SURVIVAL").font(.jk(40, .heavy))
+                    Text("5v5").font(.jk(44, .heavy))
+                    Text("Bomb defusal").font(.jk(15, .semibold)).foregroundColor(T.sub)
                 }
                 .padding(.top, 20)
-                Avatar(emoji: st.persona.emoji, key: st.persona.handle, size: 120, ring: true)
-                Text(st.persona.name).font(.jk(22, .bold))
                 HStack(spacing: 10) {
-                    cell("Best wave", "\(d.best)")
-                    cell("Kills", "\(d.kills)")
-                    cell("Runs", "\(d.runs)")
+                    cell("Wins", "\(t.wins)")
+                    cell("Losses", "\(t.losses)")
+                    cell("Rating", "\(t.rating)")
                     cell("Gems", "\(st.ex.gems)")
                 }
-                Button { play = true } label: {
-                    Text("DEPLOY").font(.jk(26, .heavy)).foregroundColor(.black)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("MAP").font(.jk(11, .heavy)).foregroundColor(T.sub)
+                        Spacer()
+                        Text("7 rooms \u{00B7} 2 sites").font(.jk(12, .semibold)).foregroundColor(.white.opacity(0.7))
+                    }
+                    TacMapPreview()
+                    Text("Safehouse").font(.jk(22, .heavy))
+                }
+                .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                .background(T.card).clipShape(RoundedRectangle(cornerRadius: 16))
+                HStack(spacing: 8) {
+                    ForEach(Array(["Easy", "Normal", "Hard"].enumerated()), id: \.offset) { i, n in
+                        Button { pick = i } label: {
+                            Text(n).font(.jk(15, .heavy))
+                                .foregroundColor(pick == i ? .black : .white)
+                                .frame(maxWidth: .infinity).frame(height: 44)
+                                .background(pick == i ? Color.white : T.card).clipShape(Capsule())
+                        }
+                    }
+                }
+                Button { tacDiff = pick } label: {
+                    Text("PLAY").font(.jk(26, .heavy)).foregroundColor(.black)
                         .frame(maxWidth: .infinity).frame(height: 66)
                         .background(Color(red: 0.4, green: 0.95, blue: 0.5)).clipShape(Capsule())
                 }
-                tacticalCard
                 VStack(alignment: .leading, spacing: 8) {
                     Text("HOW IT WORKS").font(.jk(11, .heavy)).foregroundColor(T.sub)
-                    Text("Left thumb moves. Right thumb aims and fires. The characters from your world are the horde. Haters sprint, moguls tank, gossips spit, chaos explodes, and every fifth wave brings a boss. Every third wave is night. Gems you bank buy upgrades and guns in the Armory.")
+                    Text("First to 3 rounds. You and 4 bots vs 5 bots, sides swap every round. Attack: plant at A or B. Defend: hold both and defuse. Plays in landscape. Left thumb moves, right thumb aims, FIRE shoots. Bank gems to buy guns and upgrades in the Armory.")
                         .font(.jk(14)).foregroundColor(.white.opacity(0.85))
                 }
                 .padding(14).frame(maxWidth: .infinity, alignment: .leading)
@@ -858,34 +910,9 @@ struct SurvivalHub: View {
             }
             .padding(.horizontal, 16).padding(.bottom, 30)
         }
-        .fullScreenCover(isPresented: $play) { SurvivalPlay().environmentObject(game).preferredColorScheme(.dark) }
         .fullScreenCover(isPresented: Binding(get: { tacDiff != nil }, set: { if !$0 { tacDiff = nil } })) {
             TacticalPlay(diff: tacDiff ?? 1).environmentObject(game).preferredColorScheme(.dark)
         }
-    }
-
-    private var tacticalCard: some View {
-        let t = game.s.ex.tac ?? TacData()
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("TACTICAL 5v5").font(.jk(11, .heavy)).foregroundColor(T.sub)
-                Spacer()
-                Text("\(t.wins)W  \(t.losses)L  \u{00B7}  \(t.rating)").font(.jk(12, .bold)).foregroundColor(.white.opacity(0.85))
-            }
-            Text("First to 3 rounds. Attack or defend sites A and B against bots. Plant, defuse, hold angles.")
-                .font(.jk(14)).foregroundColor(.white.opacity(0.85))
-            HStack(spacing: 8) {
-                ForEach(Array(["Easy", "Normal", "Hard"].enumerated()), id: \.offset) { i, n in
-                    Button { tacDiff = i } label: {
-                        Text(n).font(.jk(15, .heavy)).foregroundColor(.black)
-                            .frame(maxWidth: .infinity).frame(height: 44)
-                            .background(Color(red: 0.4, green: 0.7, blue: 1)).clipShape(Capsule())
-                    }
-                }
-            }
-        }
-        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
-        .background(T.card).clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
     private func cell(_ k: String, _ v: String) -> some View {
@@ -984,8 +1011,6 @@ struct SurvivalBar: View {
         HStack(spacing: 0) {
             item(0, "scope", "Deploy")
             item(1, "shield.lefthalf.filled", "Armory")
-            item(5, "chart.line.uptrend.xyaxis", "Market")
-            item(4, "person.fill", "Profile")
         }
         .padding(.top, 6)
         .background(T.bg.ignoresSafeArea(edges: .bottom))

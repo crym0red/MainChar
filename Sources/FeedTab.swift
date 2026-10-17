@@ -10,10 +10,8 @@ struct GameShell: View {
             ZStack {
                 T.bg.ignoresSafeArea()
                 switch nav.tab {
-                case 0: SurvivalHub()
                 case 1: ArmoryView()
-                case 5: MarketView()
-                default: ProfileTab()
+                default: SurvivalHub()
                 }
             }
             .frame(maxHeight: .infinity)

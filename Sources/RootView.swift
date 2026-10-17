@@ -17,6 +17,7 @@ struct RootView: View {
             }.zoomed()
         }
         .onAppear {
+            if let first = game.store.saves.first { game.resume(first.id); nav.tab = 0; return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { if stage == 0 { withAnimation(.easeInOut(duration: 0.4)) { stage = 1 } } }
         }
         .onChange(of: game.playing) { p in if p { stage = 2 } }
