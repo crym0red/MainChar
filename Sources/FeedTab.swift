@@ -169,6 +169,48 @@ struct FeedTab: View {
         } message: { Text("Your progress is saved.") }
     }
 
+    private func filteredPosts(_ st: GameState) -> [Post] {
+        var l = st.posts.filter { !st.hidden.contains($0.id) }
+        if mode == 1 {
+            let f = Set(st.ex.following ?? [])
+            l = l.filter { f.contains($0.authorHandle) || $0.isYou }
+        }
+        if let t = topic { l = l.filter { game.postMatches($0, topic: t) } }
+        return l
+    }
+
+    private func feedControls(_ st: GameState) -> some View {
+        let trends = game.trendingTopics(st)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 22) {
+                ForEach(Array(["For You", "Following"].enumerated()), id: \.offset) { i, t in
+                    Button { mode = i } label: {
+                        VStack(spacing: 6) {
+                            Text(t).font(.jk(17, .semibold)).foregroundColor(mode == i ? .white : T.sub)
+                            Rectangle().fill(mode == i ? Color.white : Color.clear).frame(height: 3).clipShape(Capsule())
+                        }
+                    }
+                }
+                Spacer()
+            }
+            if !trends.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "flame.fill").foregroundColor(T.orange)
+                        ForEach(trends, id: \.self) { t in
+                            Button { topic = topic == t ? nil : t } label: {
+                                Text(t).font(.jk(13, .semibold)).foregroundColor(topic == t ? .black : .white)
+                                    .padding(.horizontal, 12).padding(.vertical, 7)
+                                    .background(topic == t ? Color.white : T.card2).clipShape(Capsule())
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+    }
+
     private func header(_ st: GameState) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "sun.max.fill").font(.system(size: 30)).foregroundColor(T.gold)
