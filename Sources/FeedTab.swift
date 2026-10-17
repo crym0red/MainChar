@@ -376,6 +376,7 @@ struct PostRow: View {
     var onReply: () -> Void
     var onOpen: () -> Void
     var onQuote: () -> Void = {}
+    @State private var tip = false
 
     var body: some View {
         let st = game.s
@@ -421,6 +422,13 @@ struct PostRow: View {
                         }
                     }
                     PostExtras(post: post, onOpen: onOpen)
+                    if post.tag == "Donate" && !post.isYou {
+                        Button { tip = true } label: {
+                            Label("Donate", systemImage: "dollarsign.circle.fill").font(.jk(14, .bold))
+                                .foregroundColor(.black).padding(.horizontal, 14).padding(.vertical, 8)
+                                .background(Color(red: 0.4, green: 0.95, blue: 0.5)).clipShape(Capsule())
+                        }
+                    }
                 }
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onOpen)
@@ -439,6 +447,10 @@ struct PostRow: View {
                         Label(short(post.likes), systemImage: post.liked ? "heart.fill" : "heart")
                             .foregroundColor(post.liked ? T.red : T.sub)
                     } primaryAction: { game.like(post.id) }
+                    if !post.isYou {
+                        Button { tip = true } label: { Image(systemName: "dollarsign.circle").foregroundColor(T.sub) }
+                            .sheet(isPresented: $tip) { SendSheet(to: post.authorHandle, ctx: "post").zoomed() }
+                    }
                     Spacer()
                     Image(systemName: saved ? "star.fill" : "star").foregroundColor(saved ? T.gold : T.sub)
                         .onTapGesture { game.toggleSave(post.id) }
@@ -654,6 +666,7 @@ struct NPCSheet: View {
     @Environment(\.dismiss) private var dismiss
     let npc: NPC
     @State private var tab = 0
+    @State private var showWallet = false
 
     var body: some View {
         let st = game.s
@@ -736,6 +749,11 @@ struct NPCSheet: View {
                             .frame(maxWidth: .infinity).padding(.vertical, 13)
                             .background(T.blue).clipShape(Capsule())
                     }
+                    Button { showWallet = true } label: {
+                        Image(systemName: "wallet.pass.fill").font(.system(size: 17, weight: .bold)).foregroundColor(T.gold)
+                            .frame(width: 48, height: 46).background(Color.white.opacity(0.12)).clipShape(Capsule())
+                    }
+                    .fullScreenCover(isPresented: $showWallet) { WalletView(handle: live.handle).zoomed() }
                     if st.ex.gifts > 0 {
                         Button { game.sendGift(live.handle) } label: {
                             Image(systemName: "gift.fill").font(.system(size: 18)).foregroundColor(T.gold)

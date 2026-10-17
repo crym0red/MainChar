@@ -88,7 +88,7 @@ struct ScrubChart: View {
         GeometryReader { g in
             let size = g.size
             let last = max(0, values.count - 1)
-            let cur = sel ?? last
+            let cur = min(sel ?? last, last)
             ZStack(alignment: .topLeading) {
                 if values.count > 1 {
                     area(size).fill(LinearGradient(colors: [color.opacity(0.28), color.opacity(0)], startPoint: .top, endPoint: .bottom))
@@ -211,6 +211,7 @@ struct MarketView: View {
     @State private var query = ""
     @State private var detail: TickerID? = nil
     @State private var launch = false
+    @State private var showWallet = false
     private let timer = Timer.publish(every: 2.5, on: .main, in: .common).autoconnect()
     private let lav = Color(red: 0.67, green: 0.62, blue: 0.95)
     private let green = Color(red: 0.4, green: 0.95, blue: 0.5)
@@ -259,6 +260,7 @@ struct MarketView: View {
         .onChange(of: nav.coin) { _ in openPending() }
         .fullScreenCover(item: $detail) { CoinDetail(ticker: $0.id).zoomed() }
         .sheet(isPresented: $launch) { LaunchSheet().zoomed() }
+        .fullScreenCover(isPresented: $showWallet) { WalletView().zoomed() }
     }
 
     private func pill(_ icon: String, _ title: String, _ action: @escaping () -> Void) -> some View {
@@ -292,6 +294,7 @@ struct MarketView: View {
                 Spacer()
                 VStack(spacing: 8) {
                     pill("gift.fill", "Airdrop") { game.marketAirdrop() }
+                    pill("wallet.pass.fill", "Wallet") { showWallet = true }
                     pill("plus", "Launch") { launch = true }
                 }
             }
@@ -490,6 +493,7 @@ struct CoinDetail: View {
     @State private var sel: Int? = nil
     @State private var scroll: CGFloat = 0
     @State private var allHolders = false
+    private let flow = Timer.publish(every: 1.3, on: .main, in: .common).autoconnect()
     private let lav = Color(red: 0.67, green: 0.62, blue: 0.95)
     private let green = Color(red: 0.4, green: 0.95, blue: 0.5)
     private let ranges = ["LIVE", "1D", "1W", "1M", "1Y", "ALL"]
@@ -516,6 +520,7 @@ struct CoinDetail: View {
         }
         .sheet(isPresented: $trade) { TradeSheet(ticker: ticker).zoomed() }
         .sheet(isPresented: $chat) { CoinChatSheet(ticker: ticker).zoomed() }
+        .onReceive(flow) { _ in game.marketFlow(ticker) }
     }
 
     private func slice(_ c: Coin) -> [Double] {
@@ -614,6 +619,7 @@ struct CoinDetail: View {
             }
             .padding(.horizontal, 16)
             if let h = held { positionCard(c, h).padding(.horizontal, 16) }
+            tapeCard(c, m).padding(.horizontal, 16)
             summaryCard(c, ti, cname).padding(.horizontal, 16)
             holdersCard(c, m, st, ti).padding(.horizontal, 16)
             if !c.rugged { trustCard(ti).padding(.horizontal, 16) }
@@ -738,6 +744,53 @@ struct CoinDetail: View {
                 Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
             }.ignoresSafeArea(edges: .bottom)
         )
+    }
+
+    // MARK: live trade tape
+    private func tapeCard(_ c: Coin, _ m: Market) -> some View {
+        let all = (m.tape?[c.id] ?? []).sorted { $0.at > $1.at }
+        let recent = Array(all.prefix(20))
+        let buyV = recent.filter { $0.buy }.reduce(0) { $0 + $1.gems }
+        let sellV = recent.filter { !$0.buy }.reduce(0) { $0 + $1.gems }
+        let tot = max(0.0001, buyV + sellV)
+        let bpct = buyV / tot
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Circle().fill(green).frame(width: 7, height: 7)
+                Text("LIVE TRADES").font(.jk(11, .heavy)).foregroundColor(T.sub)
+                Spacer()
+                if !recent.isEmpty {
+                    Text("\(Int(bpct * 100))% buys").font(.jk(12, .bold)).foregroundColor(bpct >= 0.5 ? green : T.red)
+                }
+            }
+            GeometryReader { g in
+                HStack(spacing: 2) {
+                    Capsule().fill(green).frame(width: max(4, g.size.width * CGFloat(bpct)))
+                    Capsule().fill(T.red)
+                }
+            }.frame(height: 6)
+            if recent.isEmpty {
+                Text("Waiting for the first trade.").font(.jk(14)).foregroundColor(T.sub)
+            }
+            ForEach(Array(recent.prefix(8).enumerated()), id: \.offset) { _, t in
+                HStack(spacing: 10) {
+                    Avatar(emoji: t.emoji, key: t.handle, size: 28)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(t.me ? "You" : t.name).font(.jk(14, .bold)).lineLimit(1)
+                        Text(t.note ?? Mk.ago(t.at)).font(.jk(11)).foregroundColor(T.sub).lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                    Text(t.buy ? "BOUGHT" : "SOLD").font(.jk(10, .heavy)).foregroundColor(t.buy ? green : T.red)
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background((t.buy ? green : T.red).opacity(0.15)).clipShape(Capsule())
+                    Text("\(Mk.fmtGems(t.gems))").font(.jk(15, .bold)).foregroundColor(t.buy ? green : T.red)
+                    GemIcon(size: 14)
+                }
+                .padding(.vertical, 2)
+                .profileTap(t.handle)
+            }
+        }
+        .padding(14).background(Color.white.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
     // MARK: sticky top bar
@@ -1305,6 +1358,7 @@ struct TradeSheet: View {
                 }
                 .padding(14).background(Color.white.opacity(0.07)).clipShape(RoundedRectangle(cornerRadius: 16))
             }
+            if !c.rugged { SwapCard(ticker: c.id) }
             if c.mine && !c.rugged {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("CREATOR TOOLS").font(.jk(11, .heavy)).foregroundColor(T.sub)
@@ -1405,6 +1459,427 @@ struct LaunchSheet: View {
             TextField(ph, text: text).font(.jk(17)).padding(.horizontal, 14).frame(height: 48)
                 .background(T.card2).clipShape(RoundedRectangle(cornerRadius: 12))
                 .autocorrectionDisabled()
+        }
+    }
+}
+
+struct SwapCard: View {
+    @EnvironmentObject var game: Game
+    let ticker: String
+    @State private var into = false
+    @State private var other: String? = nil
+    @State private var pct = 50
+    private let lav = Color(red: 0.67, green: 0.62, blue: 0.95)
+    private let green = Color(red: 0.4, green: 0.95, blue: 0.5)
+
+    var body: some View {
+        let st = game.s
+        let m = st.ex.market ?? Market()
+        let heldIDs = Set(m.holds.map { $0.id })
+        let canOut = heldIDs.contains(ticker)
+        let eInto = into || !canOut
+        let cands: [Coin] = Array(m.coins.filter { $0.id != ticker && !$0.rugged && (!eInto || heldIDs.contains($0.id)) }
+            .sorted { Mk.change($0) > Mk.change($1) }.prefix(10))
+        let pick: String? = cands.contains(where: { $0.id == other }) ? other : cands.first?.id
+        let fromID = eInto ? pick : ticker
+        let toID = eInto ? ticker : pick
+        let a = m.coins.first { $0.id == fromID }
+        let b = m.coins.first { $0.id == toID }
+        let h = m.holds.first { $0.id == fromID }
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("SWAP").font(.jk(11, .heavy)).foregroundColor(T.sub)
+                Spacer()
+                Text("\(String(format: "%.0f", Mk.swapRate * 100))% fee · cheaper than sell + buy").font(.jk(11, .bold)).foregroundColor(green)
+            }
+            if canOut || !heldIDs.subtracting([ticker]).isEmpty {
+                HStack(spacing: 8) {
+                    modeBtn("Out of $\(ticker)", on: !eInto, enabled: canOut) { into = false }
+                    modeBtn("Into $\(ticker)", on: eInto, enabled: !heldIDs.subtracting([ticker]).isEmpty) { into = true }
+                }
+                if cands.isEmpty {
+                    Text(eInto ? "Hold another coin to swap into $\(ticker)." : "No other live coins to swap into.").font(.jk(13)).foregroundColor(T.sub)
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(cands) { cc in
+                                let on = cc.id == pick
+                                let ch = Mk.change(cc)
+                                Button { other = cc.id } label: {
+                                    HStack(spacing: 6) {
+                                        CoinTile(c: cc, size: 24)
+                                        VStack(alignment: .leading, spacing: 0) {
+                                            Text(cc.id).font(.jk(13, .heavy))
+                                            Text(Mk.pct(ch)).font(.jk(10, .bold)).foregroundColor(on ? Color.black.opacity(0.7) : (ch >= 0 ? green : T.red))
+                                        }
+                                    }
+                                    .foregroundColor(on ? .black : .white)
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
+                                    .background(on ? lav : Color.white.opacity(0.1)).clipShape(Capsule())
+                                }
+                            }
+                        }
+                    }
+                    HStack(spacing: 8) {
+                        ForEach([25, 50, 75, 100], id: \.self) { v in
+                            Button { pct = v } label: {
+                                Text("\(v)%").font(.jk(14, .bold)).foregroundColor(pct == v ? .black : .white)
+                                    .frame(maxWidth: .infinity).padding(.vertical, 9)
+                                    .background(pct == v ? lav : Color.white.opacity(0.1)).clipShape(Capsule())
+                            }
+                        }
+                    }
+                    if let a = a, let b = b, let h = h {
+                        quote(a, b, h)
+                    }
+                }
+            } else {
+                Text("Buy a coin first, then swap it into another without paying the full sell and buy fees.").font(.jk(13)).foregroundColor(T.sub)
+            }
+        }
+        .padding(14).background(Color.white.opacity(0.07)).clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func modeBtn(_ t: String, on: Bool, enabled: Bool, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            Text(t).font(.jk(13, .bold)).foregroundColor(on ? .black : .white)
+                .frame(maxWidth: .infinity).padding(.vertical, 8)
+                .background(on ? Color.white.opacity(0.9) : Color.white.opacity(0.1)).clipShape(Capsule())
+                .opacity(enabled ? 1 : 0.35)
+        }
+        .disabled(!enabled)
+    }
+
+    private func row(_ k: String, _ v: String, _ col: Color = .white) -> some View {
+        HStack {
+            Text(k).font(.jk(13)).foregroundColor(T.sub)
+            Spacer()
+            Text(v).font(.jk(13, .bold)).foregroundColor(col).lineLimit(1).minimumScaleFactor(0.7)
+        }
+    }
+
+    private func quote(_ a: Coin, _ b: Coin, _ h: Holding) -> some View {
+        let qty = h.qty * Double(pct) / 100
+        let q = Mk.swapQuote(from: a, to: b, qty: qty)
+        let rate = a.price / max(1e-12, b.price)
+        let ok = q.gross >= 2
+        return VStack(alignment: .leading, spacing: 8) {
+            row("You send", "\(Mk.qtyFmt(qty)) $\(a.id) · \(Mk.fmtGems(q.gross)) gems")
+            row("You get", "\(Mk.qtyFmt(q.out)) $\(b.id)", green)
+            row("Rate", "1 $\(a.id) = \(String(format: rate >= 10 ? "%.1f" : "%.3f", rate)) $\(b.id)")
+            row("Fee", "\(Mk.fmtGems(q.fee)) gems (vs \(Mk.fmtGems(Mk.fee(q.gross) * 2)) sell + buy)", T.gold)
+            row("Price impact", "$\(a.id) \(String(format: "%.1f", q.impOut * 100))% · $\(b.id) +\(String(format: "%.1f", q.impIn * 100))%", T.orange)
+            Button { game.marketSwap(a.id, b.id, frac: Double(pct) / 100) } label: {
+                Text(ok ? "Swap $\(a.id) to $\(b.id)" : "Too small to swap").font(.jk(17, .bold)).foregroundColor(.black)
+                    .frame(maxWidth: .infinity).padding(.vertical, 15)
+                    .background(ok ? lav : Color.white.opacity(0.12)).clipShape(Capsule())
+            }
+            .disabled(!ok)
+        }
+    }
+}
+
+
+// MARK: - Wallet UI
+
+struct WalletView: View {
+    @EnvironmentObject var game: Game
+    @Environment(\.dismiss) private var dismiss
+    var handle: String? = nil
+    @State private var send = false
+    @State private var copied = false
+    private let lav = Color(red: 0.67, green: 0.62, blue: 0.95)
+    private let green = Color(red: 0.4, green: 0.95, blue: 0.5)
+
+    var body: some View {
+        let st = game.s
+        let m = st.ex.market ?? Market()
+        let me = st.persona.handle
+        let h = handle ?? me
+        let isMe = h == me
+        let npc = st.npcs.first { $0.handle == h }
+        let name = isMe ? st.persona.name : (npc?.name ?? h)
+        let emoji = isMe ? st.persona.emoji : (npc?.emoji ?? "🙂")
+        let txs = (m.txs ?? []).filter { $0.from == h || $0.to == h }
+        ZStack {
+            Color.black.ignoresSafeArea()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        Text(isMe ? "Wallet" : "\(name)'s wallet").font(.jk(28, .heavy))
+                        Spacer()
+                        Button { dismiss() } label: {
+                            Image(systemName: "xmark").font(.system(size: 14, weight: .bold)).foregroundColor(.white)
+                                .frame(width: 36, height: 36).background(Color.white.opacity(0.1)).clipShape(Circle())
+                        }
+                    }
+                    addressCard(h, name, emoji)
+                    balanceCard(m, st, h, isMe, npc)
+                    actions(h, isMe, name)
+                    ledger(txs, m, st, h, isMe)
+                }
+                .padding(16).padding(.bottom, 30)
+            }
+        }
+        .sheet(isPresented: $send) { SendSheet(to: isMe ? nil : h).zoomed() }
+    }
+
+    private func addressCard(_ h: String, _ name: String, _ emoji: String) -> some View {
+        HStack(spacing: 12) {
+            Avatar(emoji: emoji, key: h, size: 46)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(name).font(.jk(17, .bold))
+                Text(Wallets.addr(h)).font(.system(size: 12, weight: .medium, design: .monospaced)).foregroundColor(T.sub).lineLimit(1).minimumScaleFactor(0.6)
+            }
+            Spacer()
+            Button {
+                UIPasteboard.general.string = Wallets.addr(h)
+                copied = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
+            } label: {
+                Image(systemName: copied ? "checkmark" : "doc.on.doc").font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(copied ? green : .white).frame(width: 38, height: 38)
+                    .background(Color.white.opacity(0.1)).clipShape(Circle())
+            }
+        }
+        .padding(14).background(Color.white.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func balanceCard(_ m: Market, _ st: GameState, _ h: String, _ isMe: Bool, _ npc: NPC?) -> some View {
+        var rows: [(String, String, Double)] = []
+        if isMe {
+            rows.append(("GEM", "Gems", Double(st.ex.gems)))
+            for hd in m.holds {
+                if let c = m.coins.first(where: { $0.id == hd.id }) { rows.append((hd.id, c.name, hd.qty * c.price)) }
+            }
+        } else if let n = npc {
+            rows.append(("GEM", "Gems (estimated)", Wallets.npcGems(n, m)))
+            for (k, v) in (m.nbal?[h] ?? [:]) where k != "GEM" {
+                if let c = m.coins.first(where: { $0.id == k }) { rows.append((k, c.name, v * c.price)) }
+            }
+        }
+        let total = rows.reduce(0) { $0 + $1.2 }
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("BALANCE").font(.jk(11, .heavy)).foregroundColor(T.sub)
+            HStack(spacing: 6) {
+                GemIcon(size: 24)
+                Text(Mk.fmtGems(total)).font(.jk(36, .heavy))
+            }
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
+                HStack {
+                    Text(r.0 == "GEM" ? "💎" : "$\(r.0)").font(.jk(14, .bold))
+                    Text(r.1).font(.jk(13)).foregroundColor(T.sub).lineLimit(1)
+                    Spacer()
+                    Text("\(Mk.fmtGems(r.2)) gems").font(.jk(14, .bold))
+                }
+            }
+        }
+        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func actions(_ h: String, _ isMe: Bool, _ name: String) -> some View {
+        HStack(spacing: 10) {
+            Button { send = true } label: {
+                Label(isMe ? "Send" : "Send to \(name.components(separatedBy: " ").first ?? name)", systemImage: "paperplane.fill").font(.jk(15, .bold)).foregroundColor(.black)
+                    .frame(maxWidth: .infinity).frame(height: 48).background(lav).clipShape(Capsule())
+            }
+            if isMe {
+                Button { game.walletAskDonations() } label: {
+                    Label("Ask for donations", systemImage: "megaphone.fill").font(.jk(15, .bold)).foregroundColor(.white)
+                        .frame(maxWidth: .infinity).frame(height: 48).background(Color.white.opacity(0.1)).clipShape(Capsule())
+                }
+            }
+        }
+    }
+
+    private func chip(_ t: String, _ col: Color) -> some View {
+        Text(t.uppercased()).font(.jk(9, .heavy)).foregroundColor(col)
+            .padding(.horizontal, 7).padding(.vertical, 3).background(col.opacity(0.15)).clipShape(Capsule())
+    }
+
+    private func ledger(_ txs: [WTx], _ m: Market, _ st: GameState, _ h: String, _ isMe: Bool) -> some View {
+        let me = st.persona.handle
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("TRANSACTIONS").font(.jk(11, .heavy)).foregroundColor(T.sub)
+            if txs.isEmpty {
+                Text(isMe ? "Nothing yet. Tip a post, a story or a live stream, or ask for donations." : "No transfers with this wallet.").font(.jk(14)).foregroundColor(T.sub)
+            }
+            ForEach(txs.prefix(30)) { tx in
+                let out = tx.from == h
+                let other = out ? tx.to : tx.from
+                let on = st.npcs.first { $0.handle == other }
+                let oname = other == me ? st.persona.name : (on?.name ?? other)
+                let mineSent = tx.from == me
+                let mineGot = tx.to == me
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 10) {
+                        Image(systemName: out ? "arrow.up.right" : "arrow.down.left").font(.system(size: 13, weight: .bold))
+                            .foregroundColor(out ? T.red : green).frame(width: 30, height: 30)
+                            .background((out ? T.red : green).opacity(0.15)).clipShape(Circle())
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(out ? "To" : "From") \(oname)").font(.jk(15, .bold)).lineLimit(1)
+                            Text("\(tx.ctx == "direct" ? "Direct" : tx.ctx.capitalized) · \(Mk.ago(tx.at))").font(.jk(11)).foregroundColor(T.sub)
+                        }
+                        Spacer(minLength: 4)
+                        VStack(alignment: .trailing, spacing: 3) {
+                            Text("\(out ? "-" : "+")\(Wallets.fmt(tx.asset, tx.amt))").font(.jk(14, .bold)).foregroundColor(out ? T.red : green)
+                            switch tx.state {
+                            case "denied": chip(mineSent ? "Disputed" : "Kept", T.orange)
+                            case "exposed": chip("Exposed", T.red)
+                            case "refunded": chip("Refunded", lav)
+                            default: chip("Confirmed", green)
+                            }
+                        }
+                    }
+                    Button { UIPasteboard.general.string = tx.hash } label: {
+                        Text("tx \(tx.hash)").font(.system(size: 10, design: .monospaced)).foregroundColor(T.sub).lineLimit(1).minimumScaleFactor(0.5)
+                    }
+                    if mineSent && tx.state == "denied" {
+                        Text("\(oname) says they never got it. You have the receipt.").font(.jk(12, .semibold)).foregroundColor(T.orange)
+                        Button { game.walletExpose(tx.id) } label: {
+                            Label("Post the receipts", systemImage: "doc.text.magnifyingglass").font(.jk(14, .bold)).foregroundColor(.black)
+                                .frame(maxWidth: .infinity).frame(height: 40).background(green).clipShape(Capsule())
+                        }
+                    }
+                    if mineGot && tx.state == "ok" && isMe {
+                        HStack(spacing: 8) {
+                            Button { game.walletRefund(tx.id) } label: {
+                                Text("Refund").font(.jk(13, .bold)).foregroundColor(.white)
+                                    .frame(maxWidth: .infinity).frame(height: 36).background(Color.white.opacity(0.1)).clipShape(Capsule())
+                            }
+                            Button { game.walletDeny(tx.id) } label: {
+                                Text("Say you never got it 😈").font(.jk(13, .bold)).foregroundColor(T.red)
+                                    .frame(maxWidth: .infinity).frame(height: 36).background(T.red.opacity(0.15)).clipShape(Capsule())
+                            }
+                        }
+                    }
+                }
+                .padding(12).background(Color.white.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+        }
+    }
+}
+
+struct SendSheet: View {
+    @EnvironmentObject var game: Game
+    @Environment(\.dismiss) private var dismiss
+    var to: String? = nil
+    var ctx: String = "direct"
+    var onSent: ((String, Double) -> Void)? = nil
+    @State private var target: String? = nil
+    @State private var asset = "GEM"
+    @State private var amt = 5
+    @State private var pct = 50
+    @State private var q = ""
+    private let lav = Color(red: 0.67, green: 0.62, blue: 0.95)
+
+    var body: some View {
+        let st = game.s
+        let m = st.ex.market ?? Market()
+        let dest = to ?? target
+        let npc = st.npcs.first { $0.handle == dest }
+        let held = m.holds.first { $0.id == asset }
+        let coin = m.coins.first { $0.id == asset }
+        let sendAmt: Double = asset == "GEM" ? Double(amt) : (held?.qty ?? 0) * Double(pct) / 100
+        let valid = dest != nil && sendAmt > 0 && (asset == "GEM" ? st.ex.gems >= amt : held != nil)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    Text("Send").font(.jk(26, .heavy))
+                    Spacer()
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark").font(.system(size: 14, weight: .bold)).foregroundColor(.white)
+                            .frame(width: 36, height: 36).background(Color.white.opacity(0.1)).clipShape(Circle())
+                    }
+                }
+                if let n = npc {
+                    HStack(spacing: 10) {
+                        Avatar(emoji: n.emoji, key: n.handle, size: 40)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(n.name).font(.jk(16, .bold))
+                            Text(Wallets.short(Wallets.addr(n.handle))).font(.system(size: 12, design: .monospaced)).foregroundColor(T.sub)
+                        }
+                        Spacer()
+                        if to == nil { Button { target = nil } label: { Text("Change").font(.jk(13, .bold)).foregroundColor(lav) } }
+                    }
+                    .padding(12).background(Color.white.opacity(0.07)).clipShape(RoundedRectangle(cornerRadius: 14))
+                } else {
+                    TextField("Search a character...", text: $q).font(.jk(15)).padding(.horizontal, 14).frame(height: 44)
+                        .background(Color.white.opacity(0.08)).clipShape(Capsule())
+                    ForEach(candidates(st)) { n in
+                        Button { target = n.handle } label: {
+                            HStack(spacing: 10) {
+                                Avatar(emoji: n.emoji, key: n.handle, size: 36)
+                                Text(n.name).font(.jk(15, .semibold)).foregroundColor(.white)
+                                Text("@\(n.handle)").font(.jk(12)).foregroundColor(T.sub)
+                                Spacer()
+                            }
+                            .padding(10).background(Color.white.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 12))
+                        }
+                    }
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("ASSET").font(.jk(11, .heavy)).foregroundColor(T.sub)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            assetChip("GEM", "Gems · \(st.ex.gems)")
+                            ForEach(m.holds) { hd in assetChip(hd.id, "$\(hd.id) · \(Mk.qtyFmt(hd.qty))") }
+                        }
+                    }
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("AMOUNT").font(.jk(11, .heavy)).foregroundColor(T.sub)
+                    HStack(spacing: 8) {
+                        if asset == "GEM" {
+                            ForEach([1, 5, 10, 25, 50, 100], id: \.self) { v in amtChip("\(v)", amt == v) { amt = v } }
+                        } else {
+                            ForEach([25, 50, 75, 100], id: \.self) { v in amtChip("\(v)%", pct == v) { pct = v } }
+                        }
+                    }
+                    if asset != "GEM", let c = coin {
+                        Text("\(Mk.qtyFmt(sendAmt)) $\(asset) · about \(Mk.fmtGems(sendAmt * 0.99 * c.price)) gems after a 1% transfer fee").font(.jk(13)).foregroundColor(T.sub)
+                    }
+                }
+                Button {
+                    if let d = dest, game.walletSend(to: d, asset: asset, amt: sendAmt, ctx: ctx) {
+                        onSent?(asset, sendAmt)
+                        dismiss()
+                    }
+                } label: {
+                    Text(valid ? "Send \(Wallets.fmt(asset, sendAmt))" : (dest == nil ? "Pick someone" : "Not enough balance")).font(.jk(18, .bold)).foregroundColor(.black)
+                        .frame(maxWidth: .infinity).frame(height: 54)
+                        .background(valid ? lav : Color.white.opacity(0.12)).clipShape(Capsule())
+                }
+                .disabled(!valid)
+                Text("Transfers are final and public on the ledger. The receiver can still claim they never got it. Keep the receipt.").font(.jk(12)).foregroundColor(T.sub)
+            }
+            .padding(16).padding(.bottom, 20)
+        }
+        .background(Color(red: 0.07, green: 0.07, blue: 0.08))
+        .presentationDetents([.large])
+    }
+
+    private func candidates(_ st: GameState) -> [NPC] {
+        let all = st.npcs.filter { $0.id != "newsdesk" }
+        let f = q.trimmed.lowercased()
+        let list = f.isEmpty ? all.sorted { $0.affinity > $1.affinity } : all.filter { $0.name.lowercased().contains(f) || $0.handle.lowercased().contains(f) }
+        return Array(list.prefix(8))
+    }
+
+    private func assetChip(_ id: String, _ t: String) -> some View {
+        Button { asset = id } label: {
+            Text(t).font(.jk(14, .bold)).foregroundColor(asset == id ? .black : .white)
+                .padding(.horizontal, 14).padding(.vertical, 9)
+                .background(asset == id ? lav : Color.white.opacity(0.1)).clipShape(Capsule())
+        }
+    }
+
+    private func amtChip(_ t: String, _ on: Bool, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            Text(t).font(.jk(14, .bold)).foregroundColor(on ? .black : .white)
+                .frame(maxWidth: .infinity).padding(.vertical, 9)
+                .background(on ? lav : Color.white.opacity(0.1)).clipShape(Capsule())
         }
     }
 }

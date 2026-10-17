@@ -773,6 +773,7 @@ struct ProfileTab: View {
     @State private var openStory: StoryOpen? = nil
     @State private var allStories = false
     @State private var showHistory = false
+    @State private var showWallet = false
     @State private var unlockInfo = false
     @State private var showFollowers = false
     @State private var showAvatarStudio = false
@@ -854,6 +855,7 @@ struct ProfileTab: View {
         .fullScreenCover(item: $openStory) { o in StoriesFlow(openStory: o.story).zoomed() }
         .fullScreenCover(isPresented: $allStories) { AllStoriesSheet().zoomed() }
         .fullScreenCover(isPresented: $showHistory) { WorldHistoryView().zoomed() }
+        .fullScreenCover(isPresented: $showWallet) { WalletView().zoomed() }
         .alert("More characters", isPresented: $unlockInfo) {
             Button("Got it", role: .cancel) {}
         } message: {
@@ -1024,8 +1026,22 @@ struct ProfileTab: View {
             .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Color.white.opacity(0.09), lineWidth: 1))
 
             historyButton
+            walletButton
 
         }
+    }
+
+    private var walletButton: some View {
+        Button { showWallet = true } label: {
+            HStack {
+                Image(systemName: "wallet.pass.fill").font(.system(size: 22)).foregroundColor(T.gold)
+                Text("Wallet").font(.jk(17, .semibold))
+                Spacer()
+                Text(Wallets.short(Wallets.addr(game.s.persona.handle))).font(.system(size: 12, design: .monospaced)).foregroundColor(T.sub)
+                Image(systemName: "chevron.right").foregroundColor(T.sub)
+            }
+            .padding(14).background(RoundedRectangle(cornerRadius: 16).fill(T.card))
+        }.buttonStyle(.plain)
     }
 
     private var historyButton: some View {

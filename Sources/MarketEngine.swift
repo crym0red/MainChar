@@ -70,6 +70,32 @@ struct Market: Codable, Hashable {
     var inv: [String: Int]? = nil
     var feesPaid: Double? = nil
     var dev: [String: DevRec]? = nil
+    var tape: [String: [TapeTrade]]? = nil
+    var txs: [WTx]? = nil
+    var nbal: [String: [String: Double]]? = nil
+}
+
+struct TapeTrade: Codable, Hashable, Identifiable {
+    var id: String = UUID().uuidString
+    var handle: String
+    var name: String
+    var emoji: String
+    var buy: Bool
+    var gems: Double
+    var at: Date
+    var me = false
+    var note: String? = nil
+}
+
+extension Market {
+    mutating func logTrade(_ coin: String, _ t: TapeTrade) {
+        var dd = tape ?? [:]
+        var a = dd[coin] ?? []
+        a.append(t)
+        if a.count > 40 { a.removeFirst(a.count - 40) }
+        dd[coin] = a
+        tape = dd
+    }
 }
 
 struct DevRec: Codable, Hashable {
@@ -412,6 +438,7 @@ extension Game {
                     m.coins[i].tr = t
                 }
                 if let e = stepCoin(&m.coins[i]) { events.append((m.coins[i], e)) }
+                if !m.coins[i].rugged { npcFlow(&m, i, st.npcs.filter { $0.id != "newsdesk" }, maxTrades: 2) }
             }
         }
         // prune old dead coins and orphan holdings
@@ -423,6 +450,7 @@ extension Game {
         m.holds.removeAll { h in !liveIDs.contains(h.id) }
         if var ch = m.chats { for k in Array(ch.keys) where !liveIDs.contains(k) { ch[k] = nil }; m.chats = ch }
         if var w = m.watch { w.removeAll { !liveIDs.contains($0) }; m.watch = w }
+        if var tp = m.tape { for k in Array(tp.keys) where !liveIDs.contains(k) { tp[k] = nil }; m.tape = tp }
         st.ex.market = m
         func rank(_ e: CoinEvent) -> Int { if case .rug = e { return 0 }; if case .crash = e { return 1 }; return 2 }
         let ordered = events.sorted { rank($0.1) < rank($1.1) }
@@ -461,6 +489,7 @@ extension Game {
         var items: [DigestItem] = []
         marketAdvance(&st, &items, steps: 1, quiet: true)
         s = st
+        walletTick()
     }
 
     // MARK: Headlines and feed
@@ -533,7 +562,7 @@ extension Game {
 
     // MARK: Rug aftermath
 
-    private func rugQueue(_ speakers: [NPC], _ lines: [String]) -> [QComment] {
+    func rugQueue(_ speakers: [NPC], _ lines: [String]) -> [QComment] {
         var q: [QComment] = []
         var at = Date()
         for (i, line) in lines.enumerated() {
@@ -879,6 +908,9 @@ extension Game {
         m.coins[i].liq += net * 0.5
         m.coins[i].pool = m.coins[i].poolV + net
         m.coins[i].holders += 1
+        m.coins[i].peak = max(m.coins[i].peak, m.coins[i].price)
+        if let n = m.coins[i].hist.indices.last { m.coins[i].hist[n] = m.coins[i].price }
+        m.logTrade(ticker, TapeTrade(handle: st.persona.handle, name: "You", emoji: st.persona.emoji, buy: true, gems: Double(amt), at: Date(), me: true))
         if let h = m.holds.firstIndex(where: { $0.id == ticker }) {
             m.holds[h].qty += qty; m.holds[h].cost += Double(amt)
         } else { m.holds.append(Holding(id: ticker, qty: qty, cost: Double(amt))) }
@@ -908,6 +940,8 @@ extension Game {
         m.holds[h].cost -= costPart
         if m.holds[h].qty < 1e-9 || f >= 0.999 { m.holds.remove(at: h) }
         m.dust += net
+        if let n = m.coins[i].hist.indices.last { m.coins[i].hist[n] = m.coins[i].price }
+        m.logTrade(ticker, TapeTrade(handle: st.persona.handle, name: "You", emoji: st.persona.emoji, buy: false, gems: gross, at: Date(), me: true))
         let whole = Int(m.dust)
         m.dust -= Double(whole)
         st.ex.gems += whole
@@ -1223,5 +1257,427 @@ extension Game {
                                at: now.addingTimeInterval(-6 + Double(k))))
         }
         putChat(&m, c.id, log)
+    }
+}
+
+
+// MARK: - Live order flow + coin swaps
+
+struct SwapQuote {
+    var gross: Double
+    var fee: Double
+    var net: Double
+    var out: Double
+    var impOut: Double
+    var impIn: Double
+}
+
+extension Mk {
+    static let swapRate = 0.02
+    static func swapFee(_ x: Double) -> Double { max(1, x * swapRate) }
+    static func swapQuote(from a: Coin, to b: Coin, qty: Double) -> SwapQuote {
+        let gross = min(qty * a.price, a.poolV * 0.85)
+        let fee = min(gross, swapFee(gross))
+        let net = gross - fee
+        let impOut = max(0.5, 1 - gross / max(5, a.liq) * 0.8) - 1
+        let impIn = min(0.5, net / max(5, b.liq) * 0.8)
+        let out = net / max(1e-9, b.price)
+        return SwapQuote(gross: gross, fee: fee, net: net, out: out, impOut: impOut, impIn: impIn)
+    }
+    static func qtyFmt(_ v: Double) -> String {
+        if v >= 1_000_000 { return String(format: "%.2fM", v / 1_000_000) }
+        if v >= 1_000 { return String(format: "%.1fK", v / 1_000) }
+        return String(format: "%.1f", v)
+    }
+}
+
+extension Game {
+    /// Simulated traders hit the book. Each trade moves the price and lands on the tape.
+    func npcFlow(_ m: inout Market, _ i: Int, _ cast: [NPC], maxTrades: Int) {
+        guard !cast.isEmpty, m.coins.indices.contains(i), !m.coins[i].rugged else { return }
+        let n = Int.random(in: 0...maxTrades)
+        guard n > 0 else { return }
+        for _ in 0..<n {
+            guard let npc = cast.randomElement() else { continue }
+            let c = m.coins[i]
+            let tr = Double(c.tr ?? 70) / 100
+            let bp = min(0.85, max(0.15, 0.5 + c.drift * 6 + ((c.interest ?? 0.7) - 0.5) * 0.3 + (tr - 0.5) * 0.1))
+            let buy = Double.random(in: 0...1) < bp
+            var gems = min(60, max(2, exp(Double.random(in: 0.3...3.2))))
+            if Double.random(in: 0...1) < 0.03 { gems *= 3 }
+            let net = gems - Mk.fee(gems)
+            let imp = min(0.12, net / max(5, c.liq) * 0.5)
+            if buy {
+                m.coins[i].price = c.price * (1 + imp)
+                m.coins[i].liq = c.liq + net * 0.3
+                m.coins[i].pool = c.poolV + net * 0.3
+            } else {
+                m.coins[i].price = max(1e-7, c.price * (1 - imp))
+                m.coins[i].pool = max(2, c.poolV - net * 0.3)
+            }
+            m.coins[i].peak = max(m.coins[i].peak, m.coins[i].price)
+            m.logTrade(c.id, TapeTrade(handle: npc.handle, name: npc.name, emoji: npc.emoji, buy: buy, gems: gems,
+                                       at: Date().addingTimeInterval(-Double.random(in: 0...2))))
+        }
+        if let last = m.coins[i].hist.indices.last { m.coins[i].hist[last] = m.coins[i].price }
+    }
+
+    /// Fast per-coin heartbeat while a coin screen is open.
+    func marketFlow(_ ticker: String) {
+        guard playing else { return }
+        var st = s
+        guard var m = st.ex.market, let i = m.coins.firstIndex(where: { $0.id == ticker }), !m.coins[i].rugged else { return }
+        npcFlow(&m, i, st.npcs.filter { $0.id != "newsdesk" }, maxTrades: 2)
+        st.ex.market = m
+        s = st
+    }
+
+    func marketSwap(_ fromID: String, _ toID: String, frac: Double) {
+        var st = s
+        guard fromID != toID, var m = st.ex.market,
+              let a = m.coins.firstIndex(where: { $0.id == fromID }),
+              let b = m.coins.firstIndex(where: { $0.id == toID }),
+              let h = m.holds.firstIndex(where: { $0.id == fromID }) else { return }
+        guard !m.coins[a].rugged, !m.coins[b].rugged else { showToast("Can't swap a rugged coin"); return }
+        let f = max(0.01, min(1, frac))
+        let qty = m.holds[h].qty * f
+        let q = Mk.swapQuote(from: m.coins[a], to: m.coins[b], qty: qty)
+        guard q.gross >= 2 else { showToast("Swap is too small"); return }
+        m.feesPaid = (m.feesPaid ?? 0) + q.fee
+        m.coins[a].price = max(1e-7, m.coins[a].price * (1 + q.impOut))
+        m.coins[a].pool = max(1, m.coins[a].poolV - q.net)
+        m.coins[b].price *= 1 + q.impIn
+        m.coins[b].liq += q.net * 0.5
+        m.coins[b].pool = m.coins[b].poolV + q.net
+        m.coins[b].holders += 1
+        m.coins[b].peak = max(m.coins[b].peak, m.coins[b].price)
+        for k in [a, b] { if let n = m.coins[k].hist.indices.last { m.coins[k].hist[n] = m.coins[k].price } }
+        let costPart = m.holds[h].cost * f
+        m.holds[h].qty -= qty
+        m.holds[h].cost -= costPart
+        if m.holds[h].qty < 1e-9 || f >= 0.999 { m.holds.remove(at: h) }
+        if let k = m.holds.firstIndex(where: { $0.id == toID }) {
+            m.holds[k].qty += q.out; m.holds[k].cost += costPart
+        } else {
+            m.holds.append(Holding(id: toID, qty: q.out, cost: costPart))
+        }
+        m.logTrade(fromID, TapeTrade(handle: st.persona.handle, name: "You", emoji: st.persona.emoji, buy: false, gems: q.gross, at: Date(), me: true, note: "swap to $\(toID)"))
+        m.logTrade(toID, TapeTrade(handle: st.persona.handle, name: "You", emoji: st.persona.emoji, buy: true, gems: q.net, at: Date(), me: true, note: "swap from $\(fromID)"))
+        st.ex.market = m
+        bump(&st, "trade")
+        s = st
+        showToast("Swapped $\(fromID) to $\(toID). Fee \(Mk.fmtGems(q.fee)) gems")
+    }
+}
+
+
+// MARK: - Wallets
+
+struct WTx: Codable, Hashable, Identifiable {
+    var id: String = UUID().uuidString
+    var hash: String
+    var from: String
+    var to: String
+    var asset: String          // "GEM" or a ticker
+    var amt: Double
+    var gems: Double           // gem value when it moved
+    var at: Date
+    var ctx: String = "direct" // direct | post | live | story
+    var denyAt: Date? = nil    // when the recipient will claim they never got it
+    var state: String = "ok"   // ok | denied | exposed | refunded
+}
+
+enum Wallets {
+    static func addr(_ h: String) -> String {
+        let k = h.lowercased()
+        return "mc1" + String(format: "%08x", HK.h(k)) + String(format: "%08x", HK.h(k + "#w"))
+    }
+    static func short(_ a: String) -> String {
+        a.count > 12 ? String(a.prefix(7)) + "..." + String(a.suffix(4)) : a
+    }
+    static func hash() -> String {
+        "0x" + (0..<3).map { _ in String(format: "%08x", UInt32.random(in: 0...UInt32.max)) }.joined()
+    }
+    static func fmt(_ asset: String, _ amt: Double) -> String {
+        asset == "GEM" ? "\(Mk.fmtGems(amt)) gems" : "\(Mk.qtyFmt(amt)) $\(asset)"
+    }
+    static func denyChance(_ n: NPC, _ gems: Double) -> Double {
+        var p: Double
+        switch n.trait {
+        case .chaos: p = 0.34
+        case .hater: p = 0.30
+        case .mogul: p = 0.18
+        case .gossip: p = 0.14
+        case .hype: p = 0.10
+        default: p = 0.04
+        }
+        if n.affinity >= 70 { p *= 0.4 } else if n.affinity < 30 { p *= 1.5 }
+        p += min(0.12, gems / 400)
+        return min(0.6, p)
+    }
+    static func npcGems(_ n: NPC, _ m: Market) -> Double {
+        Double(n.followers) / 80 + Double(HK.h(n.handle) % 300) + (m.nbal?[n.handle]?["GEM"] ?? 0)
+    }
+}
+
+extension Game {
+    // MARK: sending
+
+    @discardableResult
+    func walletSend(to h: String, asset: String, amt: Double, ctx: String) -> Bool {
+        var st = s
+        guard var m = st.ex.market, amt > 0,
+              let ni = st.npcs.firstIndex(where: { $0.handle == h && $0.id != "newsdesk" }) else { showToast("Can't send there"); return false }
+        var credited = amt
+        var gemsVal = amt
+        if asset == "GEM" {
+            let g = Int(amt)
+            guard g >= 1, st.ex.gems >= g else { showToast("Not enough gems"); return false }
+            st.ex.gems -= g
+            credited = Double(g)
+            gemsVal = Double(g)
+        } else {
+            guard let hi = m.holds.firstIndex(where: { $0.id == asset }), m.holds[hi].qty >= amt * 0.999,
+                  let c = m.coins.first(where: { $0.id == asset }) else { showToast("Not enough \(asset)"); return false }
+            let f = min(1, amt / max(1e-9, m.holds[hi].qty))
+            m.holds[hi].cost -= m.holds[hi].cost * f
+            m.holds[hi].qty -= amt
+            if m.holds[hi].qty < 1e-9 { m.holds.remove(at: hi) }
+            credited = amt * 0.99
+            gemsVal = credited * c.price
+        }
+        var nb = m.nbal ?? [:]
+        var row = nb[h] ?? [:]
+        row[asset, default: 0] += credited
+        nb[h] = row
+        m.nbal = nb
+        let npc = st.npcs[ni]
+        var tx = WTx(hash: Wallets.hash(), from: st.persona.handle, to: h, asset: asset, amt: credited, gems: gemsVal, at: Date(), ctx: ctx)
+        if Double.random(in: 0...1) < Wallets.denyChance(npc, gemsVal) {
+            tx.denyAt = Date().addingTimeInterval(Double.random(in: 15...60))
+        }
+        var t = m.txs ?? []
+        t.insert(tx, at: 0)
+        if t.count > 80 { t.removeLast(t.count - 80) }
+        m.txs = t
+        st.npcs[ni].affinity = min(100, st.npcs[ni].affinity + max(1, Int(gemsVal / 6)))
+        remember(&st, h, "gift", "you sent me \(Wallets.fmt(asset, credited))", mood: 2)
+        st.ex.market = m
+        s = st
+        showToast("Sent \(Wallets.fmt(asset, credited)) to @\(h)")
+        return true
+    }
+
+    func walletAskDonations() {
+        var st = s
+        if st.posts.contains(where: { $0.isYou && $0.tag == "Donate" && Date().timeIntervalSince($0.ts ?? .distantPast) < 3600 }) {
+            showToast("Your donation post is still up")
+            return
+        }
+        let me = st.persona
+        let texts = ["donations are open 💸 my wallet is \(Wallets.addr(me.handle)). every gem keeps me main character. receipts for everyone.",
+                     "ok i'm asking. send gems or coins to \(Wallets.addr(me.handle)) and i'll shout you out on stream.",
+                     "funding the grind. wallet \(Wallets.addr(me.handle)). don't be shy."]
+        var p = Post(authorHandle: me.handle, authorName: me.name, emoji: me.emoji, text: texts.randomElement() ?? "donate",
+                     likes: 20, reposts: 3, comments: makeComments(st, auraDelta: 1, count: 3, text: "donate"),
+                     day: st.day, isYou: true)
+        p.tag = "Donate"
+        stampPost(&p, st)
+        st.posts.insert(p, at: 0)
+        s = st
+        showToast("Donation post is live")
+    }
+
+    // MARK: ticking (denials, incoming donations, asks)
+
+    func walletTick() {
+        guard playing else { return }
+        var st = s
+        guard var m = st.ex.market else { return }
+        let now = Date()
+        let me = st.persona.handle
+        let cast = st.npcs.filter { $0.id != "newsdesk" }
+        var changed = false
+        if var txs = m.txs {
+            for i in txs.indices where txs[i].state == "ok" && txs[i].from == me {
+                guard let dt = txs[i].denyAt, dt <= now, let n = cast.first(where: { $0.handle == txs[i].to }) else { continue }
+                txs[i].state = "denied"
+                postDenial(&st, n, txs[i])
+                changed = true
+            }
+            m.txs = txs
+        }
+        let ask = st.posts.contains { $0.isYou && $0.tag == "Donate" && now.timeIntervalSince($0.ts ?? .distantPast) < 172800 }
+        if ask, let n = cast.randomElement(), Double.random(in: 0...1) < 0.035 {
+            let amt = Double([2, 3, 5, 5, 10, 15, 25].randomElement() ?? 5)
+            var tx = WTx(hash: Wallets.hash(), from: n.handle, to: me, asset: "GEM", amt: amt, gems: amt, at: now, ctx: "post")
+            if let c = m.coins.first(where: { $0.mine && !$0.rugged }), Double.random(in: 0...1) < 0.25 {
+                let q = amt / max(1e-9, c.price)
+                tx.asset = c.id
+                tx.amt = q
+                if let hi = m.holds.firstIndex(where: { $0.id == c.id }) { m.holds[hi].qty += q; m.holds[hi].cost += amt }
+                else { m.holds.append(Holding(id: c.id, qty: q, cost: amt)) }
+            } else {
+                st.ex.gems += Int(amt)
+            }
+            var t = m.txs ?? []
+            t.insert(tx, at: 0)
+            if t.count > 80 { t.removeLast(t.count - 80) }
+            m.txs = t
+            if let j = st.npcs.firstIndex(where: { $0.handle == n.handle }) { st.npcs[j].affinity = min(100, st.npcs[j].affinity + 2) }
+            notify(&st, "event", "\(n.name) donated \(Wallets.fmt(tx.asset, tx.amt))", sub: "Check your wallet for the receipt.", handle: n.handle, emoji: "💸")
+            changed = true
+        }
+        if Double.random(in: 0...1) < 0.002, let n = cast.filter({ $0.trait == .hype || $0.trait == .mogul || $0.trait == .chaos }).randomElement(),
+           !st.posts.contains(where: { $0.authorHandle == n.handle && $0.tag == "Donate" && now.timeIntervalSince($0.ts ?? .distantPast) < 7200 }) {
+            let t = ["donation szn. my wallet is \(Wallets.addr(n.handle)). tell me what you send.", "building something huge. fund it. \(Wallets.addr(n.handle))", "tip me if i made your day: \(Wallets.addr(n.handle)) 💸"].randomElement() ?? "donate"
+            var p = makePost(n, t, st)
+            p.tag = "Donate"
+            p.poll = nil; p.media = nil; p.quote = nil
+            stampPost(&p, st)
+            st.posts.insert(p, at: 0)
+            changed = true
+        }
+        if changed {
+            st.ex.market = m
+            s = st
+        }
+    }
+
+    private func postDenial(_ st: inout GameState, _ n: NPC, _ tx: WTx) {
+        let me = st.persona.handle
+        let a = Wallets.fmt(tx.asset, tx.amt)
+        let texts = ["@\(me) i never got anything. check your wallet. 🤷",
+                     "no transfer here. nothing landed. stop lying @\(me).",
+                     "@\(me) says they sent me \(a). my wallet says otherwise.",
+                     "you sent NOTHING @\(me). receipts or it didn't happen."]
+        var p = makePost(n, texts.randomElement() ?? "never got it", st)
+        p.tag = "Wallet"
+        p.poll = nil; p.media = nil; p.quote = nil
+        stampPost(&p, st)
+        p.likes = max(p.likes * 2, 80)
+        p.comments = []
+        let sp = Array(st.npcs.filter { $0.id != "newsdesk" && $0.handle != n.handle }.shuffled().prefix(4))
+        p.queue = rugQueue(sp, ["@\(me) show the hash then", "wait who is lying here 🍿", "sent gems and got ghosted, classic", "the ledger doesn't lie, post the receipt", "@\(n.handle) caught red handed or @\(me) clowning?"])
+        st.posts.insert(p, at: 0)
+        notify(&st, "event", "\(n.name) says they never got your \(a)", sub: "You have the receipt. Expose them from your wallet.", handle: n.handle, emoji: "🧾")
+        remember(&st, n.handle, "wallet", "i said i never got your transfer", mood: -2)
+    }
+
+    // MARK: you got scammed: post the receipts
+
+    func walletExpose(_ id: String) {
+        var st = s
+        guard var m = st.ex.market, var txs = m.txs, let i = txs.firstIndex(where: { $0.id == id }),
+              txs[i].state == "denied", txs[i].from == st.persona.handle,
+              let ni = st.npcs.firstIndex(where: { $0.handle == txs[i].to }) else { return }
+        let n = st.npcs[ni]
+        let tx = txs[i]
+        let me = st.persona
+        let a = Wallets.fmt(tx.asset, tx.amt)
+        var p = Post(authorHandle: me.handle, authorName: me.name, emoji: me.emoji,
+                     text: "🧾 receipts. \(a) sent to @\(n.handle). tx \(tx.hash). confirmed on chain. @\(n.handle) says nothing arrived. explain.",
+                     likes: 40, reposts: 8, comments: [], day: st.day, isYou: true)
+        p.tag = "Receipts"
+        stampPost(&p, st)
+        let others = st.npcs.filter { $0.id != "newsdesk" && $0.handle != n.handle }.shuffled()
+        p.queue = rugQueue(Array(others.prefix(4)), ["the hash is right there @\(n.handle)", "lmao 'never got it'", "scam the sender, bold strategy", "@\(n.handle) your wallet is cooked, everybody saw the tx", "pay it back or get ratioed"])
+        st.posts.insert(p, at: 0)
+        let rc = Roast.ctx(st, handle: n.handle, name: n.name, rugs: 1, loot: tx.gems, holders: 0, trust: 0, coin: tx.asset == "GEM" ? "" : tx.asset)
+        for r in others.prefix(2) { st.posts.insert(roastPost(st, by: r, rc, rug: true, tag: "Ratio"), at: 0) }
+        let soft = !(n.trait == .hater || n.trait == .chaos)
+        if Double.random(in: 0...1) < (soft ? 0.7 : 0.25) {
+            if tx.asset == "GEM" { st.ex.gems += Int(tx.amt) }
+            else if let hi = m.holds.firstIndex(where: { $0.id == tx.asset }) { m.holds[hi].qty += tx.amt; m.holds[hi].cost += tx.gems }
+            else { m.holds.append(Holding(id: tx.asset, qty: tx.amt, cost: tx.gems)) }
+            txs[i].state = "refunded"
+            var rp = makePost(n, "fine. found it. refunded @\(me.handle) \(a). happy now?", st)
+            rp.tag = "Wallet"; rp.poll = nil; rp.media = nil; rp.quote = nil
+            stampPost(&rp, st)
+            rp.comments = []
+            rp.queue = rugQueue(Array(others.prefix(3)), ["'found it' 😂", "only after the receipts dropped", "respect for paying up, but we saw you"])
+            st.posts.insert(rp, at: 0)
+            st.npcs[ni].affinity = max(0, st.npcs[ni].affinity - 8)
+            showToast("Exposed. \(n.name) refunded you")
+        } else {
+            txs[i].state = "exposed"
+            var rp = makePost(n, "still don't have it. believe what you want.", st)
+            rp.tag = "Wallet"; rp.poll = nil; rp.media = nil; rp.quote = nil
+            stampPost(&rp, st)
+            rp.comments = []
+            rp.queue = rugQueue(Array(others.prefix(3)), ["the tx hash is public. nobody believes you", "blocked and reported", "scammer behavior"])
+            st.posts.insert(rp, at: 0)
+            st.npcs[ni].affinity = max(0, st.npcs[ni].affinity - 25)
+            showToast("Exposed. They kept it, but everyone knows")
+        }
+        st.aura += 3
+        st.followers += max(2, st.followers / 200)
+        gainXP(&st, 10)
+        m.txs = txs
+        st.ex.market = m
+        s = st
+    }
+
+    // MARK: you received something
+
+    func walletDeny(_ id: String) {
+        var st = s
+        guard var m = st.ex.market, var txs = m.txs, let i = txs.firstIndex(where: { $0.id == id }),
+              txs[i].state == "ok", txs[i].to == st.persona.handle,
+              let ni = st.npcs.firstIndex(where: { $0.handle == txs[i].from }) else { return }
+        let n = st.npcs[ni]
+        let tx = txs[i]
+        let me = st.persona.handle
+        txs[i].state = "denied"
+        var d = m.dev ?? [:]
+        var r = d[me] ?? DevRec()
+        r.rugs += 1
+        r.loot += tx.gems
+        r.boycott = Date().addingTimeInterval(3 * 3600)
+        d[me] = r
+        m.dev = d
+        let a = Wallets.fmt(tx.asset, tx.amt)
+        var p = makePost(n, "@\(me) received \(a) from me. tx \(tx.hash). now claims nothing arrived. receipts are public. give it back.", st)
+        p.tag = "Receipts"
+        p.poll = nil; p.media = nil; p.quote = nil
+        stampPost(&p, st)
+        p.likes = max(p.likes * 3, 200)
+        p.comments = []
+        let others = st.npcs.filter { $0.id != "newsdesk" && $0.handle != n.handle }.shuffled()
+        p.queue = rugQueue(Array(others.prefix(4)), ["the hash is right there @\(me)", "stealing from donors is a new low", "unfollowing and telling everyone", "@\(me) the ledger sees all", "refund them or get cooked"])
+        st.posts.insert(p, at: 0)
+        let rc = Roast.ctx(st, rugs: r.rugs, loot: r.loot, holders: 0, trust: 0, coin: tx.asset == "GEM" ? "" : tx.asset)
+        for o in others.prefix(2) { st.posts.insert(roastPost(st, by: o, rc, rug: true, tag: "Ratio"), at: 0) }
+        st.npcs[ni].affinity = max(0, st.npcs[ni].affinity - 30)
+        st.aura -= 6
+        st.followers = max(0, st.followers - max(1, st.followers / 150))
+        m.txs = txs
+        st.ex.market = m
+        s = st
+        showToast("You kept it. The timeline knows")
+    }
+
+    func walletRefund(_ id: String) {
+        var st = s
+        guard var m = st.ex.market, var txs = m.txs, let i = txs.firstIndex(where: { $0.id == id }),
+              txs[i].state == "ok" || txs[i].state == "denied", txs[i].to == st.persona.handle,
+              let ni = st.npcs.firstIndex(where: { $0.handle == txs[i].from }) else { return }
+        let tx = txs[i]
+        if tx.asset == "GEM" {
+            guard st.ex.gems >= Int(tx.amt) else { showToast("Not enough gems to refund"); return }
+            st.ex.gems -= Int(tx.amt)
+        } else {
+            guard let hi = m.holds.firstIndex(where: { $0.id == tx.asset }), m.holds[hi].qty >= tx.amt * 0.999 else { showToast("You no longer hold that"); return }
+            m.holds[hi].qty -= tx.amt
+            m.holds[hi].cost = max(0, m.holds[hi].cost - tx.gems)
+            if m.holds[hi].qty < 1e-9 { m.holds.remove(at: hi) }
+        }
+        txs[i].state = "refunded"
+        st.npcs[ni].affinity = min(100, st.npcs[ni].affinity + 10)
+        st.aura += 1
+        m.txs = txs
+        st.ex.market = m
+        s = st
+        showToast("Refunded")
     }
 }

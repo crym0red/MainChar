@@ -252,6 +252,7 @@ struct LiveView: View {
     @State private var started = false
     @State private var confirmEnd = false
     @State private var showGifts = false
+    @State private var showSend = false
     @State private var floaters: [Floater] = []
     @State private var hype = 0.0
     @State private var pulse = false
@@ -503,6 +504,16 @@ struct LiveView: View {
                         Image(systemName: "gift.fill").font(.system(size: 18, weight: .bold)).foregroundColor(T.gold)
                             .frame(width: 44, height: 44).background(T.card2).clipShape(Circle())
                     }.disabled(ended)
+                    Button { showSend = true } label: {
+                        Image(systemName: "dollarsign.circle.fill").font(.system(size: 20, weight: .bold)).foregroundColor(Color(red: 0.4, green: 0.95, blue: 0.5))
+                            .frame(width: 44, height: 44).background(T.card2).clipShape(Circle())
+                    }.disabled(ended)
+                    .sheet(isPresented: $showSend) {
+                        SendSheet(to: streamerHandle, ctx: "live", onSent: { a, v in
+                            add("you", game.s.persona.handle, "donated \(Wallets.fmt(a, v))", 1, icon: "dollarsign.circle.fill")
+                            spawn("dollarsign.circle.fill", T.gold, 4, size: 30)
+                        }).zoomed()
+                    }
                 }
                 TextField(banned ? "You were banned from this chat" : (isHost ? "Say something on mic..." : "Send a message..."), text: $input)
                     .font(.jk(15)).padding(.horizontal, 16).frame(height: 44)
@@ -822,6 +833,7 @@ struct NPCStoryViewer: View {
     @State private var closed = false
     @State private var floaters: [Floater] = []
     @State private var reacted: String? = nil
+    @State private var tipOpen = false
     @FocusState private var typing: Bool
     private let reactions: [(String, Color)] = [("flame.fill", T.orange), ("heart.fill", Color(red: 1, green: 0.4, blue: 0.55)), ("bolt.fill", T.gold), ("hands.clap.fill", T.blue), ("100.circle.fill", T.lime), ("eye.fill", Color(red: 0.7, green: 0.5, blue: 1))]
 
@@ -894,6 +906,11 @@ struct NPCStoryViewer: View {
                         .padding(10).background(Color.black.opacity(0.55)).clipShape(RoundedRectangle(cornerRadius: 14))
                     }
                     HStack(spacing: 8) {
+                        Button { tipOpen = true } label: {
+                            Image(systemName: "dollarsign.circle.fill").font(.system(size: 20, weight: .bold)).foregroundColor(Color(red: 0.4, green: 0.95, blue: 0.5))
+                                .frame(width: 46, height: 40).background(Color.black.opacity(0.38)).clipShape(Capsule())
+                        }
+                        .sheet(isPresented: $tipOpen) { SendSheet(to: npc.handle, ctx: "story").zoomed() }
                         ForEach(Array(reactions.enumerated()), id: \.offset) { _, r in
                             Button { react(r.0, r.1, npc) } label: {
                                 Image(systemName: r.0).font(.system(size: 18, weight: .bold)).foregroundColor(r.1)
