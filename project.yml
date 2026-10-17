@@ -1,10 +1,10 @@
-name: Clout
+name: MainChar
 options:
-  bundleIdPrefix: party.mrvek
+  bundleIdPrefix: city.mainchar
   deploymentTarget:
     iOS: "16.0"
 targets:
-  Clout:
+  MainChar:
     type: application
     platform: iOS
     sources:
@@ -15,8 +15,8 @@ targets:
         buildPhase: none
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: party.mrvek.clout
-        PRODUCT_NAME: Clout
+        PRODUCT_BUNDLE_IDENTIFIER: city.mainchar.game
+        PRODUCT_NAME: MainChar
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_FILE: Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: MainChar
