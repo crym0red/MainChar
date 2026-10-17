@@ -774,6 +774,7 @@ struct ProfileTab: View {
     @State private var allStories = false
     @State private var showHistory = false
     @State private var unlockInfo = false
+    @State private var showFollowers = false
     @State private var scrolled = false
 
     var body: some View {
@@ -810,13 +811,21 @@ struct ProfileTab: View {
                     Text("@\(p.handle)").font(.jk(22)).foregroundColor(T.sub)
                     if let ti = st.ex.title { Chip(text: ti, color: T.gold.opacity(0.3)) }
                     if !p.bio.isEmpty { Text(p.bio).font(.jk(23)).padding(.top, 4) }
-                    (Text(short(st.followers)).fontWeight(.semibold).foregroundColor(.white)
-                        + Text(" Followers").foregroundColor(T.sub))
-                        .font(.jk(25)).padding(.top, 6)
+                    Button { showFollowers = true } label: {
+                        HStack(spacing: 6) {
+                            (Text(short(st.followers)).fontWeight(.semibold).foregroundColor(.white)
+                                + Text(" Followers").foregroundColor(T.sub))
+                                .font(.jk(25))
+                            Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold)).foregroundColor(T.sub)
+                        }
+                    }
+                    .buttonStyle(.plain).padding(.top, 6)
                 }
                 .padding(.horizontal, 16).padding(.top, 14)
 
                 statStrip(st).padding(.horizontal, 16).padding(.top, 18)
+
+                achievementsCard(st).padding(.horizontal, 16).padding(.top, 14)
 
                 tabs.padding(.horizontal, 16).padding(.top, 18)
 
@@ -842,6 +851,35 @@ struct ProfileTab: View {
             Text("Characters warm up to you as you post, reply, message them and send gifts. Once they follow you they show up here.")
         }
         .fullScreenCover(isPresented: $showStore) { StoreView().zoomed() }
+        .fullScreenCover(isPresented: $showFollowers) { FollowersSheet().zoomed() }
+    }
+
+    private func achievementsCard(_ st: GameState) -> some View {
+        let got = Game.badgeDefs.filter { st.achievements.contains($0.id) }.count
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Achievements").font(.jk(18, .bold))
+                Spacer()
+                Text("\(got)/\(Game.badgeDefs.count)").font(.jk(13, .bold)).foregroundColor(T.sub)
+            }
+            .padding(.bottom, 8)
+            ForEach(Game.badgeDefs) { b in
+                let done = st.achievements.contains(b.id)
+                HStack(spacing: 12) {
+                    EmojiIcon(emoji: b.emoji, size: 20, color: done ? T.gold : T.sub)
+                        .frame(width: 28)
+                    Text(b.title).font(.jk(16, done ? .semibold : .regular)).foregroundColor(done ? .white : T.sub)
+                    Spacer()
+                    Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                        .foregroundColor(done ? T.lime : T.sub.opacity(0.5))
+                }
+                .padding(.vertical, 9)
+                .overlay(alignment: .bottom) { Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1) }
+            }
+        }
+        .padding(16).background(T.card)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
     }
 
     private func topButton(_ icon: String, _ action: @escaping () -> Void) -> some View {
@@ -975,80 +1013,21 @@ struct ProfileTab: View {
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Color.white.opacity(0.09), lineWidth: 1))
 
-            relationships(st)
+            historyButton
 
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Achievements").font(.jk(22, .medium))
-                ForEach(Game.badgeDefs) { b in
-                    let got = st.achievements.contains(b.id)
-                    HStack {
-                        EmojiIcon(emoji: b.emoji, size: 18, color: got ? T.gold : T.sub)
-                        Text(b.title).foregroundColor(got ? .white : T.sub)
-                        Spacer()
-                        if got { Image(systemName: "checkmark.circle.fill").foregroundColor(T.lime) }
-                    }.font(.system(size: 19))
-                }
-            }.card()
         }
     }
 
-    private func relNote(_ n: NPC) -> String {
-        if n.affinity >= 70 { return "They're basically your biggest fan." }
-        if n.affinity >= 40 { return "They like where this is going." }
-        return "They're still making up their mind about you."
-    }
-
-    private func relationships(_ st: GameState) -> some View {
-        let rels = st.npcs.filter { $0.id != "newsdesk" && ($0.followsYou || $0.affinity >= 35) }
-        return VStack(alignment: .leading, spacing: 14) {
-            Button { showHistory = true } label: {
-                HStack {
-                    Image(systemName: "globe.americas.fill").font(.system(size: 22)).foregroundColor(T.blue)
-                    Text("World History").font(.jk(17, .semibold))
-                    Spacer()
-                    Image(systemName: "chevron.right").foregroundColor(T.sub)
-                }
-                .padding(14).background(RoundedRectangle(cornerRadius: 16).fill(T.card))
-            }.buttonStyle(.plain)
-            Text("Relationships (\(rels.count))").font(.jk(22, .bold)).padding(.top, 6)
-            ForEach(rels) { n in
-                Button { npcSheet = n } label: {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(spacing: 14) {
-                            Avatar(emoji: n.emoji, key: n.handle, size: 56)
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 6) {
-                                    Text(n.name).font(.jk(19, .semibold)).foregroundColor(.white)
-                                    if n.followers >= 40000 { VerifiedSeal(size: 20) }
-                                }
-                                Text("@\(n.handle)").font(.jk(15)).foregroundColor(T.sub)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right").font(.system(size: 16, weight: .semibold)).foregroundColor(T.sub)
-                        }
-                        HStack(spacing: 14) {
-                            Bar(value: Double(n.affinity) / 100, color: T.lime, height: 12)
-                            Text("\(n.affinity)%").font(.jk(16, .semibold)).foregroundColor(.white)
-                                .frame(width: 52, alignment: .trailing)
-                        }
-                        Text(relNote(n)).font(.jk(15)).foregroundColor(T.sub).multilineTextAlignment(.leading)
-                    }
-                    .padding(14)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(T.card)
-                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color.white.opacity(0.09), lineWidth: 1))
-                }
-                .buttonStyle(.plain)
+    private var historyButton: some View {
+        Button { showHistory = true } label: {
+            HStack {
+                Image(systemName: "globe.americas.fill").font(.system(size: 22)).foregroundColor(T.blue)
+                Text("World History").font(.jk(17, .semibold))
+                Spacer()
+                Image(systemName: "chevron.right").foregroundColor(T.sub)
             }
-            Button { unlockInfo = true } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "questionmark.circle.fill").font(.system(size: 24))
-                    Text("How do I unlock more characters?").font(.jk(19))
-                }
-                .foregroundColor(T.sub)
-            }
-        }
+            .padding(14).background(RoundedRectangle(cornerRadius: 16).fill(T.card))
+        }.buttonStyle(.plain)
     }
 
     private func posts(_ st: GameState) -> some View {
@@ -1160,5 +1139,92 @@ struct RankingsSheet: View {
             }
         }
         .background(T.bg)
+    }
+}
+
+
+// MARK: - Followers
+
+struct FollowersSheet: View {
+    @EnvironmentObject var game: Game
+    @Environment(\.dismiss) private var dismiss
+    @State private var npcSheet: NPC? = nil
+    @State private var info = false
+
+    private func note(_ n: NPC) -> String {
+        if n.affinity >= 70 { return "They're basically your biggest fan." }
+        if n.affinity >= 40 { return "They like where this is going." }
+        return "Following, still making up their mind."
+    }
+
+    var body: some View {
+        let st = game.s
+        let fans = st.npcs.filter { $0.id != "newsdesk" && $0.followsYou }.sorted { $0.affinity > $1.affinity }
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Button { dismiss() } label: {
+                    Image(systemName: "arrow.left").font(.system(size: 20, weight: .semibold)).foregroundColor(.white)
+                        .frame(width: 44, height: 44)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Followers").font(.jk(24, .heavy))
+                    Text("\(short(st.followers)) total · \(fans.count) you know").font(.jk(12)).foregroundColor(T.sub)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 10)
+            .overlay(alignment: .bottom) { Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1) }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    if fans.isEmpty {
+                        EmptyState(emoji: "👥", title: "No followers you know yet", detail: "Post, reply and message characters. Once they follow you they show up here with your relationship.")
+                    }
+                    ForEach(fans) { n in
+                        Button { npcSheet = n } label: {
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack(spacing: 12) {
+                                    Avatar(emoji: n.emoji, key: n.handle, size: 52)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        HStack(spacing: 6) {
+                                            Text(n.name).font(.jk(18, .semibold)).foregroundColor(.white).lineLimit(1)
+                                            if n.followers >= 40000 { VerifiedSeal(size: 16) }
+                                        }
+                                        Text("@\(n.handle) · \(n.trait.rawValue.capitalized)").font(.jk(13)).foregroundColor(T.sub).lineLimit(1)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right").font(.system(size: 15, weight: .semibold)).foregroundColor(T.sub)
+                                }
+                                HStack(spacing: 12) {
+                                    Bar(value: Double(n.affinity) / 100, color: T.lime, height: 12)
+                                    Text("\(n.affinity)%").font(.jk(15, .semibold)).foregroundColor(.white).frame(width: 48, alignment: .trailing)
+                                }
+                                Text(note(n)).font(.jk(14)).foregroundColor(T.sub)
+                            }
+                            .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(T.card)
+                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Button { info = true } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "questionmark.circle.fill").font(.system(size: 20))
+                            Text("How do I get more followers?").font(.jk(15))
+                        }
+                        .foregroundColor(T.sub)
+                    }
+                    .padding(.top, 4)
+                }
+                .padding(16)
+            }
+        }
+        .background(T.bg.ignoresSafeArea())
+        .sheet(item: $npcSheet) { NPCSheet(npc: $0).zoomed() }
+        .alert("Getting followers", isPresented: $info) {
+            Button("Got it", role: .cancel) {}
+        } message: {
+            Text("Characters warm up to you as you post, reply, message them and send gifts. Once they follow you they show up here.")
+        }
     }
 }

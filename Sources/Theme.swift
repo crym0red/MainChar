@@ -54,7 +54,7 @@ actor AvatarLoader {
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
     static var dir: URL {
-        let d = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("avatars2", isDirectory: true)
+        let d = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("avatars3", isDirectory: true)
         try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
         return d
     }
@@ -94,17 +94,74 @@ actor AvatarLoader {
     private static let fem: Set<String> = ["luna","mina","priya","sofia","sophia","emma","olivia","ava","mia","zoe","chloe","nora","lena","maya","ella","ivy","aria","lily","grace","hannah","nina","anna","sara","sarah","julia","kate","amy","ruby","tara","rosa","eva","isla","leah","jade","iris","vera","cleo","nia","ana","lucia","elena","amara","kira","yuki","sana","lila","rin","jess","jenny","lisa","maria","alice","bella","faith","holly","jasmine","kayla","laura","megan","nadia","paige","riley","willow","stella","hazel","june","ruth","cora","dani","ivana","mara","ines","noor","zara"]
     private static let mal: Set<String> = ["jonah","theo","dev","sam","max","leo","noah","liam","ethan","jack","finn","owen","eli","kai","ben","dan","tom","tim","nick","alex_m","marco","ravi","omar","hugo","cole","miles","jay","rex","ty","zane","felix","arlo","oscar","isaac","adam","luca","niko","remy","sean","gus","ian","joel","drew","carl","raj","ali","jin","tariq","diego","mateo","andre","victor","walt","nate"]
 
-    /// A stable portrait for a seed: portraits are picked by name hint, then by hash.
+    private static let cool: [String] = [
+        "cool-neon-blue-profile-picture-u9y9ydo971k9mdcf",
+        "cool-profile-picture-minion-13pu7815v42uvrsg",
+        "cool-smiley-profile-picture-6lqzc2aegkuxbini",
+        "cool-profile-pictures-red-anime-fw4wgkj905tjeujb",
+        "cool-neon-hoodie-profile-picture-vt4w54fxrvenydvu",
+        "cool-profile-pictures-ken-kaneki-9lgr6mb8ammbblap",
+        "cool-profile-pictures-panda-car-pswltzd2oewsl4wt",
+        "cool-among-us-profile-picture-fhnahgd3g0lzviqv",
+        "cool-profile-pictures-faceless-white-man-lne9zmhqlchlcpc7",
+        "pink-angel-cool-profile-picture-wcjxfrrq0kjq98yb",
+        "profile-picture-spirit-knight-k2ar09ggd5uvxwi1",
+        "cool-cat-profile-pictures-ej5ie7iisas6xr7z",
+        "cool-minimalist-profile-pictures-oib9ltzxmonk5hxz",
+        "pink-bunny-cool-profile-picture-dc05663sotzgycnm",
+        "cool-profile-picture-l0hzjr9omwan07nt",
+        "cool-profile-picture-o6xweez7rh4347gx",
+        "cool-profile-picture-n4gqyfx775vg4lxx",
+        "cool-profile-picture-n8lf8k6jzs6ex36l",
+        "cool-profile-picture-awled9dwo4qq2yv2",
+        "cool-profile-picture-7d08ca58vaanj07r",
+        "cool-profile-picture-ld8f4n1qemczkrig",
+        "cool-profile-picture-kpwjvjw5434qfzo3",
+        "cool-profile-picture-87h46gcobjl5e4xu",
+        "cool-profile-picture-45bhdh56z2fjf5qv",
+        "cool-profile-picture-7aecpj5vptd1a0ib",
+        "cool-profile-picture-gdhlf31a1n7pcctk",
+        "cool-profile-picture-g6nh5sv88vm84c8t",
+        "cool-profile-picture-38op6ugjj3nkzjf0",
+        "cool-profile-picture-ejbvgihibdts0jgt",
+        "cute-tiktok-profile-pictures-1le4o5rz9oep6eky",
+        "cool-profile-picture-9nthoux7dyev7lrl",
+        "cool-profile-picture-ug9oc08q7nn527wu",
+        "cool-profile-picture-1ecoo30f26bkr14o",
+        "cool-profile-picture-mmg5lynaskhshnuo",
+        "cool-profile-picture-d7un7z8trf41eu98",
+        "cool-profile-picture-7fk2du857svpto74",
+        "cool-profile-picture-461j83j9veimjjwr",
+        "cool-profile-picture-orfj1dxf6nqeor92",
+        "cool-profile-picture-77juffbwoivsi1s3",
+        "cool-profile-picture-o0siqf9tzr6qyz04",
+        "cool-profile-picture-yxroqlz004j409pm",
+        "cool-profile-picture-a7nr00sputssb6m7",
+        "cool-profile-picture-m32rqwm6zzf1osox",
+        "cool-profile-picture-ovkcl8395dos1gs5",
+        "cool-profile-picture-ioaknxj004tuzxpn",
+        "cool-profile-picture-pjbik82u4xgo4i88",
+        "cool-profile-picture-qej7j2ekuor93ss7",
+        "cool-profile-picture-swtwohfekfqtvt1s",
+        "cool-profile-picture-lyk4mvqrjewpoi92",
+        "cool-profile-picture-kw8v1xchaodw2iiz",
+        "cool-profile-picture-q9i2gvcrskxefbe9",
+        "cool-profile-picture-2we7xmn0737hqgtu",
+        "cool-profile-picture-6g9cru2ih9v1bok7",
+        "cool-profile-picture-g3nzxs9mvrwkt7ew",
+        "cool-profile-picture-j1zd9pqrtyswza7y",
+        "cool-earth-profile-picture-ujntg8ghkjri61u9",
+        "cool-profile-pictures-hoodie-cat-6dkl56hixhnq590g",
+        "cool-profile-pictures-pink-crown-5lzmya5phb2bc4az",
+        "cool-skull-profile-picture-j6r78po6xuuton85",
+        "cool-profile-pictures-red-spiral-jrg6t4b3443jwsmw"
+    ]
+
+    /// A stable "cool" profile picture for a seed, from wallpapers.com's cool-profile-pictures set.
     static func portraitURL(_ seed: String) -> URL? {
         var h: UInt32 = 2166136261
         for u in seed.unicodeScalars { h = (h ^ u.value) &* 16777619 }
-        let first = seed.lowercased().split(whereSeparator: { !$0.isLetter }).first.map(String.init) ?? ""
-        let woman: Bool
-        if fem.contains(first) { woman = true }
-        else if mal.contains(first) { woman = false }
-        else { woman = (h >> 7) % 2 == 0 }
-        let n = Int((h >> 11) % 96)
-        return URL(string: "https://randomuser.me/api/portraits/\(woman ? "women" : "men")/\(n).jpg")
+        return URL(string: "https://wallpapers.com/images/thumbnail/\(cool[Int(h % UInt32(cool.count))]).jpg")
     }
 
     private func download(seed: String, file: URL) async -> Data? {
