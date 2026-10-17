@@ -64,6 +64,14 @@ extension Mk {
         if s < 86400 { return "\(s / 3600)h" }
         return "\(s / 86400)d"
     }
+    static func labelColor(_ score: Int) -> Color {
+        switch label(score) {
+        case "Low": return Color(red: 0.4, green: 0.95, blue: 0.5)
+        case "Medium": return T.gold
+        case "High": return T.orange
+        default: return T.red
+        }
+    }
     static func riskColor(_ c: Coin) -> Color {
         switch risk(c) {
         case "Low": return Color(red: 0.4, green: 0.95, blue: 0.5)
@@ -103,22 +111,25 @@ struct MarketView: View {
         let value = m.holds.reduce(0.0) { acc, h in acc + h.qty * (prices[h.id] ?? 0) }
         let cost = m.holds.reduce(0.0) { $0 + $1.cost }
         let pnl = m.realized + (value - cost)
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Image(systemName: "paperplane.fill").font(.system(size: 24, weight: .semibold)).foregroundColor(lav)
+                    .rotationEffect(.degrees(-20))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Market").font(.jk(26, .heavy))
+                    Text("\(m.coins.filter { !$0.rugged }.count) coins live").font(.jk(12)).foregroundColor(T.sub)
+                }
+                Spacer()
+                HStack(spacing: 5) {
+                    Image(systemName: "diamond.fill").font(.system(size: 12)).foregroundColor(T.gold)
+                    Text("\(st.ex.gems)").font(.jk(15, .bold)).lineLimit(1).fixedSize()
+                }
+                .padding(.horizontal, 14).frame(height: 40).fixedSize().background(T.card2).clipShape(Capsule())
+            }
+            .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 12)
+            .overlay(alignment: .bottom) { Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1) }
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Image(systemName: "paperplane.fill").font(.system(size: 30, weight: .semibold)).foregroundColor(lav)
-                        .rotationEffect(.degrees(-20))
-                    Spacer()
-                    HStack(spacing: 5) {
-                        Image(systemName: "diamond.fill").font(.system(size: 12)).foregroundColor(T.gold)
-                        Text("\(st.ex.gems)").font(.jk(15, .bold)).lineLimit(1).fixedSize()
-                    }
-                    .padding(.horizontal, 14).frame(height: 44).fixedSize().background(Color.white.opacity(0.08)).clipShape(Capsule())
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Market").font(.jk(38, .heavy))
-                    Text("\(m.coins.filter { !$0.rugged }.count) coins live").font(.jk(13)).foregroundColor(T.sub)
-                }
                 portfolio(m, st, value: value, pnl: pnl)
                 trending(m)
                 segBar
@@ -126,9 +137,10 @@ struct MarketView: View {
                 search
                 list(m)
             }
-            .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 30)
+            .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 30)
         }
-        .background(Color.black)
+        }
+        .background(T.bg)
         .onReceive(timer) { _ in game.marketTick() }
         .onAppear { game.marketEnsureNow(); openPending() }
         .onChange(of: nav.coin) { _ in openPending() }
@@ -408,7 +420,8 @@ struct CoinDetail: View {
         let watching = (m.watch ?? []).contains(c.id)
         let npc = st.npcs.first { $0.handle == c.creator }
         let isMe = c.creator == st.persona.handle
-        let prior = m.coins.filter { $0.creator == c.creator && $0.rugged && $0.id != c.id }.count
+        let ti = game.trustInfo(c)
+        let prior = ti.rugs
         let cname = isMe ? "You" : (npc?.name ?? c.creator)
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
@@ -476,6 +489,7 @@ struct CoinDetail: View {
                 stat("Fee", "3%")
             }
             .padding(.horizontal, 16)
+            if !c.rugged { trustCard(ti).padding(.horizontal, 16) }
             HStack(spacing: 12) {
                 if isMe {
                     Avatar(emoji: st.persona.emoji, key: st.persona.handle, size: 40)
@@ -511,6 +525,38 @@ struct CoinDetail: View {
             .padding(.horizontal, 16)
             CoinChatPreview(ticker: c.id, open: $chat).padding(.horizontal, 16)
         }
+    }
+
+    private func trustCard(_ ti: TrustInfo) -> some View {
+        let col = Mk.labelColor(ti.score)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("COMMUNITY TRUST").font(.jk(11, .heavy)).foregroundColor(T.sub)
+                Spacer()
+                Text("\(ti.score)").font(.jk(28, .heavy)).foregroundColor(col)
+                Text("/100 · \(Mk.label(ti.score))").font(.jk(13, .bold)).foregroundColor(T.sub)
+            }
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.1))
+                    Capsule().fill(col).frame(width: g.size.width * CGFloat(ti.score) / 100)
+                }
+            }
+            .frame(height: 8)
+            ForEach(ti.parts) { p in
+                HStack(spacing: 8) {
+                    Text(p.delta == 0 ? "0" : (p.delta > 0 ? "+\(p.delta)" : "\(p.delta)"))
+                        .font(.jk(13, .heavy))
+                        .foregroundColor(p.delta < 0 ? T.red : (p.delta > 0 ? green : T.sub))
+                        .frame(width: 36, alignment: .leading)
+                    Text(p.note).font(.jk(13)).foregroundColor(.white.opacity(0.85)).lineLimit(2)
+                    Spacer(minLength: 0)
+                }
+            }
+            Text(Mk.advice(ti.score)).font(.jk(12, .semibold)).foregroundColor(col)
+        }
+        .padding(14)
+        .background(Color.white.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
     private func boosters(_ c: Coin, _ m: Market) -> some View {

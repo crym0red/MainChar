@@ -767,12 +767,7 @@ struct ProfileTab: View {
     @EnvironmentObject var game: Game
     @State private var seg = 0
     @State private var edit = false
-    @State private var customize = false
-    @State private var styleSheet = false
-    @State private var syncSheet = false
-    @State private var favSheet = false
     @State private var settings = false
-    @State private var showLog = false
     @State private var showStore = false
     @State private var npcSheet: NPC? = nil
     @State private var openStory: StoryOpen? = nil
@@ -792,15 +787,8 @@ struct ProfileTab: View {
                     Color.clear.preference(key: ProfileScrollKey.self, value: g.frame(in: .named("profile")).minY)
                 }
                 .frame(height: 0)
-                ZStack(alignment: .topTrailing) {
-                    ProfileBanner().id(game.profileRev)
-                    HStack(spacing: 10) {
-                        topButton("storefront.fill") { showStore = true }
-                        topButton("gearshape.fill") { settings = true }
-                    }
-                    .padding(.trailing, 16).padding(.top, 58)
-                }
-                .frame(height: 200)
+                ProfileBanner().id(game.profileRev)
+                    .frame(height: 200)
 
                 HStack(alignment: .top) {
                     Avatar(emoji: p.emoji, key: p.handle, size: 150)
@@ -832,16 +820,9 @@ struct ProfileTab: View {
                 }
                 .padding(.horizontal, 16).padding(.top, 14)
 
-                VStack(spacing: 12) {
-                    wideButton("globe.europe.africa.fill", "Customize World") { customize = true }
-                    wideButton("paintpalette.fill", "Profile Style") { styleSheet = true }
-                    wideButton("arrow.triangle.2.circlepath", "Account Sync") { syncSheet = true }
-                    wideButton("star.fill", "Favorites") { favSheet = true }
-                    wideButton("book.closed.fill", "Activity Log") { showLog = true }
-                }
-                .padding(.horizontal, 16).padding(.top, 18)
+                statStrip(st).padding(.horizontal, 16).padding(.top, 18)
 
-                tabs.padding(.top, 20)
+                tabs.padding(.horizontal, 16).padding(.top, 18)
 
                 Group {
                     if seg == 0 { overview(st) }
@@ -851,9 +832,6 @@ struct ProfileTab: View {
                 .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 40)
             }
         }
-        .sheet(isPresented: $styleSheet) { ProfileStyleSheet().zoomed() }
-        .sheet(isPresented: $syncSheet) { SyncSheet().zoomed() }
-        .sheet(isPresented: $favSheet) { FavoritesSheet().zoomed() }
         .coordinateSpace(name: "profile")
         .onPreferenceChange(ProfileScrollKey.self) { scrolled = $0 < -120 }
         .ignoresSafeArea(edges: .top)
@@ -863,11 +841,23 @@ struct ProfileTab: View {
         }
         .ignoresSafeArea(edges: .top)
         .allowsHitTesting(false)
+        HStack(spacing: 10) {
+            if scrolled {
+                Text(p.name).font(.jk(20, .bold)).lineLimit(1)
+                if st.followers >= 10000 { VerifiedSeal(size: 18) }
+            }
+            Spacer()
+            topButton("storefront.fill") { showStore = true }
+            topButton("gearshape.fill") { settings = true }
+        }
+        .padding(.horizontal, 16).padding(.top, geo.safeAreaInsets.top + 4).padding(.bottom, 8)
+        .background(scrolled ? T.bg : Color.clear)
+        .overlay(alignment: .bottom) { if scrolled { Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1) } }
+        .ignoresSafeArea(edges: .top)
         }
         }
         .background(T.bg)
         .fullScreenCover(isPresented: $edit) { EditProfileSheet().zoomed() }
-        .sheet(isPresented: $customize) { CustomizeWorldSheet().zoomed() }
         .fullScreenCover(isPresented: $settings) { GameSettingsView().zoomed() }
         .sheet(item: $npcSheet) { NPCSheet(npc: $0).zoomed() }
         .fullScreenCover(item: $openStory) { o in StoriesFlow(openStory: o.story).zoomed() }
@@ -878,44 +868,60 @@ struct ProfileTab: View {
         } message: {
             Text("Characters warm up to you as you post, reply, message them and send gifts. Once they follow you they show up here.")
         }
-        .fullScreenCover(isPresented: $showLog) { ActivityLogView().zoomed() }
         .fullScreenCover(isPresented: $showStore) { StoreView().zoomed() }
     }
 
     private func topButton(_ icon: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: icon).font(.system(size: 24)).foregroundColor(.white)
-                .frame(width: 68, height: 58).background(Color.black.opacity(0.55)).clipShape(Capsule())
+            Image(systemName: icon).font(.system(size: 20, weight: .semibold)).foregroundColor(.white)
+                .frame(width: 58, height: 44).background(Color.black.opacity(0.55)).clipShape(Capsule())
         }
     }
 
-    private func wideButton(_ icon: String, _ title: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 14) {
-                Image(systemName: icon)
-                Text(title)
+    private func statTile(_ icon: String, _ value: String, _ label: String, _ tint: Color) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: icon).font(.system(size: 20, weight: .semibold)).foregroundColor(tint)
+            Text(value).font(.jk(24, .bold)).lineLimit(1).minimumScaleFactor(0.6)
+            Text(label.uppercased()).font(.jk(11, .heavy)).foregroundColor(T.sub)
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 16)
+        .background(T.card)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
+    }
+
+    private func statStrip(_ st: GameState) -> some View {
+        let need = max(1, Levels.need(st.level))
+        let mine = st.posts.filter { $0.isYou }.count
+        return VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                statTile("sparkles", "\(st.aura)", "Aura", T.gold)
+                statTile("bolt.fill", "\(st.level)", "Level", T.blue)
+                statTile("square.and.pencil", "\(mine)", "Posts", T.lime)
+                statTile("diamond.fill", "\(st.ex.gems)", "Gems", Color(red: 0.67, green: 0.62, blue: 0.95))
             }
-            .font(.jk(24, .medium)).foregroundColor(.white)
-            .frame(maxWidth: .infinity).padding(.vertical, 22)
-            .background(T.card2).clipShape(Capsule())
+            HStack(spacing: 12) {
+                Text("Level \(st.level)").font(.jk(14, .bold)).foregroundColor(T.sub)
+                Bar(value: min(1, Double(st.xp) / Double(need)), color: T.blue, height: 10)
+                Text("\(st.xp)/\(need) XP").font(.jk(14, .semibold)).foregroundColor(T.sub)
+            }
+            .padding(.horizontal, 4)
         }
     }
 
     private var tabs: some View {
-        let names = ["Overview", "Posts", "Activities"]
-        return HStack(spacing: 0) {
+        let names = ["Overview", "Posts", "Activity"]
+        return HStack(spacing: 4) {
             ForEach(Array(names.enumerated()), id: \.offset) { i, n in
-                Button { seg = i } label: {
-                    VStack(spacing: 14) {
-                        Text(n).font(.jk(23, .medium)).foregroundColor(seg == i ? T.blue : T.sub)
-                        Rectangle().fill(seg == i ? T.blue : Color.clear).frame(height: 3)
-                    }
-                    .frame(maxWidth: .infinity)
+                Button { withAnimation(.easeOut(duration: 0.15)) { seg = i } } label: {
+                    Text(n).font(.jk(18, .semibold)).foregroundColor(seg == i ? .white : T.sub)
+                        .frame(maxWidth: .infinity).padding(.vertical, 12)
+                        .background(seg == i ? T.blue : Color.clear)
+                        .clipShape(Capsule())
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .overlay(alignment: .bottom) { Rectangle().fill(Color.white.opacity(0.1)).frame(height: 1) }
+        .padding(4).background(T.card).clipShape(Capsule())
     }
 
     // MARK: Overview
@@ -925,16 +931,16 @@ struct ProfileTab: View {
         let prev = max(0, min(100, value - delta))
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
-                EmojiIcon(emoji: emoji, size: 26, color: T.blue)
-                Text(name).font(.jk(26, .medium)).padding(.top, 2)
+                EmojiIcon(emoji: emoji, size: 22, color: T.blue)
+                Text(name).font(.jk(20, .semibold)).padding(.top, 1)
                 Spacer()
                 VStack(alignment: .trailing, spacing: 4) {
                     if delta != 0 {
                         Text(String(format: "%+.1f%%", Double(delta)))
-                            .font(.jk(22, .semibold))
+                            .font(.jk(15, .semibold))
                             .foregroundColor(delta > 0 ? T.lime : T.orange)
                     }
-                    Text(String(format: "%.1f%%", Double(v))).font(.jk(24, .medium))
+                    Text(String(format: "%.1f%%", Double(v))).font(.jk(19, .semibold))
                 }
             }
             GeometryReader { g in
@@ -942,14 +948,14 @@ struct ProfileTab: View {
                     Capsule().fill(Color.white.opacity(0.10))
                     Capsule().fill(Color.white.opacity(0.18)).frame(width: g.size.width * CGFloat(v) / 100)
                     if delta != 0 {
-                        Capsule().fill(T.gold).frame(width: 6, height: 28)
+                        Capsule().fill(T.gold).frame(width: 5, height: 14)
                             .offset(x: max(0, g.size.width * CGFloat(prev) / 100 - 3))
                     }
                 }
             }
-            .frame(height: 28)
+            .frame(height: 14)
             if let n = note, !n.isEmpty {
-                Text(n).font(.jk(21)).foregroundColor(T.sub)
+                Text(n).font(.jk(15)).foregroundColor(T.sub)
             }
         }
     }
@@ -961,23 +967,23 @@ struct ProfileTab: View {
                         delta: st.ex.statDelta[k.rawValue] ?? 0, note: st.ex.statNote[k.rawValue])
         }
         return VStack(alignment: .leading, spacing: 18) {
-            Text("Social Media Presence").font(.jk(26, .medium))
+            Text("Social Media Presence").font(.jk(22, .bold))
             VStack(alignment: .leading, spacing: 0) {
-                stat(.humor).padding(.vertical, 16)
+                stat(.humor).padding(.vertical, 12)
                 Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
                 presenceRow(emoji: "🌟", name: "Aura", value: st.aura, delta: st.lastAuraDelta, note: auraNote)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, 12)
                 Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
-                stat(.charm).padding(.vertical, 16)
+                stat(.charm).padding(.vertical, 12)
                 Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
-                stat(.edge).padding(.vertical, 16)
+                stat(.edge).padding(.vertical, 12)
                 Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
-                stat(.mystery).padding(.vertical, 16)
+                stat(.mystery).padding(.vertical, 12)
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 18)
             .background(T.card)
-            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(Color.white.opacity(0.09), lineWidth: 1.5))
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Color.white.opacity(0.09), lineWidth: 1))
 
             relationships(st)
 
@@ -1014,34 +1020,34 @@ struct ProfileTab: View {
                 }
                 .padding(14).background(RoundedRectangle(cornerRadius: 16).fill(T.card))
             }.buttonStyle(.plain)
-            Text("Relationships (\(rels.count))").font(.jk(26, .medium)).padding(.top, 6)
+            Text("Relationships (\(rels.count))").font(.jk(22, .bold)).padding(.top, 6)
             ForEach(rels) { n in
                 Button { npcSheet = n } label: {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(spacing: 14) {
-                            Avatar(emoji: n.emoji, key: n.handle, size: 76)
+                            Avatar(emoji: n.emoji, key: n.handle, size: 56)
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 6) {
-                                    Text(n.name).font(.jk(25, .semibold)).foregroundColor(.white)
+                                    Text(n.name).font(.jk(19, .semibold)).foregroundColor(.white)
                                     if n.followers >= 40000 { VerifiedSeal(size: 20) }
                                 }
-                                Text("@\(n.handle)").font(.jk(20)).foregroundColor(T.sub)
+                                Text("@\(n.handle)").font(.jk(15)).foregroundColor(T.sub)
                             }
                             Spacer()
-                            Image(systemName: "chevron.right").font(.system(size: 20, weight: .semibold)).foregroundColor(T.sub)
+                            Image(systemName: "chevron.right").font(.system(size: 16, weight: .semibold)).foregroundColor(T.sub)
                         }
                         HStack(spacing: 14) {
-                            Bar(value: Double(n.affinity) / 100, color: T.lime, height: 24)
-                            Text("\(n.affinity)%").font(.jk(22, .medium)).foregroundColor(.white)
-                                .frame(width: 70, alignment: .trailing)
+                            Bar(value: Double(n.affinity) / 100, color: T.lime, height: 12)
+                            Text("\(n.affinity)%").font(.jk(16, .semibold)).foregroundColor(.white)
+                                .frame(width: 52, alignment: .trailing)
                         }
-                        Text(relNote(n)).font(.jk(20)).foregroundColor(T.sub).multilineTextAlignment(.leading)
+                        Text(relNote(n)).font(.jk(15)).foregroundColor(T.sub).multilineTextAlignment(.leading)
                     }
-                    .padding(18)
+                    .padding(14)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(T.card)
-                    .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Color.white.opacity(0.09), lineWidth: 1.5))
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color.white.opacity(0.09), lineWidth: 1))
                 }
                 .buttonStyle(.plain)
             }
@@ -1060,10 +1066,10 @@ struct ProfileTab: View {
         let stories = st.ex.stories
         return VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text("Your Stories").font(.jk(26, .medium))
+                Text("Your Stories").font(.jk(22, .bold))
                 Spacer()
                 Button { allStories = true } label: {
-                    Text("View all").font(.jk(22, .medium)).foregroundColor(T.blue)
+                    Text("View all").font(.jk(17, .semibold)).foregroundColor(T.blue)
                 }
             }
             ScrollView(.horizontal, showsIndicators: false) {
@@ -1089,7 +1095,7 @@ struct ProfileTab: View {
             .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(Color.white.opacity(0.09), lineWidth: 1.5))
 
-            Text("Your Posts").font(.jk(26, .medium)).padding(.top, 6)
+            Text("Your Posts").font(.jk(22, .bold)).padding(.top, 6)
             if mine.isEmpty { EmptyState(emoji: "✍️", title: "No posts yet", detail: "Tap the compose button on the Feed.") }
             ForEach(mine) { p in
                 PostRow(post: p, onReply: {}, onOpen: {}).padding(.horizontal, -16)

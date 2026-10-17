@@ -98,7 +98,9 @@ extension Game {
             }
         }
         st.ex.simNow = nil
+        let mkBefore = marketSnapshot(st)
         marketAdvance(&st, &items, steps: min(400, Int(away / 10)), quiet: false)
+        marketAwayReport(&st, &items, before: mkBefore, away: away)
         checkSeason(&st, &items, quiet: false)
         engagementTick(&st, &items, quiet: false)
 

@@ -27,6 +27,10 @@ struct Coin: Codable, Identifiable, Hashable {
     var looted: Double? = nil
     var fx: [String: Date]? = nil
     var crashed: Bool? = nil
+    var whale: Double? = nil
+    var susp: Int? = nil
+    var interest: Double? = nil
+    var tr: Int? = nil
     func fxOn(_ k: String) -> Bool { (fx?[k] ?? .distantPast) > Date() }
     var poolV: Double { pool ?? liq }
 }
@@ -65,6 +69,27 @@ struct Market: Codable, Hashable {
     var lootLost: Double? = nil
     var inv: [String: Int]? = nil
     var feesPaid: Double? = nil
+    var dev: [String: DevRec]? = nil
+}
+
+struct DevRec: Codable, Hashable {
+    var rugs = 0
+    var loot = 0.0
+    var boycott: Date? = nil
+}
+
+struct TrustPart: Identifiable, Hashable {
+    var id: String
+    var delta: Int
+    var note: String
+}
+
+struct TrustInfo {
+    var score: Int
+    var parts: [TrustPart]
+    var rugs: Int
+    var loot: Double
+    var conc: Double
 }
 
 enum Booster: String, CaseIterable, Identifiable {
@@ -168,9 +193,66 @@ enum Mk {
     }
 
     static func risk(_ c: Coin) -> String {
-        let s = min(c.rugP, 0.0005) * 5000 + Double(HK.h(c.id) % 20) / 10
         if c.mine { return "Yours" }
-        return s < 1.5 ? "Low" : (s < 3.5 ? "Medium" : (s < 5.5 ? "High" : "Degen"))
+        return label(c.tr ?? 70)
+    }
+
+    static func label(_ score: Int) -> String {
+        score >= 72 ? "Low" : (score >= 52 ? "Medium" : (score >= 32 ? "High" : "Degen"))
+    }
+
+    static func advice(_ score: Int) -> String {
+        if score >= 72 { return "Rug risk is low. Deployers with this profile rarely pull." }
+        if score >= 52 { return "Rug risk is moderate. Watch the whales and the deployer." }
+        if score >= 32 { return "Rug risk is high. Only gamble what you can lose." }
+        return "Degen territory. A rug is likely. Size accordingly."
+    }
+
+    static func devSeed(_ handle: String, _ trait: Trait?) -> (rugs: Int, loot: Double) {
+        let h = HK.h(handle) % 4
+        var r = 0
+        switch trait {
+        case .chaos?, .hater?: r = 1 + h % 3
+        case .mogul?: r = h % 3
+        case .hype?: r = h % 2
+        case .gossip?: r = h == 0 ? 1 : 0
+        default: r = 0
+        }
+        return (r, Double(r) * Double(40 + h * 25))
+    }
+
+    static func conc(_ c: Coin) -> Double {
+        min(0.9, (c.whale ?? 0.25) * (30 / max(30, Double(c.holders))).squareRoot())
+    }
+
+    static func trust(_ c: Coin, _ trait: Trait?, _ m: Market) -> TrustInfo {
+        let rec = m.dev?[c.creator]
+        var rugs = rec?.rugs ?? 0
+        var loot = rec?.loot ?? 0
+        if c.mine {
+            rugs = max(rugs, m.rugsPulled)
+            loot = max(loot, m.lootEarned ?? 0)
+        } else {
+            let sd = devSeed(c.creator, trait)
+            rugs += sd.rugs
+            loot += sd.loot
+        }
+        let boycott = (rec?.boycott ?? .distantPast) > Date()
+        var parts: [TrustPart] = []
+        parts.append(TrustPart(id: "dev", delta: -min(50, rugs * 17), note: rugs == 0 ? "Clean deployer record" : "\(rugs) prior rug\(rugs == 1 ? "" : "s") by this deployer"))
+        if loot > 0 { parts.append(TrustPart(id: "loot", delta: -min(10, Int(loot / 40)), note: "Pocketed \(fmtGems(loot)) gems in past payouts")) }
+        let cn = conc(c)
+        parts.append(TrustPart(id: "conc", delta: -Int(cn * 45), note: "Top wallets hold \(Int(cn * 100))% of supply"))
+        let su = c.susp ?? 0
+        parts.append(TrustPart(id: "susp", delta: -min(20, su * 5), note: su == 0 ? "No suspicious moves" : "\(su) flagged wallet move\(su == 1 ? "" : "s")"))
+        let it = c.interest ?? 0.7
+        parts.append(TrustPart(id: "int", delta: Int((it - 0.5) * 20), note: "Community interest \(Int(it * 100))%"))
+        let ageH = Date().timeIntervalSince(c.born) / 3600
+        parts.append(TrustPart(id: "age", delta: min(10, Int(ageH * 2)), note: ageH < 1 ? "Brand new launch" : "Survived \(ageH < 24 ? "\(Int(ageH))h" : "\(Int(ageH / 24))d")"))
+        if boycott { parts.append(TrustPart(id: "boy", delta: -15, note: "Community boycott after the last rug")) }
+        var sum = 0
+        for p in parts { sum += p.delta }
+        return TrustInfo(score: max(3, min(98, 85 + sum)), parts: parts, rugs: rugs, loot: loot, conc: cn)
     }
 
     static func tickers(_ text: String) -> [String] {
@@ -221,6 +303,10 @@ extension Game {
             c.pool = c.liq
         }
         c.pool = c.pool ?? c.liq
+        c.whale = Double.random(in: 0.12...0.6) + ((npc.trait == .chaos || npc.trait == .hater) ? 0.1 : 0)
+        c.interest = Double.random(in: 0.55...0.9)
+        c.susp = 0
+        c.tr = Mk.trust(c, npc.trait, st.ex.market ?? Market()).score
         return c
     }
 
@@ -253,8 +339,19 @@ extension Game {
         let locked = c.mine && c.fxOn("lock")
         let shielded = c.mine && c.fxOn("whale")
         let steady = c.mine && c.fxOn("maker")
-        c.drift = c.drift * 0.96 - (c.mine ? 0.0006 : 0.0004)
-        if Double.random(in: 0...1) < 0.012 { c.drift += Double.random(in: 0.02...0.07) }
+        let tr = Double(c.tr ?? 70) / 100
+        c.drift = c.drift * 0.96 - (c.mine ? 0.0006 : 0.0004) + (c.mine ? 0 : (tr - 0.5) * 0.0004)
+        c.interest = max(0, (c.interest ?? 0.7) - 0.0003)
+        if (c.interest ?? 0.7) < 0.3 { c.drift -= 0.0004 }
+        if Double.random(in: 0...1) < 0.012 {
+            c.drift += Double.random(in: 0.02...0.07)
+            c.interest = min(1, (c.interest ?? 0.7) + 0.06)
+        }
+        if !c.mine, Double.random(in: 0...1) < 0.01 {
+            c.whale = min(0.85, (c.whale ?? 0.25) + 0.05)
+            c.drift += 0.008
+        }
+        if !c.mine, tr < 0.5, Double.random(in: 0...1) < 0.004 { c.susp = min(8, (c.susp ?? 0) + 1) }
         let crashP = c.mine ? (locked ? 0 : 0.005) : 0.005
         if Double.random(in: 0...1) < crashP { c.drift -= Double.random(in: 0.03...0.09) }
         if c.mine && c.fxOn("hype") { c.drift += 0.0003 }
@@ -262,6 +359,8 @@ extension Game {
         let r = max(-0.4, min(0.4, c.drift + v * Mk.gauss()))
         c.price = max(1e-7, c.price * exp(r))
         if !shielded, Double.random(in: 0...1) < (c.mine ? 0.008 : 0.004) {
+            if !c.mine, Mk.conc(c) > 0.3 { c.susp = min(8, (c.susp ?? 0) + 1) }
+            c.whale = max(0.03, (c.whale ?? 0.25) * 0.7)
             c.price = max(1e-7, c.price * Double.random(in: 0.72...0.9))
             c.pool = max(2, c.poolV * 0.92)
         }
@@ -282,7 +381,8 @@ extension Game {
             c.hist.append(c.price)
             return .crash
         }
-        if !c.mine, Double.random(in: 0...1) < min(c.rugP, 0.0005) * (1 + min(age, 12) / 6) {
+        let rugOdds = (0.00003 + pow(1 - tr, 2) * 0.0009) * (1 + min(age, 12) / 6)
+        if !c.mine, Double.random(in: 0...1) < rugOdds {
             c.looted = c.poolV
             c.price *= 0.015
             c.liq = 3
@@ -304,8 +404,13 @@ extension Game {
         marketEnsure(&st)
         guard var m = st.ex.market, steps > 0 else { return }
         var events: [(Coin, CoinEvent)] = []
+        let traits = Dictionary(st.npcs.map { ($0.handle, $0.trait) }, uniquingKeysWith: { a, _ in a })
         for _ in 0..<steps {
             for i in m.coins.indices {
+                if !m.coins[i].rugged {
+                    let t = Mk.trust(m.coins[i], traits[m.coins[i].creator], m).score
+                    m.coins[i].tr = t
+                }
                 if let e = stepCoin(&m.coins[i]) { events.append((m.coins[i], e)) }
             }
         }
@@ -319,7 +424,25 @@ extension Game {
         if var ch = m.chats { for k in Array(ch.keys) where !liveIDs.contains(k) { ch[k] = nil }; m.chats = ch }
         if var w = m.watch { w.removeAll { !liveIDs.contains($0) }; m.watch = w }
         st.ex.market = m
-        for (c, e) in events.prefix(3) { coinHeadline(&st, &items, c, e, quiet: quiet) }
+        func rank(_ e: CoinEvent) -> Int { if case .rug = e { return 0 }; if case .crash = e { return 1 }; return 2 }
+        let ordered = events.sorted { rank($0.1) < rank($1.1) }
+        for (c, e) in ordered.prefix(3) { coinHeadline(&st, &items, c, e, quiet: quiet) }
+        if var mm = st.ex.market {
+            var changed = false
+            for (c, e) in events {
+                if case .rug = e {
+                    var d = mm.dev ?? [:]
+                    var r = d[c.creator] ?? DevRec()
+                    r.rugs += 1
+                    r.loot += c.looted ?? c.poolV
+                    r.boycott = Date().addingTimeInterval(3 * 3600)
+                    d[c.creator] = r
+                    mm.dev = d
+                    changed = true
+                }
+            }
+            if changed { st.ex.market = mm }
+        }
     }
 
     func marketAmbient() {
@@ -380,23 +503,8 @@ extension Game {
                 notify(&st, "event", "$\(c.id) collapsed", sub: "-\(Mk.fmtGems(h.cost)) gems. The market killed it.", handle: c.creator, emoji: "📉")
             }
         case .rug:
-            guard let author = news ?? cast.first else { return }
             let cn = creator?.name ?? "the deployer"
             let loot = c.looted ?? c.poolV
-            var text = "BREAKING: $\(c.id) rugged. \(cn) pulled the liquidity, pocketed \(Mk.fmtGems(loot)) gems from the holders and the price is down 98%. Holders are cooked."
-            if let ch = creator { text += " @\(ch.handle) has not responded." }
-            var p = makePost(author, text, st)
-            p.tag = "Breaking"
-            stampPost(&p, st)
-            var cs: [Comment] = []
-            if let h = cast.filter({ $0.trait == .hater }).randomElement() { cs.append(mkCm(h, "told you. every single time. \(cn) did it again.")) }
-            if let h = cast.filter({ $0.trait == .wholesome }).randomElement() { cs.append(mkCm(h, "so sorry to everyone who lost money on $\(c.id). please be careful out there.")) }
-            if let h = cast.filter({ $0.trait == .gossip }).randomElement() { cs.append(mkCm(h, "allegedly \(cn) sold before the announcement. receipts incoming.")) }
-            if let h = cast.filter({ $0.trait == .chaos }).randomElement() { cs.append(mkCm(h, "i was in. i am now a different person.")) }
-            p.comments = cs
-            p.likes = max(p.likes * 4, 160)
-            p.viral = true
-            st.posts.insert(p, at: 0)
             var detail = "\(cn) pulled the liquidity and pocketed \(Mk.fmtGems(loot)) gems. Down 98%."
             var w = 60
             var mm = st.ex.market ?? Market()
@@ -413,13 +521,283 @@ extension Game {
                 if h.cost >= 10 { st.aura = max(5, st.aura - 2) }
             }
             st.ex.market = mm
+            let pid = rugAftermath(&st, &items, c, loot: loot, mine: false, held: held, quiet: quiet)
             if let ch = creator, let v = cast.filter({ $0.handle != ch.handle }).randomElement() {
                 _ = escalateFeud(&st, a: ch, b: v, cause: "the $\(c.id) rug")
             }
-            logEvent(&st, &items, quiet: quiet, emoji: "💸", title: "$\(c.id) was rugged", detail: detail, post: p.id,
+            logEvent(&st, &items, quiet: quiet, emoji: "💸", title: "$\(c.id) was rugged", detail: detail, post: pid,
                      handles: creator.map { [$0.handle] } ?? [], weight: w,
                      history: "$\(c.id) rugged. \(cn) took the liquidity and vanished.")
         }
+    }
+
+    // MARK: Rug aftermath
+
+    private func rugQueue(_ speakers: [NPC], _ lines: [String]) -> [QComment] {
+        var q: [QComment] = []
+        var at = Date()
+        for (i, line) in lines.enumerated() {
+            let c: Comment
+            if speakers.isEmpty || i % 3 == 2 {
+                let u = Crowd.make()
+                c = Comment(name: u.name, handle: u.handle, emoji: "🙂", text: line)
+            } else {
+                let n = speakers[i % speakers.count]
+                c = Comment(name: n.name, handle: n.handle, emoji: n.emoji, text: line, verified: n.followers >= 40000)
+            }
+            at = at.addingTimeInterval(i < 2 ? 1 : Double.random(in: 7...30))
+            q.append(QComment(c: c, at: at))
+        }
+        return q
+    }
+
+    /// The public fall: breaking post, receipts, victims, deployer response, revenge promises, a fight.
+    @discardableResult
+    func rugAftermath(_ st: inout GameState, _ items: inout [DigestItem], _ c: Coin, loot: Double, mine: Bool, held: Holding?, quiet: Bool) -> UUID? {
+        let cast = st.npcs.filter { $0.id != "newsdesk" }
+        guard let news = st.npcs.first(where: { $0.id == "newsdesk" }) ?? cast.first else { return nil }
+        let creator = st.npcs.first { $0.handle == c.creator }
+        let me = st.persona
+        let dh = mine ? me.handle : c.creator
+        let dn = mine ? me.name : (creator?.name ?? "the deployer")
+        let others = cast.filter { $0.handle != c.creator }
+        let victims = others.filter { $0.trait == .chaos || $0.trait == .wholesome || $0.trait == .hype }.shuffled()
+        let haters = others.filter { $0.trait == .hater || $0.trait == .gossip }.shuffled()
+        let big = mine || held != nil || loot >= 40
+        let score = c.tr ?? 40
+        let tm = st.ex.market ?? Market()
+        let dv = Mk.trust(c, creator?.trait, tm)
+        let prior = mine ? max(0, dv.rugs - 1) : dv.rugs
+        let heat = Spicy.heat
+        let hue = Double(HK.h(c.id) % 360) / 360
+        let t = c.id
+        func jab() -> String { "@\(dh) " + (Spicy.jab[heat].randomElement() ?? "unreal") }
+
+        // 1. breaking
+        var text = "BREAKING: $\(t) rugged. \(dn) pulled the liquidity, walked off with \(Mk.fmtGems(loot)) gems from \(c.holders) holders and the price is down 98%."
+        text += mine ? " @\(dh) has not responded." : (creator != nil ? " @\(dh) has not responded." : "")
+        var brk = makePost(news, text, st)
+        brk.tag = "Breaking"
+        stampPost(&brk, st)
+        brk.likes = max(brk.likes * 4, 200)
+        brk.viral = true
+        brk.comments = []
+        brk.queue = rugQueue(Array(cast.shuffled().prefix(4)), [
+            "\(dn) did this on purpose. the wallet history says everything.",
+            "the trust score was \(score) and everyone aped anyway.",
+            "so sorry to everyone who lost money on $\(t). please be careful out there.",
+            jab(),
+            "i was in. i am now a different person.",
+            prior > 0 ? "\(prior) prior rug\(prior == 1 ? "" : "s") on this deployer and nobody checked." : "first time for \(dn) and somehow it still hurts.",
+            "allegedly \(dn) moved supply before the dump. receipts incoming.",
+            jab()
+        ])
+
+        var out: [Post] = []
+
+        // 2. receipts
+        if let g = haters.first {
+            let lines = [
+                "[-42m] deployer funded a fresh wallet",
+                "[-27m] top wallets hold \(Int(dv.conc * 100))% of supply",
+                "[-14m] \(max(1, c.susp ?? 1)) flagged transfers out of the dev wallet",
+                "[-3m]  liquidity removed: \(Mk.fmtGems(loot)) gems",
+                "[now]  trust score at rug: \(score)/100",
+                "deployer history: \(prior) prior rug\(prior == 1 ? "" : "s"), \(Mk.fmtGems(dv.loot)) gems pocketed before"
+            ]
+            var p = makePost(g, ["receipts on $\(t). \(dn)'s wallet, read it before it gets deleted 🧾", "i pulled the \(dn) wallet trail for $\(t). it is exactly what you think.", "not saying i called it. but the \(t) receipts are right here."].randomElement() ?? "receipts",  st)
+            p.tag = "Receipts"
+            p.poll = nil
+            p.media = Media(kind: "code", title: "\(t)_onchain.log", lines: lines, hue: hue)
+            stampPost(&p, st)
+            p.likes = max(p.likes * 3, 120)
+            p.comments = []
+            p.queue = rugQueue(Array(cast.shuffled().prefix(3)), ["this is damning.", "the 27 minute line gets me. everyone saw this coming.", jab(), "pinning this to my profile so nobody forgets", "someone get this to the newsdesk"])
+            out.append(p)
+        }
+
+        // 3. victim quote post
+        if let v = victims.first {
+            let lost = held.map { Mk.fmtGems($0.cost) } ?? "\(Int.random(in: 20...90))"
+            var p = makePost(v, ["i put \(lost) gems into $\(t) because the chart looked healthy. never again.", "\(lost) gems. gone. i'm not even mad, i'm just numb.", "me watching $\(t) go to zero with \(lost) gems in it 🫠"].randomElement() ?? "gone", st)
+            p.tag = "Rugged"
+            p.poll = nil; p.media = nil
+            p.quote = Quote(handle: news.handle, name: news.name, text: String(text.prefix(140)))
+            stampPost(&p, st)
+            p.comments = []
+            p.queue = rugQueue(Array(cast.shuffled().prefix(3)), ["it happens to the best of us. well, the worst of us.", "same. down bad.", "f", "this scene is cooked"])
+            out.append(p)
+        }
+
+        // 4. deployer response
+        if big, !mine, let d = creator {
+            var p = makePost(d, ["$\(t) was not a rug. the liquidity was rebalanced. stop harassing me.", "i'm not responding to accusations. the work speaks for itself.", "everyone loses sometimes. it's called a market. move on."].randomElement() ?? "no comment", st)
+            p.tag = "Response"
+            p.poll = nil; p.media = nil
+            if let rc = out.first(where: { $0.tag == "Receipts" }) {
+                p.quote = Quote(handle: rc.authorHandle, name: rc.authorName, text: String(rc.text.prefix(140)))
+            }
+            stampPost(&p, st)
+            p.comments = []
+            p.queue = rugQueue(Array(cast.shuffled().prefix(4)), ["rebalanced?? you took \(Mk.fmtGems(loot)) gems.", "lmao 'the work speaks for itself'", jab(), "delete the account at this point", "the audacity is almost impressive"])
+            out.append(p)
+        }
+
+        // 5. revenge promise
+        if let r = (victims.dropFirst().first ?? haters.first ?? victims.first) {
+            var p = makePost(r, ["@\(dh) i know your wallet and i know your handle. next coin you launch, i am in the chat every single minute.", "revenge arc starts now. @\(dh) remember my name.", "this isn't over @\(dh). every launch you make from here, i'm telling everyone.", "i lost real gems and a little faith in humanity. @\(dh) only one of those is coming back."].randomElement() ?? "revenge", st)
+            p.tag = "Revenge"
+            p.poll = nil; p.media = nil; p.quote = nil
+            stampPost(&p, st)
+            p.comments = []
+            p.queue = rugQueue(Array(cast.shuffled().prefix(4)), ["+1. boycotting your next launch.", "count me in.", "we are not forgetting this", "your next coin is dead on arrival @\(dh)", "organize the chat. everyone shows up."])
+            out.append(p)
+        }
+
+        // 6. the argument
+        var argPost: Post? = nil
+        if big, let a = (haters.first ?? victims.first), let b = (others.filter({ ($0.trait == .hype || $0.trait == .mogul) && $0.handle != a.handle }).first ?? others.first(where: { $0.handle != a.handle })) {
+            var p = makePost(b, "unpopular opinion: everybody who bought $\(t) knew the risk. the trust score said \(score). nobody forced anyone @\(a.handle).", st)
+            p.tag = "Heated"
+            p.poll = nil; p.media = nil; p.quote = nil
+            p.likes *= 3
+            p.comments = []
+            var q: [QComment] = []
+            var at = Date()
+            for i in 0..<Int.random(in: 9...14) {
+                let cm: Comment
+                if Double.random(in: 0...1) < 0.3 {
+                    let u = Crowd.make()
+                    cm = Comment(name: u.name, handle: u.handle, emoji: "🙂", text: Spicy.crowd[heat].randomElement() ?? Brainrot.line(about: t))
+                } else {
+                    let sp = i % 2 == 0 ? a : b
+                    let tg = i % 2 == 0 ? b : a
+                    cm = Comment(name: sp.name, handle: sp.handle, emoji: sp.emoji, text: "@\(tg.handle) " + (Spicy.jab[heat].randomElement() ?? "no"), verified: sp.followers >= 40000)
+                }
+                at = at.addingTimeInterval(i < 2 ? 1 : Double.random(in: 9...34))
+                q.append(QComment(c: cm, at: at))
+            }
+            p.queue = q
+            stampPost(&p, st)
+            out.append(p)
+            argPost = p
+        }
+
+        for p in out { st.posts.insert(p, at: 0) }
+        st.posts.insert(brk, at: 0)
+        if let r = out.first(where: { $0.tag == "Revenge" }) {
+            logEvent(&st, &items, quiet: quiet, emoji: "🗡️", title: "\(r.authorName) swore revenge on \(dn)", detail: String(r.text.prefix(90)), post: r.id,
+                     handles: [r.authorHandle, dh], weight: 24)
+        }
+        if let a = argPost {
+            logEvent(&st, &items, quiet: quiet, emoji: "🔥", title: "The $\(t) rug started a fight", detail: String(a.text.prefix(90)), post: a.id,
+                     handles: [a.authorHandle, dh], weight: 26)
+        }
+        return brk.id
+    }
+
+    // MARK: You're away
+
+    func marketSnapshot(_ st: GameState) -> [String: Coin] {
+        Dictionary((st.ex.market?.coins ?? []).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    }
+
+    private func awayPost(_ st: inout GameState, _ author: NPC, _ text: String, tag: String, replies: [String]) -> Post {
+        var p = makePost(author, text, st)
+        p.tag = tag
+        p.poll = nil; p.media = nil; p.quote = nil
+        stampPost(&p, st)
+        let cast = st.npcs.filter { $0.id != "newsdesk" && $0.handle != author.handle }.shuffled()
+        p.comments = Array(replies.enumerated().map { (i, r) -> Comment in
+            if i < cast.count { return mkCm(cast[i], r) }
+            let u = Crowd.make()
+            return Comment(name: u.name, handle: u.handle, emoji: "🙂", text: r)
+        })
+        return p
+    }
+
+    /// Everything the market did while you were gone, as digest items and feed posts.
+    func marketAwayReport(_ st: inout GameState, _ items: inout [DigestItem], before: [String: Coin], away: TimeInterval) {
+        let hrs = away / 3600
+        guard hrs >= 0.2, let m0 = st.ex.market else { return }
+        let cast = st.npcs.filter { $0.id != "newsdesk" }
+        guard !cast.isEmpty else { return }
+        let hat = cast.filter { $0.trait == .hater || $0.trait == .gossip }
+        let ch = cast.filter { $0.trait == .chaos || $0.trait == .hype }
+        var reports = 0
+
+        // your bags
+        var bv = 0.0, nv = 0.0
+        var names: [String] = []
+        for h in m0.holds {
+            if let b = before[h.id], let c = m0.coins.first(where: { $0.id == h.id }) {
+                bv += h.qty * b.price
+                nv += h.qty * c.price
+                names.append("$\(h.id)")
+            }
+        }
+        if bv > 1, abs(nv / bv - 1) > 0.12 {
+            let up = nv > bv
+            logEvent(&st, &items, quiet: false, emoji: up ? "📈" : "📉", title: "Your bags \(up ? "pumped" : "bled") while you were away",
+                     detail: "\(names.prefix(3).joined(separator: ", ")) moved \(Mk.pct(nv / bv - 1)). Worth \(Mk.fmtGems(nv)) gems now.", weight: 55)
+            reports += 1
+        }
+
+        // whales and interest
+        for c in m0.coins.shuffled() {
+            guard reports < 5, let b = before[c.id], !b.rugged, !c.rugged else { continue }
+            let held = m0.holds.contains { $0.id == c.id }
+            let dw = (c.whale ?? 0.25) - (b.whale ?? 0.25)
+            let cn = Int(Mk.conc(c) * 100)
+            if dw > 0.1, let g = hat.randomElement() {
+                let p = awayPost(&st, g, "whales have been quietly stacking $\(c.id). top wallets now hold \(cn)% of supply. either they know something or they ARE the something.", tag: "Coin",
+                                 replies: ["concentration like that is how rugs are born.", "or it's accumulation. stop fearing everything.", "checking the deployer history now"])
+                st.posts.insert(p, at: 0)
+                logEvent(&st, &items, quiet: false, emoji: "🐋", title: "Whales are loading $\(c.id)", detail: "Top wallets now hold \(cn)% of supply. Trust score \(c.tr ?? 50).", post: p.id,
+                         handles: [g.handle], weight: held ? 48 : 30)
+                reports += 1
+            } else if dw < -0.1, let g = (ch + hat).randomElement() {
+                let p = awayPost(&st, g, "whale wallets just unloaded $\(c.id) onto retail. concentration down to \(cn)%. if you're still holding, you were the exit.", tag: "Coin",
+                                 replies: ["bag holders assemble", "the dump was telegraphed 3 hours ago", "i sold 10 minutes before. don't ask"])
+                st.posts.insert(p, at: 0)
+                logEvent(&st, &items, quiet: false, emoji: "🐳", title: "Whales dumped $\(c.id)", detail: "Big wallets sold into the crowd. The chart is \(Mk.pct(c.price / max(1e-9, b.price) - 1)) since you left.", post: p.id,
+                         handles: [g.handle], weight: held ? 50 : 30)
+                reports += 1
+            } else if (c.interest ?? 0.7) < 0.3, (b.interest ?? 0.7) >= 0.3, let g = cast.randomElement() {
+                let p = awayPost(&st, g, "does anyone still talk about $\(c.id) or did we all just quietly leave", tag: "Coin",
+                                 replies: ["gm to the 3 holders left", "chat went silent at like 2am", "it's over, but i'm not selling out of spite"])
+                st.posts.insert(p, at: 0)
+                logEvent(&st, &items, quiet: false, emoji: "😴", title: "The community lost interest in $\(c.id)", detail: "Chat went quiet. Interest is down to \(Int((c.interest ?? 0) * 100))% and trust slipped to \(c.tr ?? 50).", post: p.id,
+                         handles: [g.handle], weight: held ? 42 : 24)
+                reports += 1
+            }
+        }
+
+        // deployers who rugged come back with a new project
+        var relaunched = 0
+        for c in m0.coins where !c.mine && c.rugged && c.crashed != true {
+            guard relaunched < 1, let b = before[c.id], !b.rugged, let d = cast.first(where: { $0.handle == c.creator }),
+                  (st.ex.market?.coins.count ?? 0) < 16 else { continue }
+            var mm = st.ex.market ?? Market()
+            var nc = makeCoin(st, by: d, backfill: false)
+            nc.tr = Mk.trust(nc, d.trait, mm).score
+            mm.coins.append(nc)
+            st.ex.market = mm
+            let p = awayPost(&st, d, "new project. $\(nc.id). $\(c.id) was a lesson, not a failure. liquidity locked this time 🔒", tag: "Coin",
+                             replies: ["@\(d.handle) we see you. trust score on $\(nc.id) is \(nc.tr ?? 30).", "locked liquidity from the guy who pulled \(Mk.fmtGems(c.looted ?? c.poolV)) gems yesterday lol", "i will be in the chat. every minute."])
+            st.posts.insert(p, at: 0)
+            logEvent(&st, &items, quiet: false, emoji: "🪙", title: "\(d.name) is back with $\(nc.id)", detail: "Fresh launch right after the $\(c.id) rug. Trust score \(nc.tr ?? 30).", post: p.id,
+                     handles: [d.handle], weight: 40)
+            relaunched += 1
+        }
+
+        // other deployers keep launching
+        for _ in 0..<min(2, Int(hrs / 3)) { simCoinLaunch(&st, &items, cast, false) }
+    }
+
+    func trustInfo(_ c: Coin) -> TrustInfo {
+        let trait = s.npcs.first { $0.handle == c.creator }?.trait
+        return Mk.trust(c, trait, s.ex.market ?? Market())
     }
 
     /// NPCs launch coins and shill the ones already out there.
@@ -548,6 +926,10 @@ extension Game {
         c.peak = 0.01
         c.drift = 0.01
         c.pool = Double(seed)
+        c.whale = 0.3
+        c.interest = 0.8
+        c.susp = 0
+        c.tr = Mk.trust(c, nil, m).score
         m.coins.append(c)
         m.holds.append(Holding(id: t, qty: Double(seed) * 0.98 / 0.01, cost: Double(seed)))
         m.launched += 1
@@ -572,6 +954,7 @@ extension Game {
         m.coins[i].lastShill = Date()
         m.coins[i].drift += Double.random(in: 0.05...0.12) * (1 + Double(st.aura) / 200)
         m.coins[i].holders += Int.random(in: 3...15)
+        m.coins[i].interest = min(1, (m.coins[i].interest ?? 0.7) + 0.15)
         st.ex.market = m
         var p = Post(authorHandle: st.persona.handle, authorName: st.persona.name, emoji: st.persona.emoji,
                      text: ["$\(ticker) is only getting started. buy now or watch from the sidelines.", "if you're not in $\(ticker) yet, that's a you problem.", "$\(ticker) holders eat first. that's all i'll say."].randomElement() ?? "$\(ticker)",
@@ -616,23 +999,21 @@ extension Game {
         }
         st.aura = max(5, st.aura - 8)
         st.followers = max(10, Int(Double(st.followers) * 0.93))
-        let news = st.npcs.first { $0.id == "newsdesk" } ?? cast.first
-        if let author = news {
-            var p = makePost(author, "BREAKING: $\(ticker) rugged. @\(st.persona.handle) pulled the liquidity, walked off with \(Mk.fmtGems(loot)) gems from \(holders) holders and the price is down 98%. Holders want answers.", st)
-            p.tag = "Breaking"
-            stampPost(&p, st)
-            var cs: [Comment] = []
-            for n in cast.shuffled().prefix(3) {
-                cs.append(mkCm(n, ["@\(st.persona.handle) you really did it huh.", "bag holders unite. @\(st.persona.handle) owes us all.", "never trusting a launch again. thanks a lot @\(st.persona.handle)."].randomElement() ?? "wow"))
-            }
-            p.comments = cs
-            p.likes = max(p.likes * 4, 200)
-            p.viral = true
-            st.posts.insert(p, at: 0)
-            if let v = cast.randomElement() {
-                let me = NPC(id: "me", name: st.persona.name, handle: st.persona.handle, emoji: st.persona.emoji, bio: "", trait: .hype, followers: st.followers, affinity: 50, followsYou: false)
-                _ = escalateFeud(&st, a: v, b: me, cause: "the $\(ticker) rug")
-            }
+        var tmpItems: [DigestItem] = []
+        rugAftermath(&st, &tmpItems, dead, loot: loot, mine: true, held: held, quiet: true)
+        if var mm = st.ex.market {
+            var d = mm.dev ?? [:]
+            var r = d[st.persona.handle] ?? DevRec()
+            r.rugs += 1
+            r.loot += loot
+            r.boycott = Date().addingTimeInterval(3 * 3600)
+            d[st.persona.handle] = r
+            mm.dev = d
+            st.ex.market = mm
+        }
+        if let v = cast.randomElement() {
+            let me = NPC(id: "me", name: st.persona.name, handle: st.persona.handle, emoji: st.persona.emoji, bio: "", trait: .hype, followers: st.followers, affinity: 50, followsYou: false)
+            _ = escalateFeud(&st, a: v, b: me, cause: "the $\(ticker) rug")
         }
         notify(&st, "event", "You rugged $\(ticker)", sub: "+\(Mk.fmtGems(loot)) gems from \(holders) holders, the scene will remember", emoji: "💸")
         s = st
@@ -703,7 +1084,7 @@ enum CoinTalk {
     ]
     static let up = ["green candle szn", "we are so back", "told you not to sell", "number go up", "who sold i need names", "$T printing", "this is what winning feels like"]
     static let down = ["its over", "bleeding", "who is dumping", "dev do something", "down bad", "should have sold at the top", "pain", "this is fine"]
-    static let dead = ["rugged. unreal.", "dev wallet is empty", "i'm done with this scene", "told you it was a rug", "gone. all of it", "never trusting a launch again", "we got got"]
+    static let dead = ["rugged. unreal.", "dev wallet is empty", "i'm done with this scene", "told you it was a rug", "gone. all of it", "never trusting a launch again", "we got got", "revenge arc loading", "i'm telling everyone", "dev your next launch is cooked"]
     static let toDev = ["dev where is the roadmap", "dev say something", "dev are you holding", "lock the liquidity dev", "dev we believe in you", "dev dont rug us"]
     static let rage: [[String]] = [
         ["so much for that", "wow thanks dev", "lesson learned"],
@@ -743,6 +1124,8 @@ extension Game {
             t = CoinTalk.up.randomElement() ?? "green"
         } else if ch < -0.08, Double.random(in: 0...1) < 0.5 {
             t = CoinTalk.down.randomElement() ?? "red"
+        } else if !c.mine, (c.tr ?? 70) < 45, who.trait == .gossip || who.trait == .hater, Double.random(in: 0...1) < 0.5 {
+            t = ["trust score on $T is \(c.tr ?? 40). you were warned", "check the deployer history before you ape", "whales hold \(Int(Mk.conc(c) * 100))% of $T. that's not a community, that's a hostage situation", "dev wallet is moving again"].randomElement() ?? "sus"
         } else if who.trait == .hater, heat >= 1, Double.random(in: 0...1) < 0.4 {
             t = Spicy.jab[heat].randomElement() ?? "cope"
         } else {

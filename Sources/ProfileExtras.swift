@@ -300,6 +300,11 @@ struct GameSettingsView: View {
     @State private var chars = false
     @State private var confirmDelete = false
     @State private var confirmLeave = false
+    @State private var customize = false
+    @State private var styleSheet = false
+    @State private var syncSheet = false
+    @State private var favSheet = false
+    @State private var showLog = false
 
     private func username(_ st: GameState) -> String {
         let raw = st.id.uuidString.replacingOccurrences(of: "-", with: "")
@@ -335,6 +340,18 @@ struct GameSettingsView: View {
                     group {
                         row("person.3.fill", "My characters", chevron: true) { chars = true }
                     }
+                    header("World & profile").padding(.top, 8)
+                    group {
+                        row("globe.europe.africa.fill", "Customize World", chevron: true) { customize = true }
+                        divider
+                        row("paintpalette.fill", "Profile Style", chevron: true) { styleSheet = true }
+                        divider
+                        row("arrow.triangle.2.circlepath", "Account Sync", chevron: true) { syncSheet = true }
+                        divider
+                        row("star.fill", "Favorites", chevron: true) { favSheet = true }
+                        divider
+                        row("book.closed.fill", "Activity Log", chevron: true) { showLog = true }
+                    }
                     header("Gameplay").padding(.top, 8)
                     group {
                         row("character.bubble.fill", "Language", trailing: "English") {}
@@ -353,6 +370,11 @@ struct GameSettingsView: View {
         .background(T.bg.ignoresSafeArea())
         .toastOverlay()
         .sheet(isPresented: $aiSheet) { SettingsSheet().zoomed() }
+        .sheet(isPresented: $customize) { CustomizeWorldSheet().zoomed() }
+        .sheet(isPresented: $styleSheet) { ProfileStyleSheet().zoomed() }
+        .sheet(isPresented: $syncSheet) { SyncSheet().zoomed() }
+        .sheet(isPresented: $favSheet) { FavoritesSheet().zoomed() }
+        .fullScreenCover(isPresented: $showLog) { ActivityLogView().zoomed() }
         .fullScreenCover(isPresented: $chars) { CharactersSheet().zoomed() }
         .alert("Leave this world?", isPresented: $confirmLeave) {
             Button("Leave") { leave() }
