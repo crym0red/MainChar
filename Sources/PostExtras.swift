@@ -109,7 +109,8 @@ struct PostExtras: View {
     var body: some View {
         let st = game.s
         VStack(alignment: .leading, spacing: 8) {
-            if let m = post.media { MediaCard(m: m) }
+            if let m = post.media { if m.kind == "gif" { GifCard(m: m) } else { MediaCard(m: m) } }
+            if let t = post.coin { CoinPostCard(ticker: t) }
             if let q = post.quote { QuoteCard(q: q) }
             if let p = post.poll { PollCard(post: post, poll: p) }
             if !(post.queue ?? []).isEmpty {

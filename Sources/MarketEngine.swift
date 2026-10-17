@@ -906,7 +906,7 @@ extension Game {
         showToast((profit >= 0 ? "Sold for +\(Mk.fmtGems(profit)) profit" : "Sold at \(Mk.fmtGems(profit)) loss") + ". Fee \(Mk.fmtGems(fee))")
     }
 
-    func marketLaunch(name: String, ticker: String, symbol: String, seed: Int) -> String? {
+    func marketLaunch(name: String, ticker: String, symbol: String, seed: Int, announce: Bool = true) -> String? {
         var st = s
         marketEnsure(&st)
         var m = st.ex.market ?? Market()
@@ -934,13 +934,15 @@ extension Game {
         m.holds.append(Holding(id: t, qty: Double(seed) * 0.98 / 0.01, cost: Double(seed)))
         m.launched += 1
         st.ex.market = m
-        var p = Post(authorHandle: st.persona.handle, authorName: st.persona.name, emoji: st.persona.emoji,
-                     text: "just launched $\(t) (\(c.name)). liquidity is in. don't say i didn't tell you.",
-                     likes: 12, reposts: 2, comments: makeComments(st, auraDelta: 1, count: 3, text: "launched a coin"),
-                     day: st.day, isYou: true)
-        p.tag = "Coin"
-        stampPost(&p, st)
-        st.posts.insert(p, at: 0)
+        if announce {
+            var p = Post(authorHandle: st.persona.handle, authorName: st.persona.name, emoji: st.persona.emoji,
+                         text: "just launched $\(t) (\(c.name)). liquidity is in. don't say i didn't tell you.",
+                         likes: 12, reposts: 2, comments: makeComments(st, auraDelta: 1, count: 3, text: "launched a coin"),
+                         day: st.day, isYou: true)
+            p.tag = "Coin"
+            stampPost(&p, st)
+            st.posts.insert(p, at: 0)
+        }
         gainXP(&st, 15)
         s = st
         showToast("$\(t) is live")

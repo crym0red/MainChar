@@ -411,7 +411,7 @@ struct PostRow: View {
                         Chip(text: post.tag, color: post.tag == "Breaking" ? T.red.opacity(0.85) : T.card2)
                     }
                     if post.isYou, let ti = st.ex.title { Chip(text: ti, color: T.gold.opacity(0.3)) }
-                    Text(post.text).font(.jk(20)).foregroundColor(.white)
+                    Text(post.text).postStyled(post.style)
                         .fixedSize(horizontal: false, vertical: true)
                     if let t = Mk.tickers(post.text).first, (game.s.ex.market?.coins ?? []).contains(where: { $0.id == t }) {
                         Button { nav.coin = t; nav.tab = 5 } label: {
@@ -691,13 +691,17 @@ struct ComposeExtras {
     var poll: [String]? = nil
     var pollQ = ""
     var media: Media? = nil
-    var reach: Double { [1.0, 1.25, 1.6][max(0, min(2, tone))] * (poll != nil ? 1.15 : 1) * (media != nil ? 1.1 : 1) }
+    var style: PostStyle? = nil
+    var coin: String? = nil
+    var reach: Double {
+        [1.0, 1.25, 1.6][max(0, min(2, tone))] * (poll != nil ? 1.15 : 1) * (media != nil ? 1.1 : 1) * (coin != nil ? 1.2 : 1)
+    }
     var auraShift: Int {
         if tone == 1 { return Int.random(in: -3...2) }
         if tone == 2 { return Int.random(in: -6...4) }
         return 0
     }
-    var viral: Double { tone == 2 ? 0.08 : (tone == 1 ? 0.03 : 0) }
+    var viral: Double { (tone == 2 ? 0.08 : (tone == 1 ? 0.03 : 0)) + (coin != nil ? 0.04 : 0) }
 }
 
 struct ComposeSheet: View {
@@ -706,15 +710,25 @@ struct ComposeSheet: View {
     let seed: ComposeSeed
     @State private var kind: PostKind = .meme
     @State private var text = ""
-    @State private var outcome: Outcome? = nil
     @State private var tone = 0
-    @State private var panel = 0          // 0 none, 1 poll, 2 snippet, 3 mention, 4 topic, 5 emoji
+    @State private var panel = 0          // 0 none, 1 poll, 2 snippet, 3 mention, 4 topic, 5 emoji, 6 style, 7 gif, 8 coin
     @State private var pollQ = ""
     @State private var pollOpts = ["", ""]
     @State private var pollOn = false
     @State private var snipTitle = "note.txt"
     @State private var snipBody = ""
     @State private var snipOn = false
+    @State private var style = PostStyle()
+    @State private var gif: String? = nil
+    @State private var gifCaption = ""
+    @State private var coinOn = false
+    @State private var coinName = ""
+    @State private var coinTicker = ""
+    @State private var coinSeed = 10
+    @State private var coinSymbol = "bolt.fill"
+    @State private var launched: String? = nil
+    @State private var pendingO: Outcome? = nil
+    @State private var outcome: Outcome? = nil
     @FocusState private var focus: Bool
     @EnvironmentObject private var nav: Nav
 
@@ -725,40 +739,43 @@ struct ComposeSheet: View {
     private var kinds: [PostKind] {
         PostKind.allCases.filter { $0 != .apology || game.s.aura < 30 }
     }
-
-    private var topics: [String] {
-        let t = Topics.forWorld(game.s.world)
-        return Array(t.prefix(12))
-    }
-
+    private var topics: [String] { Array(Topics.forWorld(game.s.world).prefix(12)) }
     private var cast: [NPC] {
         Array(game.s.npcs.filter { $0.id != "newsdesk" }.sorted { $0.affinity > $1.affinity }.prefix(14))
     }
-
     private var cleanOpts: [String] { pollOpts.map { $0.trimmed }.filter { !$0.isEmpty } }
+
+    private var tickerClean: String { coinTicker.uppercased().filter { $0.isLetter || $0.isNumber } }
+    private var coinError: String? {
+        guard coinOn else { return nil }
+        if coinName.trimmed.isEmpty { return "Name the coin" }
+        if tickerClean.count < 2 || tickerClean.count > 6 { return "Ticker must be 2 to 6 characters" }
+        if (game.s.ex.market?.coins ?? []).contains(where: { $0.id == tickerClean }) { return "That ticker is taken" }
+        let need = coinSeed + Mk.launchFee
+        if game.s.ex.gems < need { return "Need \(need) gems, you have \(game.s.ex.gems)" }
+        return nil
+    }
 
     private var extras: ComposeExtras {
         var x = ComposeExtras()
         x.tone = tone
         if pollOn, cleanOpts.count >= 2 { x.poll = cleanOpts; x.pollQ = pollQ.trimmed }
-        if snipOn, !snipBody.trimmed.isEmpty {
+        if let g = gif {
+            x.media = Media(kind: "gif", title: g, lines: [gifCaption.trimmed], hue: GifLib.all.first { $0.id == g }?.hue ?? 0.6)
+        } else if snipOn, !snipBody.trimmed.isEmpty {
             x.media = Media(kind: "code", title: snipTitle.trimmed.isEmpty ? "note.txt" : snipTitle.trimmed,
                             lines: Array(snipBody.components(separatedBy: "\n").prefix(14)),
                             hue: Double(HK.h(snipTitle) % 360) / 360)
         }
+        if !style.isDefault { x.style = style }
+        if coinOn, coinError == nil { x.coin = tickerClean }
         return x
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            if let o = outcome {
-                VStack(spacing: 8) {
-                    SymbolTile(emoji: o.emoji, size: 72)
-                    Text(o.title).font(.jk(22, .heavy))
-                    Text(o.detail).font(.jk(14)).foregroundColor(T.sub).multilineTextAlignment(.center)
-                    BigButton(title: "Done") { dismiss() }.padding(.top, 8)
-                }.frame(maxWidth: .infinity).padding(.top, 30).padding(.horizontal, 16)
-                Spacer()
+            if let t = launched {
+                launchScreen(t)
             } else {
                 topRow
                 ScrollView {
@@ -776,9 +793,12 @@ struct ComposeSheet: View {
         }
         .background(T.bg.ignoresSafeArea())
         .onAppear { if text.isEmpty { text = seed.text } }
+        .onDisappear { if let o = pendingO { game.pendingResult = o } }
     }
 
     // MARK: Pieces
+
+    private var canPost: Bool { !text.trimmed.isEmpty && coinError == nil }
 
     private var topRow: some View {
         HStack(spacing: 10) {
@@ -794,23 +814,79 @@ struct ComposeSheet: View {
             }
             .padding(.horizontal, 10).frame(height: 30).background(T.card2).clipShape(Capsule())
             Button { post() } label: {
-                Text("Post").font(.jk(16, .bold)).foregroundColor(.white)
-                    .padding(.horizontal, 22).frame(height: 36)
-                    .background(canPost ? T.blue : T.card2).clipShape(Capsule())
+                Text(coinOn ? "Post + Launch" : "Post").font(.jk(16, .bold)).foregroundColor(.white)
+                    .padding(.horizontal, 20).frame(height: 36)
+                    .background(canPost ? (coinOn ? Color(red: 0.45, green: 0.30, blue: 0.95) : T.blue) : T.card2).clipShape(Capsule())
             }
             .disabled(!canPost)
         }
         .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 10)
     }
 
-    private var canPost: Bool { !text.trimmed.isEmpty }
-
     private func post() {
         guard canPost else { return }
-        if let o = game.publish(kind: kind, text: text, quest: seed.quest, extras: extras) {
-            game.pendingResult = o
-            nav.tab = 0
-            dismiss()
+        let x = extras
+        let spec: (String, String, String, Int)? = (coinOn && coinError == nil) ? (coinName.trimmed, tickerClean, coinSymbol, coinSeed) : nil
+        guard let o = game.publish(kind: kind, text: text, quest: seed.quest, extras: x) else { return }
+        if let c = spec {
+            if let err = game.marketLaunch(name: c.0, ticker: c.1, symbol: c.2, seed: c.3, announce: false) {
+                game.showToast(err)
+            } else {
+                pendingO = o
+                withAnimation { launched = c.1 }
+                return
+            }
+        }
+        game.pendingResult = o
+        nav.tab = 0
+        dismiss()
+    }
+
+    private func launchScreen(_ t: String) -> some View {
+        let c = (game.s.ex.market?.coins ?? []).first { $0.id == t }
+        let held = (game.s.ex.market?.holds ?? []).first { $0.id == t }
+        return ScrollView {
+            VStack(spacing: 14) {
+                LaunchRocket(ticker: t, hue: c?.hue ?? 0.7)
+                Text("$\(t) is live").font(.jk(24, .heavy))
+                Text("Your post is out and the coin launched with it. Buy in before the crowd does.")
+                    .font(.jk(14)).foregroundColor(T.sub).multilineTextAlignment(.center)
+                if let c = c {
+                    HStack(spacing: 10) {
+                        CoinTile(c: c, size: 44)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(c.name).font(.jk(16, .bold))
+                            Text("Pool \(Mk.fmtGems(c.poolV)) gems · \(c.holders) holders").font(.jk(12)).foregroundColor(T.sub)
+                        }
+                        Spacer()
+                        if let h = held { Text("\(Mk.fmtGems(h.qty * c.price)) gems held").font(.jk(12, .bold)).foregroundColor(T.lime) }
+                    }
+                    .padding(12).background(T.card).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                HStack(spacing: 8) {
+                    ForEach([2, 5, 10, 25], id: \.self) { a in
+                        Button { game.marketBuy(t, gems: a) } label: {
+                            VStack(spacing: 2) {
+                                Text("Buy \(a)").font(.jk(15, .bold))
+                                Text("\(game.s.ex.gems) gems").font(.jk(10)).foregroundColor(.white.opacity(0.6))
+                            }
+                            .foregroundColor(.white).frame(maxWidth: .infinity).padding(.vertical, 10)
+                            .background(Color(red: 0.45, green: 0.30, blue: 0.95)).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        }
+                    }
+                }
+                HStack(spacing: 10) {
+                    Button { nav.coin = t; nav.tab = 5; dismiss() } label: {
+                        Text("Open market").font(.jk(15, .semibold)).foregroundColor(.white).frame(maxWidth: .infinity).padding(.vertical, 12)
+                            .background(T.card2).clipShape(Capsule())
+                    }
+                    Button { nav.tab = 0; dismiss() } label: {
+                        Text("Done").font(.jk(15, .bold)).foregroundColor(.white).frame(maxWidth: .infinity).padding(.vertical, 12)
+                            .background(T.blue).clipShape(Capsule())
+                    }
+                }
+            }
+            .padding(16)
         }
     }
 
@@ -819,6 +895,8 @@ struct ComposeSheet: View {
             TextEditor(text: $text)
                 .scrollContentBackground(.hidden)
                 .focused($focus)
+                .font(style.uiFont(18))
+                .foregroundColor(style.color)
                 .frame(minHeight: 96, maxHeight: 150)
                 .padding(8)
                 .onChange(of: text) { v in if v.count > 240 { text = String(v.prefix(240)) } }
@@ -832,57 +910,49 @@ struct ComposeSheet: View {
         .background(T.card).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    private func toolButton(_ icon: String, _ id: Int, on: Bool = false, _ action: (() -> Void)? = nil) -> some View {
-        Button {
-            if let a = action { a() } else { withAnimation(.easeOut(duration: 0.15)) { panel = panel == id ? 0 : id } }
-        } label: {
-            Image(systemName: icon).font(.system(size: 18, weight: .semibold))
-                .foregroundColor(panel == id || on ? T.blue : .white)
-                .frame(maxWidth: .infinity).frame(height: 42)
-                .background(panel == id || on ? T.blue.opacity(0.18) : T.card)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    private func toolButton(_ icon: String, _ id: Int, on: Bool = false) -> some View {
+        Button { withAnimation(.easeOut(duration: 0.15)) { panel = panel == id ? 0 : id } } label: {
+            toolFace(icon, active: panel == id || on)
         }
     }
 
+    private func toolFace(_ icon: String, active: Bool) -> some View {
+        Image(systemName: icon).font(.system(size: 18, weight: .semibold))
+            .foregroundColor(active ? T.blue : .white)
+            .frame(width: 50, height: 42)
+            .background(active ? T.blue.opacity(0.18) : T.card)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
     private var toolRow: some View {
-        HStack(spacing: 8) {
-            toolButton("chart.bar.fill", 1, on: pollOn)
-            toolButton("chevron.left.forwardslash.chevron.right", 2, on: snipOn)
-            toolButton("at", 3)
-            toolButton("number", 4)
-            toolButton("face.smiling", 5)
-            toolButton("sparkles", 9) { text = kind.suggestion() }
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                Menu {
+                    Button { text = String(PostGen.make(Int.random(in: 0..<PostGen.cats.count), scene: CastGen.isScene(game.s.world)).prefix(240)) } label: {
+                        Label("Surprise me", systemImage: "dice.fill")
+                    }
+                    Button { text = kind.suggestion() } label: { Label("Match post type", systemImage: "sparkles") }
+                    Divider()
+                    ForEach(Array(PostGen.cats.enumerated()), id: \.offset) { i, c in
+                        Button { text = String(PostGen.make(i, scene: CastGen.isScene(game.s.world)).prefix(240)) } label: { Text("\(c.1) \(c.0)") }
+                    }
+                } label: { toolFace("sparkles", active: false) }
+                toolButton("textformat", 6, on: !style.isDefault)
+                toolButton("play.rectangle.fill", 7, on: gif != nil)
+                toolButton("bitcoinsign.circle.fill", 8, on: coinOn)
+                toolButton("chart.bar.fill", 1, on: pollOn)
+                toolButton("chevron.left.forwardslash.chevron.right", 2, on: snipOn)
+                toolButton("at", 3)
+                toolButton("number", 4)
+                toolButton("face.smiling", 5)
+            }
         }
     }
 
     @ViewBuilder private var panelView: some View {
         switch panel {
-        case 1:
-            VStack(alignment: .leading, spacing: 8) {
-                Toggle("Attach poll", isOn: $pollOn).font(.jk(15, .semibold)).tint(T.blue)
-                TextField("Question (optional)", text: $pollQ).field()
-                ForEach(pollOpts.indices, id: \.self) { i in
-                    HStack {
-                        TextField("Option \(i + 1)", text: $pollOpts[i]).field()
-                        if pollOpts.count > 2 {
-                            Button { pollOpts.remove(at: i) } label: { Image(systemName: "minus.circle.fill").foregroundColor(T.sub) }
-                        }
-                    }
-                }
-                if pollOpts.count < 4 {
-                    Button { pollOpts.append("") } label: { Label("Add option", systemImage: "plus.circle.fill").font(.jk(14, .semibold)) }
-                }
-            }
-            .padding(12).background(T.card).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        case 2:
-            VStack(alignment: .leading, spacing: 8) {
-                Toggle("Attach snippet", isOn: $snipOn).font(.jk(15, .semibold)).tint(T.blue)
-                TextField("File name", text: $snipTitle).field()
-                TextEditor(text: $snipBody).scrollContentBackground(.hidden)
-                    .font(.system(size: 13, design: .monospaced))
-                    .frame(height: 100).padding(6).background(Color.black.opacity(0.35)).clipShape(RoundedRectangle(cornerRadius: 10))
-            }
-            .padding(12).background(T.card).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        case 1: pollPanel
+        case 2: snippetPanel
         case 3:
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
@@ -916,24 +986,181 @@ struct ComposeSheet: View {
                 }
             }
             .padding(12).background(T.card).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        default:
-            EmptyView()
+        case 6: stylePanel
+        case 7: gifPanel
+        case 8: coinPanel
+        default: EmptyView()
         }
     }
 
-    private func insert(_ s: String) {
-        if text.count + s.count <= 240 { text += s }
+    private func insert(_ s: String) { if text.count + s.count <= 240 { text += s } }
+
+    private var pollPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle("Attach poll", isOn: $pollOn).font(.jk(15, .semibold)).tint(T.blue)
+            TextField("Question (optional)", text: $pollQ).field()
+            ForEach(pollOpts.indices, id: \.self) { i in
+                HStack {
+                    TextField("Option \(i + 1)", text: $pollOpts[i]).field()
+                    if pollOpts.count > 2 {
+                        Button { pollOpts.remove(at: i) } label: { Image(systemName: "minus.circle.fill").foregroundColor(T.sub) }
+                    }
+                }
+            }
+            if pollOpts.count < 4 {
+                Button { pollOpts.append("") } label: { Label("Add option", systemImage: "plus.circle.fill").font(.jk(14, .semibold)) }
+            }
+        }
+        .padding(12).background(T.card).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private var snippetPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle("Attach snippet", isOn: $snipOn).font(.jk(15, .semibold)).tint(T.blue)
+            TextField("File name", text: $snipTitle).field()
+            TextEditor(text: $snipBody).scrollContentBackground(.hidden)
+                .font(.system(size: 13, design: .monospaced))
+                .frame(height: 100).padding(6).background(Color.black.opacity(0.35)).clipShape(RoundedRectangle(cornerRadius: 10))
+            if gif != nil { Text("A GIF is attached, it replaces the snippet.").font(.jk(12)).foregroundColor(T.orange) }
+        }
+        .padding(12).background(T.card).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private var stylePanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("FONT").font(.jk(11, .heavy)).foregroundColor(T.sub)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Array(PostStyle.fonts.enumerated()), id: \.offset) { i, n in
+                        Button { style.font = i } label: {
+                            Text(n).font(PostStyle(font: i).uiFont(15)).foregroundColor(.white)
+                                .padding(.horizontal, 14).padding(.vertical, 8)
+                                .background(style.font == i ? T.blue : T.card2).clipShape(Capsule())
+                        }
+                    }
+                }
+            }
+            Text("SIZE").font(.jk(11, .heavy)).foregroundColor(T.sub)
+            HStack(spacing: 8) {
+                ForEach(Array(PostStyle.sizes.enumerated()), id: \.offset) { _, z in
+                    Button { style.scale = z.1 } label: {
+                        Text(z.0).font(.jk(15, .bold)).foregroundColor(.white).frame(maxWidth: .infinity).padding(.vertical, 8)
+                            .background(style.scale == z.1 ? T.blue : T.card2).clipShape(Capsule())
+                    }
+                }
+            }
+            Text("COLOR").font(.jk(11, .heavy)).foregroundColor(T.sub)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(PostStyle.palette, id: \.self) { h in
+                        Button { style.hex = h == "FFFFFF" ? nil : h } label: {
+                            Circle().fill(PostStyle.parse(h) ?? .white).frame(width: 34, height: 34)
+                                .overlay(Circle().stroke(Color.white, lineWidth: (style.hex ?? "FFFFFF") == h ? 3 : 0))
+                                .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 1))
+                        }
+                    }
+                }
+                .padding(.vertical, 3)
+            }
+            if !style.isDefault {
+                Button { style = PostStyle() } label: { Text("Reset style").font(.jk(13, .semibold)).foregroundColor(T.blue) }
+            }
+        }
+        .padding(12).background(T.card).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private var gifPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+                ForEach(GifLib.all) { g in
+                    Button { gif = gif == g.id ? nil : g.id; if gif != nil { snipOn = false } } label: {
+                        ZStack {
+                            GifView(id: g.id, hue: g.hue, height: 78).allowsHitTesting(false)
+                            VStack { Spacer(); Text(g.title).font(.jk(10, .bold)).foregroundColor(.white).shadow(color: .black, radius: 2).padding(.bottom, 4) }
+                        }
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(gif == g.id ? T.blue : Color.clear, lineWidth: 3))
+                    }
+                }
+            }
+            if gif != nil {
+                TextField("Caption (optional)", text: $gifCaption).field()
+                Button { gif = nil } label: { Text("Remove GIF").font(.jk(13, .semibold)).foregroundColor(T.red) }
+            }
+        }
+        .padding(12).background(T.card).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private var coinPanel: some View {
+        let err = coinError
+        return VStack(alignment: .leading, spacing: 10) {
+            Toggle("Launch a coin with this post", isOn: $coinOn)
+                .font(.jk(15, .semibold)).tint(Color(red: 0.45, green: 0.30, blue: 0.95))
+                .onChange(of: coinOn) { on in
+                    guard on else { return }
+                    if coinName.isEmpty {
+                        let w = text.split(separator: " ").prefix(2).map(String.init).joined(separator: " ")
+                        coinName = w.isEmpty ? "\(game.s.persona.name.components(separatedBy: " ").first ?? "My") Coin" : String(w.prefix(24))
+                    }
+                    if coinTicker.isEmpty { coinTicker = String(coinName.uppercased().filter { $0.isLetter }.prefix(4)) }
+                }
+            if coinOn {
+                LaunchRocket(ticker: tickerClean.isEmpty ? "TICK" : tickerClean, hue: Double(HK.h(tickerClean) % 360) / 360)
+                TextField("Coin name", text: $coinName).field()
+                TextField("Ticker (2 to 6)", text: $coinTicker).field().textInputAutocapitalization(.characters)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Mk.symbols, id: \.self) { s in
+                            Button { coinSymbol = s } label: {
+                                Image(systemName: s).font(.system(size: 16, weight: .semibold)).foregroundColor(.white)
+                                    .frame(width: 40, height: 40)
+                                    .background(coinSymbol == s ? Color(red: 0.45, green: 0.30, blue: 0.95) : T.card2).clipShape(Circle())
+                            }
+                        }
+                    }
+                }
+                Text("SEED (GEMS)").font(.jk(11, .heavy)).foregroundColor(T.sub)
+                HStack(spacing: 8) {
+                    ForEach([10, 25, 50, 100], id: \.self) { a in
+                        Button { coinSeed = a } label: {
+                            Text("\(a)").font(.jk(15, .bold)).foregroundColor(.white).frame(maxWidth: .infinity).padding(.vertical, 8)
+                                .background(coinSeed == a ? Color(red: 0.45, green: 0.30, blue: 0.95) : T.card2).clipShape(Capsule())
+                        }
+                    }
+                }
+                Text("Costs \(coinSeed + Mk.launchFee) gems: \(Mk.launchFee) launch fee plus \(coinSeed) seed. You get the seed back as your position. The coin launches the moment you post.")
+                    .font(.jk(12)).foregroundColor(T.sub)
+                if let e = err { Text(e).font(.jk(13, .bold)).foregroundColor(T.red) }
+            }
+        }
+        .padding(12).background(T.card).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     @ViewBuilder private var attachments: some View {
-        if (pollOn && cleanOpts.count >= 2) || (snipOn && !snipBody.trimmed.isEmpty) {
+        VStack(alignment: .leading, spacing: 8) {
+            if let g = gif {
+                ZStack(alignment: .topTrailing) {
+                    GifView(id: g, caption: gifCaption, hue: GifLib.all.first { $0.id == g }?.hue ?? 0.6, height: 150)
+                    Button { gif = nil } label: {
+                        Image(systemName: "xmark.circle.fill").font(.system(size: 22)).foregroundColor(.white).padding(8)
+                    }
+                }
+            }
+            if coinOn && coinError == nil {
+                HStack(spacing: 10) {
+                    Image(systemName: coinSymbol).foregroundColor(.white).frame(width: 34, height: 34)
+                        .background(Color(red: 0.45, green: 0.30, blue: 0.95)).clipShape(Circle())
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("$\(tickerClean) launches with this post").font(.jk(14, .bold))
+                        Text("\(coinSeed + Mk.launchFee) gems").font(.jk(12)).foregroundColor(T.sub)
+                    }
+                    Spacer()
+                    Button { coinOn = false } label: { Image(systemName: "xmark.circle.fill").foregroundColor(T.sub) }
+                }
+                .padding(10).background(Color(red: 0.45, green: 0.30, blue: 0.95).opacity(0.18)).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
             HStack(spacing: 8) {
-                if pollOn && cleanOpts.count >= 2 {
-                    attach("Poll · \(cleanOpts.count) options", "chart.bar.fill") { pollOn = false }
-                }
-                if snipOn && !snipBody.trimmed.isEmpty {
-                    attach(snipTitle.trimmed.isEmpty ? "note.txt" : snipTitle.trimmed, "doc.text.fill") { snipOn = false }
-                }
+                if pollOn && cleanOpts.count >= 2 { attach("Poll · \(cleanOpts.count) options", "chart.bar.fill") { pollOn = false } }
+                if gif == nil && snipOn && !snipBody.trimmed.isEmpty { attach(snipTitle.trimmed.isEmpty ? "note.txt" : snipTitle.trimmed, "doc.text.fill") { snipOn = false } }
                 Spacer()
             }
         }

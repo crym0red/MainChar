@@ -98,6 +98,8 @@ struct Post: Identifiable, Codable, Hashable {
     var myReact: String? = nil
     var rtBy: String? = nil
     var queue: [QComment]? = nil
+    var style: PostStyle? = nil
+    var coin: String? = nil
 }
 
 struct Poll: Codable, Hashable {

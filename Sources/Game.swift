@@ -541,6 +541,8 @@ final class Game: ObservableObject {
         if let x = extras {
             if let o = x.poll { post.poll = Poll(q: x.pollQ.isEmpty ? "Vote" : x.pollQ, opts: o, votes: o.map { _ in Int.random(in: 0...4) }) }
             if let m = x.media { post.media = m }
+            if let sy = x.style { post.style = sy }
+            if let c = x.coin { post.coin = c }
         }
         st.posts.insert(post, at: 0)
         st.followers += gain
