@@ -14,6 +14,7 @@ struct GameShell: View {
                 case 1: GoalsTab()
                 case 2: MessagesTab()
                 case 3: NotifsTab()
+                case 5: MarketView()
                 default: ProfileTab()
                 }
             }
@@ -60,6 +61,7 @@ struct AppTabBar: View {
         HStack(spacing: 0) {
             item(0, "house.fill")
             item(1, "target")
+            item(5, "chart.line.uptrend.xyaxis")
             item(2, "ellipsis.message.fill", dot: !st.unread.isEmpty)
             item(3, "bell.fill", dot: game.unreadNotifs > 0)
             item(4, "person.fill", dot: st.points > 0)
@@ -310,6 +312,7 @@ struct IDBox: Identifiable { let id: UUID }
 
 struct PostRow: View {
     @EnvironmentObject var game: Game
+    @EnvironmentObject var nav: Nav
     let post: Post
     var onReply: () -> Void
     var onOpen: () -> Void
@@ -344,6 +347,13 @@ struct PostRow: View {
                     }
                     Text(post.text).font(.jk(20)).foregroundColor(.white)
                         .fixedSize(horizontal: false, vertical: true)
+                    if let t = Mk.tickers(post.text).first, (game.s.ex.market?.coins ?? []).contains(where: { $0.id == t }) {
+                        Button { nav.coin = t; nav.tab = 5 } label: {
+                            Label("Trade $\(t)", systemImage: "chart.line.uptrend.xyaxis").font(.jk(14, .bold))
+                                .foregroundColor(.white).padding(.horizontal, 14).padding(.vertical, 8)
+                                .background(Color(red: 0.45, green: 0.30, blue: 0.95)).clipShape(Capsule())
+                        }
+                    }
                 }
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onOpen)

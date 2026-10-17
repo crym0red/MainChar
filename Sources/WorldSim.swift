@@ -98,6 +98,7 @@ extension Game {
             }
         }
         st.ex.simNow = nil
+        marketAdvance(&st, &items, steps: min(400, Int(away / 10)), quiet: false)
 
         // slow drift in your popularity, scaled by how long you were gone
         let scale = min(1.0, hrs / 8)
@@ -166,6 +167,7 @@ extension Game {
     /// Small live events while the app is open.
     func ambientTick() {
         guard playing, s.intro?.done != false else { return }
+        marketAmbient()
         var st = s
         let now = Date()
         let last = st.ex.lastSim ?? now
@@ -200,6 +202,7 @@ extension Game {
             if q < 0.30 { simScrutiny(&st, &items, cast, quiet); return }
             if q < 0.42 { simOffer(&st, &items, cast, quiet); return }
         }
+        if Double.random(in: 0...1) < 0.07 { simCoinLaunch(&st, &items, cast, quiet); return }
         let pre = Double.random(in: 0...1)
         if pre < 0.16 { simStory(&st, &items, cast, quiet); return }
         if pre < 0.27 { simGoLive(&st, &items, cast, quiet); return }
