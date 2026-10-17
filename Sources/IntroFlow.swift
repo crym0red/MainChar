@@ -28,9 +28,9 @@ struct IntroFlow: View {
         VStack(alignment: .leading, spacing: 20) {
             HStack(spacing: 12) {
                 Image(systemName: "sun.max.fill").font(.system(size: 28)).foregroundColor(T.gold)
-                Text("Day 1").font(.system(size: 24, weight: .bold)).foregroundColor(T.gold)
+                Text("Day 1").font(.jk(24, .bold)).foregroundColor(T.gold)
             }
-            Text(st.intro?.story ?? "").font(.system(size: 22)).lineSpacing(6)
+            Text(st.intro?.story ?? "").font(.jk(22)).lineSpacing(6)
         }
     }
 
@@ -38,12 +38,12 @@ struct IntroFlow: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
                 Image(systemName: "bolt.shield.fill").font(.system(size: 26)).foregroundColor(T.lime)
-                Text("Level these skills up").font(.system(size: 24, weight: .bold)).foregroundColor(T.lime)
+                Text("Level these skills up").font(.jk(24, .bold)).foregroundColor(T.lime)
             }
             ForEach(st.skills) { sk in
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(sk.name).font(.system(size: 22, weight: .semibold))
-                    Text(sk.desc).font(.system(size: 16)).foregroundColor(T.sub)
+                    Text(sk.name).font(.jk(22, .semibold))
+                    Text(sk.desc).font(.jk(16)).foregroundColor(T.sub)
                 }.card(18)
             }
         }
@@ -53,21 +53,21 @@ struct IntroFlow: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(spacing: 12) {
                 Image(systemName: "target").font(.system(size: 26)).foregroundColor(T.blue)
-                Text("First quest").font(.system(size: 24, weight: .bold)).foregroundColor(T.blue)
+                Text("First quest").font(.jk(24, .bold)).foregroundColor(T.blue)
             }
-            Text(st.intro?.questText ?? "").font(.system(size: 22)).lineSpacing(4)
+            Text(st.intro?.questText ?? "").font(.jk(22)).lineSpacing(4)
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 12) {
                     Avatar(emoji: st.persona.emoji, key: st.persona.handle, size: 52)
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
-                            Text(st.persona.name).font(.system(size: 20, weight: .bold))
+                            Text(st.persona.name).font(.jk(20, .bold))
                             VerifiedSeal(size: 18)
                         }
-                        Text("@\(st.persona.handle)").font(.system(size: 15)).foregroundColor(T.sub)
+                        Text("@\(st.persona.handle)").font(.jk(15)).foregroundColor(T.sub)
                     }
                 }
-                Text(st.intro?.questPost ?? "").font(.system(size: 20)).lineSpacing(4)
+                Text(st.intro?.questPost ?? "").font(.jk(20)).lineSpacing(4)
             }
             .padding(18)
             .background(T.card).clipShape(RoundedRectangle(cornerRadius: 18))
@@ -87,15 +87,15 @@ struct ResultCardView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Image(systemName: "sparkles").foregroundColor(T.gold).font(.system(size: 22))
-                Text("+\(o.xp) XP").font(.system(size: 22, weight: .semibold)).foregroundColor(T.gold)
+                Text("+\(o.xp) XP").font(.jk(22, .semibold)).foregroundColor(T.gold)
                 Spacer()
                 Button(action: onClose) { Image(systemName: "xmark").foregroundColor(T.sub).padding(6) }
             }
             Divider().background(Color.white.opacity(0.15))
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text("❤️‍🔥").font(.system(size: 28))
-                Text("Aura").font(.system(size: 28, weight: .bold))
-                Text("\(o.auraDelta >= 0 ? "+" : "")\(o.auraDelta)%").font(.system(size: 30, weight: .bold))
+                Text("❤️‍🔥").font(.jk(28))
+                Text("Aura").font(.jk(28, .bold))
+                Text("\(o.auraDelta >= 0 ? "+" : "")\(o.auraDelta)%").font(.jk(30, .bold))
                     .foregroundColor(o.auraDelta >= 0 ? Color(red: 0.25, green: 0.85, blue: 0.6) : T.red)
             }
             HStack(spacing: 14) {
@@ -106,17 +106,17 @@ struct ResultCardView: View {
                             .offset(x: max(0, min(1, Double(o.auraAfter) / 100)) * (g.size.width - 4))
                     }
                 }.frame(height: 22)
-                Text("\(o.auraAfter)%").font(.system(size: 22, weight: .semibold)).frame(width: 70, alignment: .trailing)
+                Text("\(o.auraAfter)%").font(.jk(22, .semibold)).frame(width: 70, alignment: .trailing)
             }
-            if !o.line.isEmpty { Text(o.line).font(.system(size: 19)).foregroundColor(.white.opacity(0.75)) }
+            if !o.line.isEmpty { Text(o.line).font(.jk(19)).foregroundColor(.white.opacity(0.75)) }
             HStack(spacing: 22) {
                 ForEach(o.ups, id: \.self) { u in
-                    Text(u).font(.system(size: 20, weight: .semibold))
+                    Text(u).font(.jk(20, .semibold))
                         .foregroundColor(u.contains("↓") ? T.red : Color(red: 0.25, green: 0.85, blue: 0.6))
                 }
             }
             Button { all = true } label: {
-                Text("View all changes →").font(.system(size: 17)).foregroundColor(Color(red: 0.25, green: 0.85, blue: 0.6))
+                Text("View all changes →").font(.jk(17)).foregroundColor(Color(red: 0.25, green: 0.85, blue: 0.6))
             }
         }
         .padding(20)
@@ -154,7 +154,7 @@ struct PostDetailView: View {
                             .frame(width: 48, height: 48)
                     }
                     Spacer()
-                    Text("Post").font(.system(size: 22, weight: .semibold))
+                    Text("Post").font(.jk(22, .semibold))
                     Spacer()
                     Color.clear.frame(width: 48, height: 48)
                 }
@@ -166,29 +166,29 @@ struct PostDetailView: View {
                                 Avatar(emoji: p.emoji, key: p.authorHandle, size: 56)
                                 VStack(alignment: .leading, spacing: 2) {
                                     HStack(spacing: 6) {
-                                        Text(p.authorName).font(.system(size: 22, weight: .bold))
+                                        Text(p.authorName).font(.jk(22, .bold))
                                         if p.verified { VerifiedSeal(size: 20) }
                                     }
-                                    Text("@\(p.authorHandle)").font(.system(size: 18)).foregroundColor(T.sub)
+                                    Text("@\(p.authorHandle)").font(.jk(18)).foregroundColor(T.sub)
                                 }
                                 Spacer()
                             }
-                            Text(p.text).font(.system(size: 26)).lineSpacing(4)
+                            Text(p.text).font(.jk(26)).lineSpacing(4)
                             HStack(spacing: 6) {
                                 Text(stamp).foregroundColor(T.sub)
                                 Text("· \(short(p.likes * 12 / 10 + 40)) Views").foregroundColor(.white)
-                            }.font(.system(size: 17))
+                            }.font(.jk(17))
                             HStack(spacing: 10) {
                                 Button { reply = true } label: {
-                                    Label("Reply", systemImage: "bubble.left.fill").font(.system(size: 18, weight: .semibold))
+                                    Label("Reply", systemImage: "bubble.left.fill").font(.jk(18, .semibold))
                                         .foregroundColor(.white).padding(.horizontal, 22).padding(.vertical, 12)
                                         .background(T.blue).clipShape(Capsule())
                                 }
-                                Label("\(short(p.reposts))", systemImage: "arrow.2.squarepath").font(.system(size: 18))
+                                Label("\(short(p.reposts))", systemImage: "arrow.2.squarepath").font(.jk(18))
                                     .foregroundColor(T.sub).padding(.horizontal, 18).padding(.vertical, 12)
                                     .background(T.card2).clipShape(Capsule())
                                 Button { game.like(p.id) } label: {
-                                    Label(short(p.likes), systemImage: p.liked ? "heart.fill" : "heart").font(.system(size: 18))
+                                    Label(short(p.likes), systemImage: p.liked ? "heart.fill" : "heart").font(.jk(18))
                                         .foregroundColor(p.liked ? T.red : T.sub).padding(.horizontal, 18).padding(.vertical, 12)
                                         .background(T.card2).clipShape(Capsule())
                                 }
@@ -204,11 +204,11 @@ struct PostDetailView: View {
                                 Avatar(emoji: c.emoji, key: c.handle, size: 52)
                                 VStack(alignment: .leading, spacing: 6) {
                                     HStack(spacing: 6) {
-                                        Text(c.name).font(.system(size: 18, weight: .bold)).lineLimit(1)
+                                        Text(c.name).font(.jk(18, .bold)).lineLimit(1)
                                         if c.verified { VerifiedSeal(size: 16) }
-                                        Text("@\(c.handle)").font(.system(size: 16)).foregroundColor(T.sub).lineLimit(1)
+                                        Text("@\(c.handle)").font(.jk(16)).foregroundColor(T.sub).lineLimit(1)
                                     }
-                                    mentionText(c.text).font(.system(size: 19)).fixedSize(horizontal: false, vertical: true)
+                                    mentionText(c.text).font(.jk(19)).fixedSize(horizontal: false, vertical: true)
                                     HStack(spacing: 14) {
                                         Label("\(short(stableNum(c.handle + c.text, 20, 900)))", systemImage: "heart")
                                         Text("|").foregroundColor(Color.white.opacity(0.2))
@@ -250,11 +250,11 @@ struct ExploreSheet: View {
                     HStack(spacing: 12) {
                         Avatar(emoji: n.emoji, key: n.handle, size: 52)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(n.name).font(.system(size: 16, weight: .bold)).foregroundColor(.white)
-                            Text(n.bio).font(.system(size: 13)).foregroundColor(T.sub).lineLimit(2)
+                            Text(n.name).font(.jk(16, .bold)).foregroundColor(.white)
+                            Text(n.bio).font(.jk(13)).foregroundColor(T.sub).lineLimit(2)
                         }
                         Spacer()
-                        Text(short(n.followers)).font(.system(size: 13, weight: .semibold)).foregroundColor(T.blue)
+                        Text(short(n.followers)).font(.jk(13, .semibold)).foregroundColor(T.blue)
                     }
                 }.listRowBackground(T.card)
             }

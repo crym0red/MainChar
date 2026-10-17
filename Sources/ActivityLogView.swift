@@ -83,7 +83,7 @@ struct ActivityLogView: View {
                 Button { game.undo() } label: {
                     HStack(spacing: 12) {
                         Image(systemName: "arrow.counterclockwise").font(.system(size: 22, weight: .semibold))
-                        Text("Undo last action").font(.system(size: 22, weight: .medium))
+                        Text("Undo last action").font(.jk(22, .medium))
                     }
                     .foregroundColor(T.orange)
                     .padding(.horizontal, 28).padding(.vertical, 18)
@@ -102,7 +102,7 @@ struct ActivityLogView: View {
 
     private var header: some View {
         ZStack {
-            Text("Activity Log").font(.system(size: 24, weight: .semibold))
+            Text("Activity Log").font(.jk(24, .semibold))
             HStack {
                 Button { dismiss() } label: {
                     Image(systemName: "arrow.left").font(.system(size: 22, weight: .semibold)).foregroundColor(.white)
@@ -119,7 +119,7 @@ struct ActivityLogView: View {
             HStack(spacing: 12) {
                 ForEach(Array(tabs.enumerated()), id: \.offset) { i, t in
                     Button { filter = i } label: {
-                        Text(t).font(.system(size: 20, weight: .medium))
+                        Text(t).font(.jk(20, .medium))
                             .foregroundColor(filter == i ? .black : .white)
                             .padding(.horizontal, 22).padding(.vertical, 12)
                             .background(filter == i ? Color.white : Color.clear)
@@ -131,7 +131,7 @@ struct ActivityLogView: View {
                     HStack(spacing: 10) {
                         Image(systemName: hideDMs ? "checkmark.square.fill" : "square")
                             .font(.system(size: 26)).foregroundColor(hideDMs ? T.blue : T.sub)
-                        Text("Hide DMs").font(.system(size: 19)).foregroundColor(T.sub)
+                        Text("Hide DMs").font(.jk(19)).foregroundColor(T.sub)
                     }
                 }
                 .padding(.leading, 6)
@@ -147,7 +147,7 @@ struct ActivityLogView: View {
                 Image(systemName: "sun.max").foregroundColor(T.sub)
                 Text("Day \(day)").foregroundColor(.white)
             }
-            .font(.system(size: 19, weight: .medium))
+            .font(.jk(19, .medium))
             Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
         }
         .padding(.vertical, 18)
@@ -190,7 +190,7 @@ struct ActivityLogView: View {
             Image(systemName: icon(k)).font(.system(size: 22)).foregroundColor(k == "outcome" ? .white : color(k))
                 .frame(width: 58, height: 58).background(T.card).clipShape(Circle())
             VStack(alignment: .leading, spacing: 10) {
-                Text(label(k)).font(.system(size: 22, weight: .medium)).foregroundColor(color(k))
+                Text(label(k)).font(.jk(22, .medium)).foregroundColor(color(k))
                 card(e, k, st)
                 if k == "outcome" { outcomeFooter(e) }
             }
@@ -228,7 +228,7 @@ struct ActivityLogView: View {
                 } else {
                     RoundedRectangle(cornerRadius: 12, style: .continuous).fill(T.card2).frame(width: 58, height: 76)
                 }
-                Text(e.body ?? "Story").font(.system(size: 24, weight: .medium)).foregroundColor(.white)
+                Text(e.body ?? "Story").font(.jk(24, .medium)).foregroundColor(.white)
                     .multilineTextAlignment(.leading).lineLimit(2)
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right").foregroundColor(T.sub)
@@ -246,13 +246,13 @@ struct ActivityLogView: View {
             HStack(spacing: 12) {
                 Avatar(emoji: st.persona.emoji, key: st.persona.handle, size: 56)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(st.persona.name).font(.system(size: 22, weight: .bold))
-                    Text("@\(st.persona.handle)").font(.system(size: 17)).foregroundColor(T.sub)
+                    Text(st.persona.name).font(.jk(22, .bold))
+                    Text("@\(st.persona.handle)").font(.jk(17)).foregroundColor(T.sub)
                 }
                 Spacer()
                 Image(systemName: "chevron.right").foregroundColor(T.sub)
             }
-            Text(e.body ?? "").font(.system(size: 24)).foregroundColor(.white)
+            Text(e.body ?? "").font(.jk(24)).foregroundColor(.white)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
@@ -271,9 +271,9 @@ struct ActivityLogView: View {
         let open = expanded.contains(e.id)
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                Text(e.emoji).font(.system(size: 34))
-                Text(e.title).font(.system(size: 26, weight: .bold))
-                Text(value).font(.system(size: 26, weight: .bold)).foregroundColor(good ? T.lime : T.red)
+                Text(e.emoji).font(.jk(34))
+                Text(e.title).font(.jk(26, .bold))
+                Text(value).font(.jk(26, .bold)).foregroundColor(good ? T.lime : T.red)
                 Spacer()
                 if let n = npc {
                     Avatar(emoji: n.emoji, key: n.handle, size: 54)
@@ -285,13 +285,13 @@ struct ActivityLogView: View {
                 }
             }
             Rectangle().fill(Color.white.opacity(0.15)).frame(height: 1)
-            Text(e.body ?? "").font(.system(size: 21)).foregroundColor(.white)
+            Text(e.body ?? "").font(.jk(21)).foregroundColor(.white)
                 .lineLimit(open ? nil : 2)
                 .fixedSize(horizontal: false, vertical: true)
             Button {
                 if open { expanded.remove(e.id) } else { expanded.insert(e.id) }
             } label: {
-                Text(open ? "View less" : "View more").font(.system(size: 19, weight: .medium)).foregroundColor(T.sub)
+                Text(open ? "View less" : "View more").font(.jk(19, .medium)).foregroundColor(T.sub)
             }
         }
         .padding(18)
@@ -305,7 +305,7 @@ struct ActivityLogView: View {
     private func outcomeFooter(_ e: LogEntry) -> some View {
         HStack {
             Text(e.time.map { ActivityLogView.timeFmt.string(from: $0) } ?? "Day \(e.day)")
-                .font(.system(size: 17)).foregroundColor(T.sub)
+                .font(.jk(17)).foregroundColor(T.sub)
             Spacer()
             Button {
                 if rated.contains(e.id) { rated.remove(e.id) } else { rated.insert(e.id) }
@@ -322,11 +322,11 @@ struct ActivityLogView: View {
 
     private func plainCard(_ e: LogEntry, _ k: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            Text(e.emoji).font(.system(size: 30))
+            Text(e.emoji).font(.jk(30))
             VStack(alignment: .leading, spacing: 3) {
-                Text(e.title).font(.system(size: 21, weight: .semibold))
+                Text(e.title).font(.jk(21, .semibold))
                 let sub = k == "dm" ? (e.body ?? "") : e.detail
-                if !sub.isEmpty { Text(sub).font(.system(size: 17)).foregroundColor(T.sub).lineLimit(3) }
+                if !sub.isEmpty { Text(sub).font(.jk(17)).foregroundColor(T.sub).lineLimit(3) }
             }
             Spacer(minLength: 0)
         }

@@ -67,9 +67,9 @@ struct AwayDigestSheet: View {
                 }.padding(.horizontal, 16).padding(.top, 8)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("While you were away").font(.system(size: 30, weight: .bold))
+                        Text("While you were away").font(.jk(30, .bold))
                         Text("You were gone \(away(d?.minutes ?? 0)). Here's what happened.")
-                            .font(.system(size: 16)).foregroundColor(T.sub)
+                            .font(.jk(16)).foregroundColor(T.sub)
                         if let d = d {
                             HStack(spacing: 10) {
                                 stat("Followers", (d.followerDelta >= 0 ? "+" : "-") + short(abs(d.followerDelta)), d.followerDelta >= 0, d.followerDelta == 0)
@@ -78,17 +78,17 @@ struct AwayDigestSheet: View {
                         }
                         if let h = hero { heroCard(h) }
                         if !rest.isEmpty {
-                            Text("Also happened").font(.system(size: 18, weight: .semibold)).padding(.top, 4)
+                            Text("Also happened").font(.jk(18, .semibold)).padding(.top, 4)
                             ForEach(rest) { row($0) }
                         }
                         if let m = d?.more, m > 0 {
                             Text("+\(m) more posts are waiting in your feed.")
-                                .font(.system(size: 14)).foregroundColor(T.sub)
+                                .font(.jk(14)).foregroundColor(T.sub)
                         }
                     }.padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 30)
                 }
                 Button { close() } label: {
-                    Text("Catch up on the feed").font(.system(size: 17, weight: .semibold)).foregroundColor(.black)
+                    Text("Catch up on the feed").font(.jk(17, .semibold)).foregroundColor(.black)
                         .frame(maxWidth: .infinity).padding(.vertical, 16)
                         .background(Capsule().fill(Color.white))
                 }.padding(16)
@@ -106,26 +106,26 @@ struct AwayDigestSheet: View {
             if let a = it.aura, a != 0 {
                 Text("aura \(a > 0 ? "+" : "")\(a)%").foregroundColor(a > 0 ? T.lime : T.red)
             }
-        }.font(.system(size: 12, weight: .semibold))
+        }.font(.jk(12, .semibold))
     }
 
     private func heroCard(_ it: DigestItem) -> some View {
         Button { open(it.postID) } label: {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("BIGGEST MOMENT").font(.system(size: 11, weight: .heavy)).foregroundColor(T.orange)
+                    Text("BIGGEST MOMENT").font(.jk(11, .heavy)).foregroundColor(T.orange)
                     Spacer()
-                    Text(agoString(it.at)).font(.system(size: 12)).foregroundColor(T.sub)
+                    Text(agoString(it.at)).font(.jk(12)).foregroundColor(T.sub)
                 }
                 HStack(spacing: 12) {
                     if let h = it.handles, !h.isEmpty { AvatarStack(handles: h, size: 46) }
-                    else { Text(it.emoji).font(.system(size: 36)) }
-                    Text(it.title).font(.system(size: 22, weight: .bold)).multilineTextAlignment(.leading)
+                    else { Text(it.emoji).font(.jk(36)) }
+                    Text(it.title).font(.jk(22, .bold)).multilineTextAlignment(.leading)
                 }
-                Text(it.detail).font(.system(size: 15)).foregroundColor(.white.opacity(0.8)).multilineTextAlignment(.leading)
+                Text(it.detail).font(.jk(15)).foregroundColor(.white.opacity(0.8)).multilineTextAlignment(.leading)
                 impact(it)
                 if it.postID != nil {
-                    Text("Open the post ›").font(.system(size: 14, weight: .semibold)).foregroundColor(T.blue)
+                    Text("Open the post ›").font(.jk(14, .semibold)).foregroundColor(T.blue)
                 }
             }
             .padding(16).frame(maxWidth: .infinity, alignment: .leading)
@@ -136,8 +136,8 @@ struct AwayDigestSheet: View {
 
     private func stat(_ t: String, _ v: String, _ good: Bool, _ flat: Bool) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(t).font(.system(size: 13)).foregroundColor(T.sub)
-            Text(flat ? "No change" : v).font(.system(size: 24, weight: .bold))
+            Text(t).font(.jk(13)).foregroundColor(T.sub)
+            Text(flat ? "No change" : v).font(.jk(24, .bold))
                 .foregroundColor(flat ? T.sub : (good ? T.lime : T.red))
         }
         .frame(maxWidth: .infinity, alignment: .leading).padding(14)
@@ -148,14 +148,14 @@ struct AwayDigestSheet: View {
         Button { open(it.postID) } label: {
             HStack(alignment: .top, spacing: 12) {
                 if let h = it.handles, !h.isEmpty { AvatarStack(handles: h, size: 34) }
-                else { Text(it.emoji).font(.system(size: 26)) }
+                else { Text(it.emoji).font(.jk(26)) }
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text("\(it.emoji) \(it.title)").font(.system(size: 16, weight: .semibold)).multilineTextAlignment(.leading)
+                        Text("\(it.emoji) \(it.title)").font(.jk(16, .semibold)).multilineTextAlignment(.leading)
                         Spacer(minLength: 4)
-                        Text(agoString(it.at)).font(.system(size: 12)).foregroundColor(T.sub)
+                        Text(agoString(it.at)).font(.jk(12)).foregroundColor(T.sub)
                     }
-                    Text(it.detail).font(.system(size: 14)).foregroundColor(T.sub).multilineTextAlignment(.leading)
+                    Text(it.detail).font(.jk(14)).foregroundColor(T.sub).multilineTextAlignment(.leading)
                     impact(it)
                 }
                 if it.postID != nil { Image(systemName: "chevron.right").foregroundColor(T.sub).padding(.top, 4) }
@@ -195,37 +195,37 @@ struct WorldHistoryView: View {
                 }.padding(16)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("World History").font(.system(size: 30, weight: .bold))
+                        Text("World History").font(.jk(30, .bold))
                         Text("The big moments that shaped \(st.world.title).")
-                            .font(.system(size: 15)).foregroundColor(T.sub)
+                            .font(.jk(15)).foregroundColor(T.sub)
                         if let hot = st.ex.hot, !hot.isEmpty {
                             HStack {
-                                Text("🔥 Trending now").font(.system(size: 15, weight: .semibold))
+                                Text("🔥 Trending now").font(.jk(15, .semibold))
                                 Spacer()
-                                Text(hot.capitalized).font(.system(size: 15)).foregroundColor(T.orange)
+                                Text(hot.capitalized).font(.jk(15)).foregroundColor(T.orange)
                             }
                             .padding(14).background(RoundedRectangle(cornerRadius: 14).fill(T.card))
                             Text("Posts about what's trending have a better shot at going viral.")
-                                .font(.system(size: 13)).foregroundColor(T.sub)
+                                .font(.jk(13)).foregroundColor(T.sub)
                         }
                         if !feuds.isEmpty {
-                            Text("Feuds").font(.system(size: 20, weight: .semibold)).padding(.top, 6)
+                            Text("Feuds").font(.jk(20, .semibold)).padding(.top, 6)
                             ForEach(feuds) { feud($0, st) }
                         }
-                        Text("Timeline").font(.system(size: 20, weight: .semibold)).padding(.top, 6)
+                        Text("Timeline").font(.jk(20, .semibold)).padding(.top, 6)
                         if hist.isEmpty {
                             Text("Nothing historic yet. Go viral, get cancelled, or leave the world alone for a while and see what happens.")
-                                .font(.system(size: 15)).foregroundColor(T.sub)
+                                .font(.jk(15)).foregroundColor(T.sub)
                         }
                         ForEach(hist) { h in
                             Button { open(h.postID) } label: {
                                 HStack(alignment: .top, spacing: 12) {
                                     if let hs = h.handles, !hs.isEmpty, hs != ["newsdesk"] { AvatarStack(handles: hs, size: 32) }
-                                    else { Text(h.emoji).font(.system(size: 26)) }
+                                    else { Text(h.emoji).font(.jk(26)) }
                                     VStack(alignment: .leading, spacing: 3) {
-                                        Text("Day \(h.day) · \(agoString(h.date))").font(.system(size: 12, weight: .semibold)).foregroundColor(T.sub)
-                                        Text("\(h.emoji) \(h.title)").font(.system(size: 16, weight: .semibold)).multilineTextAlignment(.leading)
-                                        Text(h.detail).font(.system(size: 14)).foregroundColor(T.sub).multilineTextAlignment(.leading)
+                                        Text("Day \(h.day) · \(agoString(h.date))").font(.jk(12, .semibold)).foregroundColor(T.sub)
+                                        Text("\(h.emoji) \(h.title)").font(.jk(16, .semibold)).multilineTextAlignment(.leading)
+                                        Text(h.detail).font(.jk(14)).foregroundColor(T.sub).multilineTextAlignment(.leading)
                                     }
                                     Spacer(minLength: 0)
                                     if h.postID != nil { Image(systemName: "chevron.right").foregroundColor(T.sub) }
@@ -255,20 +255,20 @@ struct WorldHistoryView: View {
             HStack(spacing: 10) {
                 AvatarStack(handles: [r.a, r.b], size: 34)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(a?.name ?? r.a) vs \(b?.name ?? r.b)").font(.system(size: 16, weight: .semibold))
+                    Text("\(a?.name ?? r.a) vs \(b?.name ?? r.b)").font(.jk(16, .semibold))
                     Text(done ? "Resolved\(r.resolvedBy == "you" ? " by you" : "")" : game.feudLabel(r.rel ?? 0))
-                        .font(.system(size: 13)).foregroundColor(done ? T.lime : T.orange)
+                        .font(.jk(13)).foregroundColor(done ? T.lime : T.orange)
                 }
                 Spacer()
-                Text("🔥 \(r.heat)").font(.system(size: 15, weight: .semibold)).foregroundColor(T.orange)
+                Text("🔥 \(r.heat)").font(.jk(15, .semibold)).foregroundColor(T.orange)
             }
             if let c = r.cause {
                 Text("Over \(c). \(sa) back \(a?.name ?? r.a), \(sb) back \(b?.name ?? r.b).")
-                    .font(.system(size: 13)).foregroundColor(T.sub)
+                    .font(.jk(13)).foregroundColor(T.sub)
             }
             if !done {
                 Button { msg = game.mediate(r.id) } label: {
-                    Text("Step in · 2 energy").font(.system(size: 14, weight: .semibold)).foregroundColor(.black)
+                    Text("Step in · 2 energy").font(.jk(14, .semibold)).foregroundColor(.black)
                         .padding(.horizontal, 14).padding(.vertical, 8)
                         .background(Capsule().fill(Color.white))
                 }

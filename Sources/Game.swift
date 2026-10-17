@@ -339,7 +339,10 @@ final class Game: ObservableObject {
         var out: [Post] = []
         for npc in pool.prefix(n) {
             var text: String? = nil
-            if Double.random(in: 0...1) < 0.85 { text = Topics.line(trait: npc.trait, topics: topics) }
+            if Double.random(in: 0...1) < 0.55, let tp = topics.randomElement() {
+                text = Corpus.post(trait: npc.trait, me: st.persona.handle, topic: tp)
+            }
+            if text == nil, Double.random(in: 0...1) < 0.85 { text = Topics.line(trait: npc.trait, topics: topics) }
             if text == nil { text = Lines.feed[npc.trait]?.randomElement() }
             out.append(makePost(npc, text ?? "just vibing", st))
         }
@@ -360,6 +363,7 @@ final class Game: ObservableObject {
         let topic = Topics.forWorld(st.world).first ?? "this"
         let quote = Corpus.quote(from: text, fallback: topic)
         let me = st.persona.handle
+        let heat = auraDelta < 0 ? 0.75 : 0.5
         var out: [Comment] = []
         var negOf: [String: Bool] = [:]
         for n in pool {
@@ -376,13 +380,13 @@ final class Game: ObservableObject {
                 let tn = negOf[target.handle] ?? false
                 let agree = tn == neg ? Double.random(in: 0...1) < 0.85 : Double.random(in: 0...1) < 0.12
                 let bucket = agree ? "rebut.agree" : "rebut.fight"
-                let l = Corpus.line(trait: n.trait, bucket: bucket, me: me, topic: topic, quote: quote)
+                let l = Corpus.line(trait: n.trait, bucket: bucket, me: me, topic: topic, quote: quote, heat: heat)
                     ?? (agree ? "exactly this" : "no, that's wrong")
                 body = "@\(target.handle) " + l
                 neg = agree ? tn : !tn
             } else {
                 let bucket = neg ? "comment.neg" : "comment.pos"
-                body = Corpus.line(trait: n.trait, bucket: bucket, me: me, topic: topic, quote: quote)
+                body = Corpus.line(trait: n.trait, bucket: bucket, me: me, topic: topic, quote: quote, heat: heat)
                     ?? ((neg ? Lines.neg[n.trait] : Lines.pos[n.trait])?.randomElement() ?? "👀")
             }
             negOf[n.handle] = neg

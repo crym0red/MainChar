@@ -208,19 +208,19 @@ struct MemoryBlock: View {
         VStack(alignment: .leading, spacing: 6) {
             FeudBlock(handle: handle).padding(.horizontal, -28)
             HStack {
-                Text("They remember").font(.system(size: 12)).foregroundColor(T.sub)
+                Text("They remember").font(.jk(12)).foregroundColor(T.sub)
                 Spacer()
-                Text(lab.0).font(.system(size: 12, weight: .semibold)).foregroundColor(lab.1)
+                Text(lab.0).font(.jk(12, .semibold)).foregroundColor(lab.1)
             }
             if ms.isEmpty {
                 Text("Nothing yet. Post, reply and message them and they'll start to remember.")
-                    .font(.system(size: 13)).foregroundColor(T.sub)
+                    .font(.jk(13)).foregroundColor(T.sub)
             }
             ForEach(Array(ms)) { m in
                 HStack(alignment: .top, spacing: 6) {
-                    Text(m.mood >= 0 ? "💛" : "💢").font(.system(size: 12))
+                    Text(m.mood >= 0 ? "💛" : "💢").font(.jk(12))
                     Text(m.text.prefix(1).uppercased() + m.text.dropFirst())
-                        .font(.system(size: 13)).foregroundColor(.white.opacity(0.85))
+                        .font(.jk(13)).foregroundColor(.white.opacity(0.85))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }

@@ -144,10 +144,10 @@ struct StoriesIntroView: View {
             }
             .padding(.top, 36)
 
-            Text("Introducing").font(.system(size: 22, weight: .semibold)).padding(.top, 40)
+            Text("Introducing").font(.jk(22, .semibold)).padding(.top, 40)
             HStack(spacing: 10) {
-                Text("MainChar Stories").font(.system(size: 32, weight: .heavy))
-                Text("BETA").font(.system(size: 18, weight: .medium)).foregroundColor(T.blue)
+                Text("MainChar Stories").font(.jk(32, .heavy))
+                Text("BETA").font(.jk(18, .medium)).foregroundColor(T.blue)
                     .padding(.horizontal, 10).padding(.vertical, 6)
                     .background(Color(red: 0.07, green: 0.15, blue: 0.25)).clipShape(RoundedRectangle(cornerRadius: 8))
             }
@@ -157,9 +157,9 @@ struct StoriesIntroView: View {
                 Image(systemName: "star.fill").font(.system(size: 26)).foregroundColor(.white)
                     .frame(width: 56, height: 56).background(T.lime).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Post in My World").font(.system(size: 22, weight: .medium))
+                    Text("Post in My World").font(.jk(22, .medium))
                     Text("Only AI characters react and reply to your stories within your world context.")
-                        .font(.system(size: 17)).foregroundColor(T.sub)
+                        .font(.jk(17)).foregroundColor(T.sub)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -172,7 +172,7 @@ struct StoriesIntroView: View {
     }
 
     private func badge(_ letter: String, ring: Color) -> some View {
-        Text(letter).font(.system(size: 44, weight: .bold)).foregroundColor(.white)
+        Text(letter).font(.jk(44, .bold)).foregroundColor(.white)
             .frame(width: 90, height: 90).background(T.blue).clipShape(Circle())
             .padding(6).background(T.bg).clipShape(Circle())
             .overlay(Circle().stroke(ring, lineWidth: 6))
@@ -198,7 +198,7 @@ struct CreateStoryView: View {
         VStack(spacing: 14) {
             HStack(spacing: 14) {
                 circleButton("xmark", size: 46, onClose)
-                Text("Create a story").font(.system(size: 26, weight: .semibold))
+                Text("Create a story").font(.jk(26, .semibold))
                 Spacer()
             }
             .padding(.horizontal, 20).padding(.top, 8)
@@ -215,10 +215,10 @@ struct CreateStoryView: View {
                     }
                     ZStack {
                         if text.isEmpty {
-                            Text("Add some text…").font(.system(size: 32, weight: .bold)).foregroundColor(Color.white.opacity(0.5))
+                            Text("Add some text…").font(.jk(32, .bold)).foregroundColor(Color.white.opacity(0.5))
                         }
                         TextField("", text: $text, axis: .vertical)
-                            .font(.system(size: 32, weight: .bold)).multilineTextAlignment(.center)
+                            .font(.jk(32, .bold)).multilineTextAlignment(.center)
                             .foregroundColor(.white).focused($focused).lineLimit(1...8)
                             .onChange(of: text) { v in if v.count > 140 { text = String(v.prefix(140)) } }
                     }
@@ -248,15 +248,15 @@ struct CreateStoryView: View {
                     HStack(spacing: 10) {
                         Image(systemName: "star.fill").font(.system(size: 18)).foregroundColor(.white)
                             .frame(width: 36, height: 36).background(T.lime).clipShape(Circle())
-                        Text("My World").font(.system(size: 20, weight: .medium)).foregroundColor(.white)
+                        Text("My World").font(.jk(20, .medium)).foregroundColor(.white)
                     }
                     .padding(.horizontal, 14).padding(.vertical, 10)
                     .background(T.card2).clipShape(Capsule())
                 }
                 Button(action: post) {
                     HStack(spacing: 8) {
-                        Text("Post").font(.system(size: 20, weight: .medium))
-                        Text("−1").font(.system(size: 20, weight: .bold)).foregroundColor(T.gold)
+                        Text("Post").font(.jk(20, .medium))
+                        Text("−1").font(.jk(20, .bold)).foregroundColor(T.gold)
                         Image(systemName: "bolt.fill").foregroundColor(T.gold)
                     }
                     .foregroundColor(can ? .white : Color.white.opacity(0.5))
@@ -300,14 +300,14 @@ struct AudienceSheet: View {
             Capsule().fill(Color.white.opacity(0.3)).frame(width: 48, height: 5).padding(.top, 8)
             Image(systemName: "star.fill").font(.system(size: 56)).foregroundColor(.white)
                 .frame(width: 130, height: 130).background(T.lime).clipShape(Circle()).padding(.top, 10)
-            Text("My World").font(.system(size: 32, weight: .bold))
+            Text("My World").font(.jk(32, .bold))
             Text("Only your characters in your world context can interact with this story.")
-                .font(.system(size: 19)).foregroundColor(T.sub).multilineTextAlignment(.center).padding(.horizontal, 20)
+                .font(.jk(19)).foregroundColor(T.sub).multilineTextAlignment(.center).padding(.horizontal, 20)
             HStack(alignment: .top, spacing: 14) {
                 Image(systemName: "checkmark.seal.fill").font(.system(size: 40)).foregroundColor(T.blue)
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("My World Characters").font(.system(size: 22, weight: .semibold))
-                    Text("These are characters that belong to your world.").font(.system(size: 18)).foregroundColor(T.sub)
+                    Text("My World Characters").font(.jk(22, .semibold))
+                    Text("These are characters that belong to your world.").font(.jk(18)).foregroundColor(T.sub)
                 }
                 Spacer(minLength: 0)
             }
@@ -344,7 +344,7 @@ struct StoryViewer: View {
                 StoryBackground(bg: story.bg, id: story.id, hasImage: story.hasImage).ignoresSafeArea()
                 Color.black.opacity(0.2).ignoresSafeArea()
                 if !story.text.isEmpty {
-                    Text(story.text).font(.system(size: 34, weight: .bold)).foregroundColor(.white)
+                    Text(story.text).font(.jk(34, .bold)).foregroundColor(.white)
                         .multilineTextAlignment(.center).padding(.horizontal, 28)
                         .shadow(color: .black.opacity(0.35), radius: 4)
                 }
@@ -357,7 +357,7 @@ struct StoryViewer: View {
                 .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 8)
             } else {
                 VStack(spacing: 16) {
-                    Text("This story is gone.").font(.system(size: 18, weight: .semibold))
+                    Text("This story is gone.").font(.jk(18, .semibold))
                     BigButton(title: "Close", action: onClose).padding(.horizontal, 60)
                 }
             }
@@ -390,10 +390,10 @@ struct StoryViewer: View {
             }
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 5) {
-                    Text(st.persona.name).font(.system(size: 22, weight: .bold)).lineLimit(1)
+                    Text(st.persona.name).font(.jk(22, .bold)).lineLimit(1)
                     if st.followers >= 10000 { VerifiedSeal(size: 18) }
                 }
-                Text("@\(st.persona.handle)").font(.system(size: 17)).foregroundColor(T.sub).lineLimit(1)
+                Text("@\(st.persona.handle)").font(.jk(17)).foregroundColor(T.sub).lineLimit(1)
             }
             Spacer(minLength: 4)
             Button { audience = true } label: {
@@ -421,10 +421,10 @@ struct StoryViewer: View {
                     Avatar(emoji: c.emoji, key: c.handle, size: 50)
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
-                            Text(c.name).font(.system(size: 18, weight: .bold)).lineLimit(1)
-                            Text("@\(c.handle)").font(.system(size: 16)).foregroundColor(T.sub).lineLimit(1)
+                            Text(c.name).font(.jk(18, .bold)).lineLimit(1)
+                            Text("@\(c.handle)").font(.jk(16)).foregroundColor(T.sub).lineLimit(1)
                         }
-                        mentionText(c.text).font(.system(size: 20))
+                        mentionText(c.text).font(.jk(20))
                     }
                 }
                 if story.comments.count > 1 {
@@ -437,13 +437,13 @@ struct StoryViewer: View {
                         }
                         .frame(minWidth: 50, alignment: .leading)
                         Text("View other \(story.comments.count - 1) comments")
-                            .font(.system(size: 17)).foregroundColor(T.sub)
+                            .font(.jk(17)).foregroundColor(T.sub)
                     }
                 }
             }
             HStack(spacing: 12) {
                 Avatar(emoji: st.persona.emoji, key: st.persona.handle, size: 46)
-                Text("Add a comment…").font(.system(size: 20)).foregroundColor(T.sub)
+                Text("Add a comment…").font(.jk(20)).foregroundColor(T.sub)
                     .padding(.horizontal, 22).padding(.vertical, 14)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .overlay(Capsule().stroke(Color.white.opacity(0.55), lineWidth: 1.5))
@@ -481,15 +481,15 @@ struct StoryCommentsSheet: View {
                             Avatar(emoji: st.persona.emoji, key: st.persona.handle, size: 56)
                             VStack(alignment: .leading, spacing: 1) {
                                 HStack(spacing: 5) {
-                                    Text(st.persona.name).font(.system(size: 22, weight: .bold))
+                                    Text(st.persona.name).font(.jk(22, .bold))
                                     if st.followers >= 10000 { VerifiedSeal(size: 18) }
                                 }
-                                Text("@\(st.persona.handle)").font(.system(size: 16)).foregroundColor(T.sub)
+                                Text("@\(st.persona.handle)").font(.jk(16)).foregroundColor(T.sub)
                             }
                         }
-                        if let t = story?.text, !t.isEmpty { Text(t).font(.system(size: 22, weight: .medium)) }
+                        if let t = story?.text, !t.isEmpty { Text(t).font(.jk(22, .medium)) }
                         Divider().background(Color.white.opacity(0.15))
-                        Text("Comments (\(comments.count))").font(.system(size: 22, weight: .semibold))
+                        Text("Comments (\(comments.count))").font(.jk(22, .semibold))
                         ForEach(comments) { c in row(c).id(c.id) }
                     }
                     .padding(.horizontal, 20).padding(.bottom, 12)
@@ -510,11 +510,11 @@ struct StoryCommentsSheet: View {
             Avatar(emoji: c.emoji, key: c.handle, size: 54)
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 6) {
-                    Text(c.name).font(.system(size: 20, weight: .bold)).lineLimit(1)
+                    Text(c.name).font(.jk(20, .bold)).lineLimit(1)
                     if c.verified { VerifiedSeal(size: 15) }
-                    Text("@\(c.handle)").font(.system(size: 17)).foregroundColor(T.sub).lineLimit(1)
+                    Text("@\(c.handle)").font(.jk(17)).foregroundColor(T.sub).lineLimit(1)
                 }
-                mentionText(c.text).font(.system(size: 20))
+                mentionText(c.text).font(.jk(20))
                 HStack(spacing: 14) {
                     Button {
                         if liked.contains(c.id) { liked.remove(c.id) } else { liked.insert(c.id) }
@@ -529,7 +529,7 @@ struct StoryCommentsSheet: View {
                         focus = true
                     } label: { Text("Reply").foregroundColor(T.sub) }
                 }
-                .font(.system(size: 18))
+                .font(.jk(18))
             }
             Spacer(minLength: 0)
             Button {
@@ -563,7 +563,7 @@ struct StoryCommentsSheet: View {
                         .frame(width: 54, height: 54).background(T.card2).clipShape(Circle())
                 }
                 HStack {
-                    TextField("Add a comment…", text: $text).focused($focus).font(.system(size: 20))
+                    TextField("Add a comment…", text: $text).focused($focus).font(.jk(20))
                     if !text.trimmed.isEmpty {
                         Button(action: send) {
                             Image(systemName: "arrow.up.circle.fill").font(.system(size: 30)).foregroundColor(T.blue)

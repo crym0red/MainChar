@@ -176,9 +176,9 @@ struct FeudBlock: View {
                     let other = r.a == handle ? r.b : r.a
                     let o = st.npcs.first { $0.handle == other }
                     HStack(spacing: 6) {
-                        Text("⚔️").font(.system(size: 12))
+                        Text("⚔️").font(.jk(12))
                         Text("Feuding with \(o?.name ?? other) · \(game.feudLabel(r.rel ?? 0))")
-                            .font(.system(size: 13)).foregroundColor(T.orange)
+                            .font(.jk(13)).foregroundColor(T.orange)
                     }
                 }
             }.padding(.horizontal, 28)

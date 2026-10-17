@@ -1,5 +1,20 @@
 import SwiftUI
 
+extension Font {
+    /// Plus Jakarta Sans, the typeface used across the app.
+    static func jk(_ size: CGFloat, _ w: Font.Weight = .regular) -> Font {
+        let n: String
+        switch w {
+        case .medium: n = "PlusJakartaSans-Medium"
+        case .semibold: n = "PlusJakartaSans-SemiBold"
+        case .bold: n = "PlusJakartaSans-Bold"
+        case .heavy, .black: n = "PlusJakartaSans-ExtraBold"
+        default: n = "PlusJakartaSans-Regular"
+        }
+        return .custom(n, size: size)
+    }
+}
+
 enum T {
     static let bg = Color(red: 0.10, green: 0.10, blue: 0.11)
     static let card = Color(red: 0.15, green: 0.15, blue: 0.17)
@@ -10,6 +25,13 @@ enum T {
     static let lime = Color(red: 0.62, green: 0.85, blue: 0.20)
     static let red = Color(red: 0.95, green: 0.30, blue: 0.30)
     static let sub = Color.white.opacity(0.6)
+}
+
+func letterColor(_ s: String) -> Color {
+    let pal: [Color] = [Color(red: 0.27, green: 0.60, blue: 0.93), Color(red: 1.0, green: 0.37, blue: 0.64),
+                        Color(red: 0.62, green: 0.82, blue: 0.0), Color(red: 0.96, green: 0.55, blue: 0.10),
+                        Color(red: 0.55, green: 0.40, blue: 0.95), Color(red: 0.10, green: 0.70, blue: 0.62)]
+    return pal[Int(hueFor(s) * 997) % pal.count]
 }
 
 func hueFor(_ s: String) -> Double {
@@ -32,14 +54,14 @@ actor AvatarLoader {
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
     static var dir: URL {
-        let d = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("avatars", isDirectory: true)
+        let d = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("avatars2", isDirectory: true)
         try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
         return d
     }
 
     static func fileURL(_ seed: String) -> URL {
         let safe = seed.unicodeScalars.map { CharacterSet.alphanumerics.contains($0) ? String($0) : "_" }.joined()
-        return dir.appendingPathComponent(safe + ".png")
+        return dir.appendingPathComponent(safe + ".img")
     }
 
     func image(seed: String) async -> UIImage? {
@@ -67,9 +89,39 @@ actor AvatarLoader {
         if !waiters.isEmpty { waiters.removeFirst().resume() } else { active -= 1 }
     }
 
+    private static let fem: Set<String> = ["luna","mina","priya","sofia","sophia","emma","olivia","ava","mia","zoe","chloe","nora","lena","maya","ella","ivy","aria","lily","grace","hannah","nina","anna","sara","sarah","julia","kate","amy","ruby","tara","rosa","eva","isla","leah","jade","iris","vera","cleo","nia","ana","lucia","elena","amara","kira","yuki","sana","lila","rin","jess","jenny","lisa","maria","alice","bella","faith","holly","jasmine","kayla","laura","megan","nadia","paige","riley","willow","stella","hazel","june","ruth","cora","dani","ivana","mara","ines","noor","zara"]
+    private static let mal: Set<String> = ["jonah","theo","dev","sam","max","leo","noah","liam","ethan","jack","finn","owen","eli","kai","ben","dan","tom","tim","nick","alex_m","marco","ravi","omar","hugo","cole","miles","jay","rex","ty","zane","felix","arlo","oscar","isaac","adam","luca","niko","remy","sean","gus","ian","joel","drew","carl","raj","ali","jin","tariq","diego","mateo","andre","victor","walt","nate"]
+
+    /// A stable portrait for a seed: portraits are picked by name hint, then by hash.
+    static func portraitURL(_ seed: String) -> URL? {
+        var h: UInt32 = 2166136261
+        for u in seed.unicodeScalars { h = (h ^ u.value) &* 16777619 }
+        let first = seed.lowercased().split(whereSeparator: { !$0.isLetter }).first.map(String.init) ?? ""
+        let woman: Bool
+        if fem.contains(first) { woman = true }
+        else if mal.contains(first) { woman = false }
+        else { woman = (h >> 7) % 2 == 0 }
+        let n = Int((h >> 11) % 96)
+        return URL(string: "https://randomuser.me/api/portraits/\(woman ? "women" : "men")/\(n).jpg")
+    }
+
     private func download(seed: String, file: URL) async -> Data? {
         await acquire()
         defer { release() }
+        if let u = AvatarLoader.portraitURL(seed) {
+            for _ in 0..<2 {
+                var req = URLRequest(url: u)
+                req.timeoutInterval = 12
+                if let (data, resp) = try? await URLSession.shared.data(for: req), let http = resp as? HTTPURLResponse {
+                    if http.statusCode == 200, UIImage(data: data) != nil {
+                        try? data.write(to: file)
+                        return data
+                    }
+                    break
+                }
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
+        }
         var comps = URLComponents(string: "https://api.dicebear.com/9.x/lorelei/png")!
         comps.queryItems = [
             URLQueryItem(name: "seed", value: seed),
@@ -110,11 +162,12 @@ struct Avatar: View {
 
     var body: some View {
         ZStack {
-            Circle().fill(Color(hue: hueFor(key), saturation: 0.45, brightness: 0.48))
+            Circle().fill(letterColor(key))
             if let img = img {
                 Image(uiImage: img).resizable().scaledToFill()
             } else {
-                Text(emoji).font(.system(size: size * 0.5))
+                Text(String(key.first.map { String($0).uppercased() } ?? "?"))
+                    .font(.jk(size * 0.46, .bold)).foregroundColor(.white)
             }
         }
         .frame(width: size, height: size)
@@ -176,7 +229,7 @@ struct BigButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 16, weight: .bold))
+                .font(.jk(16, .bold))
                 .foregroundColor(textColor)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 15)
@@ -193,7 +246,7 @@ struct Chip: View {
     var fg: Color = .white
     var body: some View {
         Text(text)
-            .font(.system(size: 12, weight: .semibold))
+            .font(.jk(12, .semibold))
             .foregroundColor(fg)
             .padding(.horizontal, 10).padding(.vertical, 5)
             .background(color)
@@ -205,7 +258,7 @@ struct SectionTitle: View {
     let text: String
     init(_ t: String) { text = t }
     var body: some View {
-        Text(text).font(.system(size: 20, weight: .heavy)).foregroundColor(.white)
+        Text(text).font(.jk(20, .heavy)).foregroundColor(.white)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -216,9 +269,9 @@ struct EmptyState: View {
     let detail: String
     var body: some View {
         VStack(spacing: 8) {
-            Text(emoji).font(.system(size: 44))
-            Text(title).font(.system(size: 18, weight: .bold)).foregroundColor(.white)
-            Text(detail).font(.system(size: 14)).foregroundColor(T.sub).multilineTextAlignment(.center)
+            Text(emoji).font(.jk(44))
+            Text(title).font(.jk(18, .bold)).foregroundColor(.white)
+            Text(detail).font(.jk(14)).foregroundColor(T.sub).multilineTextAlignment(.center)
         }
         .padding(30)
         .frame(maxWidth: .infinity)

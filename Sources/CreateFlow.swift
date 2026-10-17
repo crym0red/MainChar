@@ -92,7 +92,7 @@ struct CreateFlow: View {
                     .frame(width: 44, height: 44)
             }
             Spacer()
-            Text(initialWorld == nil ? "Create from scratch" : (world?.title ?? "Play")).font(.system(size: 18, weight: .semibold))
+            Text(initialWorld == nil ? "Create from scratch" : (world?.title ?? "Play")).font(.jk(18, .semibold))
             Spacer()
             Color.clear.frame(width: 44, height: 44)
         }
@@ -122,7 +122,7 @@ struct CreateFlow: View {
 
     private var fandomStep: some View {
         VStack(spacing: 14) {
-            Text("What fandom is your world in?").font(.system(size: 24, weight: .bold)).multilineTextAlignment(.center).padding(.top, 10)
+            Text("What fandom is your world in?").font(.jk(24, .bold)).multilineTextAlignment(.center).padding(.top, 10)
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").foregroundColor(T.sub)
                 TextField("Search for fandoms", text: $query).textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -144,9 +144,9 @@ struct CreateFlow: View {
                             startBuilding()
                         } label: {
                             HStack(spacing: 14) {
-                                Text(f.emoji).font(.system(size: 26)).frame(width: 52, height: 52)
+                                Text(f.emoji).font(.jk(26)).frame(width: 52, height: 52)
                                     .background(T.card).clipShape(RoundedRectangle(cornerRadius: 14))
-                                Text(f.name).font(.system(size: 18, weight: .medium)).foregroundColor(.white)
+                                Text(f.name).font(.jk(18, .medium)).foregroundColor(.white)
                                 Spacer()
                             }
                             .padding(.horizontal, 16).padding(.vertical, 10)
@@ -154,13 +154,13 @@ struct CreateFlow: View {
                         Divider().background(Color.white.opacity(0.08)).padding(.leading, 82)
                     }
                     VStack(spacing: 10) {
-                        Text("Can't find the fandom you want?").font(.system(size: 15)).foregroundColor(T.sub)
+                        Text("Can't find the fandom you want?").font(.jk(15)).foregroundColor(T.sub)
                         Button {
                             fandomName = query.trimmed
                             step = .custom
                         } label: {
                             Text(query.trimmed.isEmpty ? "Create a new one here" : "Create \"\(query.trimmed)\"")
-                                .font(.system(size: 17, weight: .semibold)).foregroundColor(.white)
+                                .font(.jk(17, .semibold)).foregroundColor(.white)
                                 .padding(.horizontal, 28).padding(.vertical, 14)
                                 .background(T.blue).clipShape(Capsule())
                         }
@@ -172,7 +172,7 @@ struct CreateFlow: View {
 
     private func pill(_ t: String, _ on: Bool, _ a: @escaping () -> Void) -> some View {
         Button(action: a) {
-            Text(t).font(.system(size: 16, weight: .medium)).foregroundColor(on ? .white : T.sub)
+            Text(t).font(.jk(16, .medium)).foregroundColor(on ? .white : T.sub)
                 .padding(.horizontal, 20).padding(.vertical, 10)
                 .background(on ? T.blue : T.card).clipShape(Capsule())
         }
@@ -183,20 +183,20 @@ struct CreateFlow: View {
     private var customStep: some View {
         ScrollView {
             VStack(spacing: 14) {
-                Text("Create a new fandom").font(.system(size: 22, weight: .semibold)).padding(.top, 10)
-                Text("What world or universe does your story take place in?").font(.system(size: 15)).foregroundColor(T.sub).multilineTextAlignment(.center)
+                Text("Create a new fandom").font(.jk(22, .semibold)).padding(.top, 10)
+                Text("What world or universe does your story take place in?").font(.jk(15)).foregroundColor(T.sub).multilineTextAlignment(.center)
                 VStack(alignment: .trailing, spacing: 4) {
                     TextField("e.g. Sideloading", text: $fandomName)
                         .padding(16).background(T.card).clipShape(RoundedRectangle(cornerRadius: 16))
                         .onChange(of: fandomName) { v in if v.count > 50 { fandomName = String(v.prefix(50)) } }
-                    Text("\(fandomName.count)/50").font(.system(size: 12)).foregroundColor(T.sub)
+                    Text("\(fandomName.count)/50").font(.jk(12)).foregroundColor(T.sub)
                 }
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Your goal (optional)").font(.system(size: 13, weight: .semibold)).foregroundColor(T.orange)
+                    Text("Your goal (optional)").font(.jk(13, .semibold)).foregroundColor(T.orange)
                     TextField("Become the biggest name in this world", text: $goal, axis: .vertical).lineLimit(1...3)
                         .padding(14).background(T.card).clipShape(RoundedRectangle(cornerRadius: 14))
                         .onChange(of: goal) { v in if v.count > 150 { goal = String(v.prefix(150)) } }
-                    Text("Describe the setting (optional)").font(.system(size: 13, weight: .semibold)).foregroundColor(T.blue).padding(.top, 6)
+                    Text("Describe the setting (optional)").font(.jk(13, .semibold)).foregroundColor(T.blue).padding(.top, 6)
                     TextField("Tell the AI about the people, places and rivalries", text: $setting, axis: .vertical).lineLimit(3...8)
                         .padding(14).background(T.card).clipShape(RoundedRectangle(cornerRadius: 14))
                         .onChange(of: setting) { v in if v.count > 2000 { setting = String(v.prefix(2000)) } }
@@ -204,7 +204,7 @@ struct CreateFlow: View {
                         VStack(spacing: 8) {
                             ForEach(Inspiration.prompts, id: \.self) { p in
                                 Button { setting = String(p.prefix(2000)) } label: {
-                                    Text(p).font(.system(size: 13)).foregroundColor(.white.opacity(0.9)).multilineTextAlignment(.leading)
+                                    Text(p).font(.jk(13)).foregroundColor(.white.opacity(0.9)).multilineTextAlignment(.leading)
                                         .padding(10).frame(maxWidth: .infinity, alignment: .leading)
                                         .background(T.card2).clipShape(RoundedRectangle(cornerRadius: 10))
                                 }
@@ -215,7 +215,7 @@ struct CreateFlow: View {
                 BigButton(title: "Next: Build the world", enabled: !fandomName.trimmed.isEmpty) { startBuilding() }
                     .clipShape(Capsule())
                 Text("You can always edit your world and characters once it's created!")
-                    .font(.system(size: 14)).foregroundColor(T.sub).multilineTextAlignment(.center).padding(.top, 8)
+                    .font(.jk(14)).foregroundColor(T.sub).multilineTextAlignment(.center).padding(.top, 8)
             }
             .padding(16)
         }
@@ -227,8 +227,8 @@ struct CreateFlow: View {
         VStack(spacing: 16) {
             Spacer()
             ProgressView().scaleEffect(1.6)
-            Text("Building \(fandomName)…").font(.system(size: 20, weight: .bold))
-            Text("Writing the cast, rivalries and goals").font(.system(size: 14)).foregroundColor(T.sub)
+            Text("Building \(fandomName)…").font(.jk(20, .bold))
+            Text("Writing the cast, rivalries and goals").font(.jk(14)).foregroundColor(T.sub)
             Spacer()
         }
     }
@@ -254,8 +254,8 @@ struct CreateFlow: View {
         HStack(spacing: 14) {
             Avatar(emoji: n.emoji, key: n.handle, size: 58)
             VStack(alignment: .leading, spacing: 3) {
-                Text(n.name).font(.system(size: 18, weight: .medium)).foregroundColor(.white)
-                Text(n.bio).font(.system(size: 14)).foregroundColor(T.sub).lineLimit(2).multilineTextAlignment(.leading)
+                Text(n.name).font(.jk(18, .medium)).foregroundColor(.white)
+                Text(n.bio).font(.jk(14)).foregroundColor(T.sub).lineLimit(2).multilineTextAlignment(.leading)
             }
             Spacer()
             Image(systemName: isOn ? "largecircle.fill.circle" : "circle")
@@ -267,7 +267,7 @@ struct CreateFlow: View {
     private var playerStep: some View {
         let cast = world?.cast ?? []
         return VStack(spacing: 0) {
-            Text("Who do you want to play as?").font(.system(size: 24, weight: .bold)).padding(.vertical, 12)
+            Text("Who do you want to play as?").font(.jk(24, .bold)).padding(.vertical, 12)
             ScrollView {
                 VStack(spacing: 0) {
                     Button { selected = "me" } label: {
@@ -276,7 +276,7 @@ struct CreateFlow: View {
                                 Circle().fill(T.blue.opacity(0.35))
                                 Image(systemName: "person.fill").font(.system(size: 26)).foregroundColor(T.blue)
                             }.frame(width: 58, height: 58)
-                            Text("Play as yourself").font(.system(size: 20, weight: .medium)).foregroundColor(T.blue)
+                            Text("Play as yourself").font(.jk(20, .medium)).foregroundColor(T.blue)
                             Spacer()
                             if selected == "me" { Image(systemName: "largecircle.fill.circle").font(.system(size: 28)).foregroundColor(T.blue) }
                         }.padding(.horizontal, 16).padding(.vertical, 10)
@@ -315,7 +315,7 @@ struct CreateFlow: View {
         let cast = (world?.cast ?? []).filter { $0.handle != playAs }
         let nm = persona?.name ?? "you"
         return VStack(spacing: 0) {
-            Text("Who is \(nm)'s first follower?").font(.system(size: 24, weight: .bold)).multilineTextAlignment(.center)
+            Text("Who is \(nm)'s first follower?").font(.jk(24, .bold)).multilineTextAlignment(.center)
                 .padding(.vertical, 12).padding(.horizontal, 16)
             ScrollView {
                 VStack(spacing: 0) {
@@ -368,7 +368,7 @@ struct RippleView: View {
                 Spacer()
                 HStack(spacing: 10) {
                     Image(systemName: "sparkles").font(.system(size: 26))
-                    Text("Planting the first ripple").font(.system(size: 26, weight: .regular))
+                    Text("Planting the first ripple").font(.jk(26, .regular))
                 }.foregroundColor(.white)
                 Spacer()
                 TimelineView(.animation) { ctx in
@@ -397,8 +397,8 @@ struct RippleView: View {
                 .id(tickCount)
                 Spacer().frame(height: 40)
                 HStack(spacing: 10) {
-                    Text("💡").font(.system(size: 22))
-                    Text("Finish side quests to level up faster").font(.system(size: 16))
+                    Text("💡").font(.jk(22))
+                    Text("Finish side quests to level up faster").font(.jk(16))
                 }
                 .padding(.horizontal, 22).padding(.vertical, 14)
                 .background(T.card2).clipShape(Capsule())

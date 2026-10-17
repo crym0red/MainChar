@@ -20,7 +20,7 @@ struct ToastModifier: ViewModifier {
     func body(content: Content) -> some View {
         content.overlay(alignment: .top) {
             if let t = game.toast {
-                Text(t).font(.system(size: 15, weight: .semibold)).foregroundColor(.white)
+                Text(t).font(.jk(15, .semibold)).foregroundColor(.white)
                     .padding(.horizontal, 18).padding(.vertical, 12)
                     .background(Color.black.opacity(0.85)).clipShape(Capsule())
                     .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 1))
@@ -55,11 +55,11 @@ struct StoreView: View {
                         .frame(width: 48, height: 48)
                 }
                 Spacer()
-                Text("Store").font(.system(size: 24, weight: .semibold))
+                Text("Store").font(.jk(24, .semibold))
                 Spacer()
                 HStack(spacing: 6) {
                     GemIcon(size: 30)
-                    Text("\(st.ex.gems)").font(.system(size: 22, weight: .medium)).foregroundColor(gemPurple)
+                    Text("\(st.ex.gems)").font(.jk(22, .medium)).foregroundColor(gemPurple)
                     Button { gemInfo = true } label: {
                         Image(systemName: "plus").font(.system(size: 18, weight: .bold)).foregroundColor(.white)
                             .frame(width: 44, height: 40).background(gemPurple.opacity(0.9))
@@ -106,14 +106,14 @@ struct StoreView: View {
     private func streakCard(_ st: GameState) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 6) {
-                Text("\(st.ex.streak) day streak").font(.system(size: 28, weight: .semibold))
-                Text("Claim milestone rewards over time!").font(.system(size: 17)).foregroundColor(T.sub)
+                Text("\(st.ex.streak) day streak").font(.jk(28, .semibold))
+                Text("Claim milestone rewards over time!").font(.jk(17)).foregroundColor(T.sub)
                 Button { streakInfo = true } label: {
-                    Text("View milestones").font(.system(size: 19, weight: .medium)).foregroundColor(T.orange)
+                    Text("View milestones").font(.jk(19, .medium)).foregroundColor(T.orange)
                 }
             }
             Spacer()
-            Text("🔥").font(.system(size: 64))
+            Text("🔥").font(.jk(64))
         }
         .padding(20)
         .background(T.card)
@@ -123,7 +123,7 @@ struct StoreView: View {
 
     private func section(_ title: String, _ items: [StoreItem], _ st: GameState) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(title).font(.system(size: 24, weight: .medium)).padding(.top, 14)
+            Text(title).font(.jk(24, .medium)).padding(.top, 14)
             ForEach(items) { it in
                 Button { confirm = it } label: { row(it, st) }.buttonStyle(.plain)
             }
@@ -146,18 +146,18 @@ struct StoreView: View {
 
     private func row(_ it: StoreItem, _ st: GameState) -> some View {
         HStack(spacing: 16) {
-            Text(it.emoji).font(.system(size: 52)).frame(width: 84)
+            Text(it.emoji).font(.jk(52)).frame(width: 84)
             VStack(alignment: .leading, spacing: 4) {
-                Text(it.title).font(.system(size: 24, weight: .medium)).foregroundColor(.white)
-                Text(it.desc).font(.system(size: 18)).foregroundColor(T.sub).multilineTextAlignment(.leading)
+                Text(it.title).font(.jk(24, .medium)).foregroundColor(.white)
+                Text(it.desc).font(.jk(18)).foregroundColor(T.sub).multilineTextAlignment(.leading)
                 if let s = status(it, st) {
-                    Text(s).font(.system(size: 14, weight: .semibold)).foregroundColor(T.lime)
+                    Text(s).font(.jk(14, .semibold)).foregroundColor(T.lime)
                 }
             }
             Spacer(minLength: 6)
             HStack(spacing: 6) {
                 GemIcon(size: 26)
-                Text("\(it.price)").font(.system(size: 24, weight: .medium)).foregroundColor(gemPurple)
+                Text("\(it.price)").font(.jk(24, .medium)).foregroundColor(gemPurple)
             }
             .opacity(st.ex.gems >= it.price ? 1 : 0.5)
         }

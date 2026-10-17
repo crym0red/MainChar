@@ -3,7 +3,7 @@ import Foundation
 // MARK: - Config (keys match @AppStorage in Settings)
 
 enum AIConfig {
-    static var enabled: Bool { UserDefaults.standard.object(forKey: "ai.enabled") as? Bool ?? true }
+    static var enabled: Bool { UserDefaults.standard.object(forKey: "ai.enabled") as? Bool ?? false }
     static var customURL: String { (UserDefaults.standard.string(forKey: "ai.url") ?? "").trimmed }
     static var customModel: String { (UserDefaults.standard.string(forKey: "ai.model") ?? "").trimmed }
     static var key: String { (UserDefaults.standard.string(forKey: "ai.key") ?? "").trimmed }

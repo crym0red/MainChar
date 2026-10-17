@@ -46,12 +46,16 @@ extension Game {
         }
         guard let n = cast.randomElement() else { return }
         let topics = Topics.forWorld(st.world)
-        let text = Topics.line(trait: n.trait, topics: topics) ?? Lines.feed[n.trait]?.randomElement() ?? "just vibing"
-        var p = makePost(n, text, st)
+        var text: String? = nil
+        if Double.random(in: 0...1) < 0.6, let tp = topics.randomElement() {
+            text = Corpus.post(trait: n.trait, me: st.persona.handle, topic: tp)
+        }
+        let body = text ?? Topics.line(trait: n.trait, topics: topics) ?? Lines.feed[n.trait]?.randomElement() ?? "just vibing"
+        var p = makePost(n, body, st)
         stampPost(&p, st)
         st.posts.insert(p, at: 0)
         logEvent(&st, &items, quiet: quiet, emoji: n.emoji, title: "\(n.name) posted",
-                 detail: String(text.prefix(90)), post: p.id, handles: [n.handle], weight: 8)
+                 detail: String(body.prefix(90)), post: p.id, handles: [n.handle], weight: 8)
     }
 
     // MARK: Arguments
@@ -119,7 +123,7 @@ extension Game {
         let sides = st.ex.rivalries?.first(where: { $0.id == Game.rivalKey(a.handle, b.handle) })?.sides ?? [:]
         var out: [Comment] = []
         func add(_ n: NPC, _ to: String, _ bucket: String) {
-            let l = Corpus.line(trait: n.trait, bucket: bucket, me: me, topic: topic, quote: quote)
+            let l = Corpus.line(trait: n.trait, bucket: bucket, me: me, topic: topic, quote: quote, heat: 0.85)
                 ?? (bucket == "rebut.agree" ? "exactly this" : "no, that's wrong")
             out.append(Comment(name: n.name, handle: n.handle, emoji: n.emoji, text: "@\(to) " + l, verified: n.followers >= 40000))
         }

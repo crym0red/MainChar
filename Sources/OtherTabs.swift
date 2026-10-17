@@ -63,9 +63,9 @@ struct GoalsTab: View {
     private func header(_ st: GameState, _ need: Int, _ proxy: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
-                Text("Lvl \(st.level)").font(.system(size: 27, weight: .semibold))
+                Text("Lvl \(st.level)").font(.jk(27, .semibold))
                 Bar(value: Double(st.xp) / Double(max(1, need)), color: T.gold, height: 26).frame(width: 130)
-                Text("\(st.xp)/\(need) XP").font(.system(size: 19, weight: .medium)).foregroundColor(T.gold)
+                Text("\(st.xp)/\(need) XP").font(.jk(19, .medium)).foregroundColor(T.gold)
                 octoPlus(size: 46) { withAnimation { proxy.scrollTo("skills", anchor: .top) } }
                 Spacer(minLength: 0)
                 squareButton("book.closed.fill") { showLog = true }
@@ -73,7 +73,7 @@ struct GoalsTab: View {
             }
             Button { how = true } label: {
                 HStack(spacing: 8) {
-                    Text("How does this work?").font(.system(size: 18)).foregroundColor(T.sub)
+                    Text("How does this work?").font(.jk(18)).foregroundColor(T.sub)
                     Image(systemName: "questionmark.circle.fill").font(.system(size: 22)).foregroundColor(T.sub)
                 }
             }
@@ -94,7 +94,7 @@ struct GoalsTab: View {
     }
 
     private func title(_ t: String) -> some View {
-        Text(t).font(.system(size: 26, weight: .medium)).frame(maxWidth: .infinity, alignment: .leading)
+        Text(t).font(.jk(26, .medium)).frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func needed(_ n: Int) -> some View {
@@ -102,7 +102,7 @@ struct GoalsTab: View {
             Image(systemName: "hammer.fill").rotationEffect(.degrees(-20))
             Text("+\(n) Needed")
         }
-        .font(.system(size: 20, weight: .medium)).foregroundColor(Color(red: 0.85, green: 0.45, blue: 0.05))
+        .font(.jk(20, .medium)).foregroundColor(Color(red: 0.85, green: 0.45, blue: 0.05))
     }
 
     // MARK: Main goal
@@ -114,20 +114,20 @@ struct GoalsTab: View {
             title("Main goal")
             panel {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text(st.world.goal).font(.system(size: 26, weight: .semibold))
+                    Text(st.world.goal).font(.jk(26, .semibold))
                     HStack(spacing: 14) {
                         Bar(value: max(0.03, p), color: T.blue, height: 22)
-                        Text("\(Int(p * 100))%").font(.system(size: 19, weight: .medium)).foregroundColor(T.sub)
+                        Text("\(Int(p * 100))%").font(.jk(19, .medium)).foregroundColor(T.sub)
                     }
                     if !desc.isEmpty {
-                        Text(desc).font(.system(size: 20)).foregroundColor(Color.white.opacity(0.88)).lineLimit(3)
+                        Text(desc).font(.jk(20)).foregroundColor(Color.white.opacity(0.88)).lineLimit(3)
                     }
                     Button { customize = true } label: {
                         HStack(spacing: 12) {
                             Image(systemName: "globe.europe.africa.fill")
                             Text("Customize World")
                         }
-                        .font(.system(size: 24, weight: .medium)).foregroundColor(.white)
+                        .font(.jk(24, .medium)).foregroundColor(.white)
                         .frame(maxWidth: .infinity).padding(.vertical, 20)
                         .background(Color.white.opacity(0.22)).clipShape(Capsule())
                     }
@@ -154,7 +154,7 @@ struct GoalsTab: View {
                 if reached {
                     Image(systemName: "checkmark").font(.system(size: d * 0.34, weight: .bold)).foregroundColor(.white)
                 } else {
-                    Text("\(i + 1)").font(.system(size: d * 0.42, weight: .medium)).foregroundColor(Color.white.opacity(0.85))
+                    Text("\(i + 1)").font(.jk(d * 0.42, .medium)).foregroundColor(Color.white.opacity(0.85))
                 }
             }
         }
@@ -176,7 +176,7 @@ struct GoalsTab: View {
             if let m = game.nextMilestone {
                 nextCard(m, st)
             } else {
-                panel { Text("All milestones complete. 🎉").font(.system(size: 20, weight: .semibold)) }
+                panel { Text("All milestones complete. 🎉").font(.jk(20, .semibold)) }
             }
         }
     }
@@ -189,7 +189,7 @@ struct GoalsTab: View {
         return panel {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .top) {
-                    Text(m.text).font(.system(size: 26, weight: .semibold))
+                    Text(m.text).font(.jk(26, .semibold))
                     Spacer(minLength: 8)
                     Image(systemName: "star").font(.system(size: 22)).foregroundColor(T.sub)
                 }
@@ -200,7 +200,7 @@ struct GoalsTab: View {
                         let miss = max(0, r.level - have)
                         Rectangle().fill(Color.white.opacity(0.14)).frame(height: 1)
                         HStack {
-                            Text(st.skills[r.skill].name).font(.system(size: 22))
+                            Text(st.skills[r.skill].name).font(.jk(22))
                             Spacer()
                             if miss > 0 { needed(miss) }
                             else { Image(systemName: "checkmark.circle.fill").font(.system(size: 22)).foregroundColor(T.lime) }
@@ -215,14 +215,14 @@ struct GoalsTab: View {
                         Image(systemName: usable ? "lock.open" : "lock")
                         Text(ok ? "Claim" : "Claim with points")
                     }
-                    .font(.system(size: 24, weight: .medium)).foregroundColor(usable ? .white : Color.white.opacity(0.5))
+                    .font(.jk(24, .medium)).foregroundColor(usable ? .white : Color.white.opacity(0.5))
                     .frame(maxWidth: .infinity).padding(.vertical, 20)
                     .background(usable ? T.blue : Color.white.opacity(0.14)).clipShape(Capsule())
                 }
                 .disabled(!usable)
                 .padding(.top, 10)
                 Button { game.skip(m.id) } label: {
-                    Text("Skip milestone").font(.system(size: 22)).foregroundColor(T.sub)
+                    Text("Skip milestone").font(.jk(22)).foregroundColor(T.sub)
                         .frame(maxWidth: .infinity).padding(.top, 20).padding(.bottom, 4)
                 }
             }
@@ -251,9 +251,9 @@ struct GoalsTab: View {
                                 }
                                 .frame(width: 46, height: 46)
                                 VStack(alignment: .leading, spacing: 6) {
-                                    Text(q.text).font(.system(size: 22)).foregroundColor(.white).multilineTextAlignment(.leading)
+                                    Text(q.text).font(.jk(22)).foregroundColor(.white).multilineTextAlignment(.leading)
                                     if !q.done {
-                                        Text("+\(q.xp) XP").font(.system(size: 19, weight: .medium)).foregroundColor(T.gold)
+                                        Text("+\(q.xp) XP").font(.jk(19, .medium)).foregroundColor(T.gold)
                                     }
                                 }
                                 Spacer(minLength: 8)
@@ -276,13 +276,13 @@ struct GoalsTab: View {
         let m = game.nextMilestone
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Skills").font(.system(size: 26, weight: .medium))
+                Text("Skills").font(.jk(26, .medium))
                 Spacer()
                 HStack(spacing: 8) {
                     Image(systemName: "hammer.fill").rotationEffect(.degrees(-20))
                     Text("\(st.points) Points to use")
                 }
-                .font(.system(size: 21, weight: .semibold)).foregroundColor(Color(red: 0.85, green: 0.45, blue: 0.05))
+                .font(.jk(21, .semibold)).foregroundColor(Color(red: 0.85, green: 0.45, blue: 0.05))
             }
             panel {
                 VStack(spacing: 0) {
@@ -293,17 +293,17 @@ struct GoalsTab: View {
                         }()
                         VStack(alignment: .leading, spacing: 10) {
                             HStack {
-                                Text(sk.name).font(.system(size: 26, weight: .medium))
+                                Text(sk.name).font(.jk(26, .medium))
                                 Spacer(minLength: 6)
                                 if miss > 0 { needed(miss) }
                                 Color.clear.frame(width: 62, height: 1)
                             }
                             HStack(spacing: 12) {
                                 Bar(value: Double(sk.value) / 100, color: T.blue, height: 22)
-                                Text("\(sk.value)/100").font(.system(size: 22, weight: .medium)).frame(width: 82, alignment: .trailing)
+                                Text("\(sk.value)/100").font(.jk(22, .medium)).frame(width: 82, alignment: .trailing)
                                 octoPlus(enabled: st.points > 0, size: 50) { game.upgrade(sk.id) }
                             }
-                            Text(sk.desc).font(.system(size: 19)).foregroundColor(T.sub)
+                            Text(sk.desc).font(.jk(19)).foregroundColor(T.sub)
                         }
                         .padding(.vertical, 18)
                         if i < st.skills.count - 1 { Rectangle().fill(Color.white.opacity(0.14)).frame(height: 1) }
@@ -341,9 +341,9 @@ struct MessagesTab: View {
                                         HStack(spacing: 12) {
                                             Avatar(emoji: n.emoji, key: n.handle, size: 50)
                                             VStack(alignment: .leading, spacing: 3) {
-                                                Text(n.name).font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                                                Text(n.name).font(.jk(15, .bold)).foregroundColor(.white)
                                                 Text(st.threads[h]?.last?.text ?? "Say hi")
-                                                    .font(.system(size: 13)).foregroundColor(T.sub).lineLimit(1)
+                                                    .font(.jk(13)).foregroundColor(T.sub).lineLimit(1)
                                             }
                                             Spacer()
                                             if st.unread.contains(h) { Circle().fill(T.blue).frame(width: 10, height: 10) }
@@ -395,8 +395,8 @@ struct NewChatSheet: View {
                     HStack(spacing: 12) {
                         Avatar(emoji: n.emoji, key: n.handle, size: 42)
                         VStack(alignment: .leading) {
-                            Text(n.name).font(.system(size: 15, weight: .bold)).foregroundColor(.white)
-                            Text("@\(n.handle) · \(n.trait.rawValue)").font(.system(size: 12)).foregroundColor(T.sub)
+                            Text(n.name).font(.jk(15, .bold)).foregroundColor(.white)
+                            Text("@\(n.handle) · \(n.trait.rawValue)").font(.jk(12)).foregroundColor(T.sub)
                         }
                     }
                 }
@@ -425,12 +425,12 @@ struct ChatView: View {
                 ScrollView {
                     VStack(spacing: 8) {
                         if msgs.isEmpty {
-                            Text("Say hi to \(npc?.name ?? handle)").font(.system(size: 13)).foregroundColor(T.sub).padding(.top, 30)
+                            Text("Say hi to \(npc?.name ?? handle)").font(.jk(13)).foregroundColor(T.sub).padding(.top, 30)
                         }
                         ForEach(msgs) { m in
                             HStack {
                                 if m.fromYou { Spacer(minLength: 50) }
-                                Text(m.text).font(.system(size: 15))
+                                Text(m.text).font(.jk(15))
                                     .padding(.horizontal, 14).padding(.vertical, 9)
                                     .background(m.fromYou ? T.blue : T.card2)
                                     .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -439,7 +439,7 @@ struct ChatView: View {
                         }
                         if game.typing.contains(handle) {
                             HStack {
-                                Text("typing…").font(.system(size: 13)).foregroundColor(T.sub)
+                                Text("typing…").font(.jk(13)).foregroundColor(T.sub)
                                     .padding(.horizontal, 14).padding(.vertical, 9)
                                     .background(T.card2).clipShape(RoundedRectangle(cornerRadius: 18))
                                 Spacer()
@@ -482,7 +482,7 @@ struct NotifsTab: View {
     var body: some View {
         let st = game.s
         VStack(spacing: 0) {
-            Text("Notifications").font(.system(size: 30, weight: .semibold))
+            Text("Notifications").font(.jk(30, .semibold))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 14)
             Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
@@ -496,7 +496,7 @@ struct NotifsTab: View {
                             row(n, st)
                             Rectangle().fill(Color.white.opacity(0.1)).frame(height: 1)
                         }
-                        Text("That's everything!").font(.system(size: 18)).foregroundColor(T.sub)
+                        Text("That's everything!").font(.jk(18)).foregroundColor(T.sub)
                             .padding(.vertical, 40)
                     }
                 }
@@ -519,7 +519,7 @@ struct NotifsTab: View {
         case "milestone":
             Image(systemName: "flag.fill").font(.system(size: 26)).foregroundColor(T.lime)
         default:
-            Text(n.emoji).font(.system(size: 28))
+            Text(n.emoji).font(.jk(28))
         }
     }
 
@@ -528,15 +528,15 @@ struct NotifsTab: View {
         if n.kind == "follow" {
             let bio = npc?.bio ?? n.sub
             if !bio.isEmpty {
-                Text(bio).font(.system(size: 20)).foregroundColor(T.sub).lineLimit(3)
+                Text(bio).font(.jk(20)).foregroundColor(T.sub).lineLimit(3)
             }
         } else if n.kind == "reply", let r = n.sub.range(of: ": ") {
             let who = String(n.sub[n.sub.startIndex..<r.lowerBound])
             let rest = String(n.sub[r.upperBound...])
             (Text(who).foregroundColor(T.blue) + Text(": \(rest)").foregroundColor(T.sub))
-                .font(.system(size: 21)).lineLimit(2)
+                .font(.jk(21)).lineLimit(2)
         } else if !n.sub.isEmpty {
-            Text(n.sub).font(.system(size: 20)).foregroundColor(T.sub).lineLimit(3)
+            Text(n.sub).font(.jk(20)).foregroundColor(T.sub).lineLimit(3)
         }
     }
 
@@ -550,7 +550,7 @@ struct NotifsTab: View {
                     Avatar(emoji: n.emoji, key: n.handle, size: 76)
                 }
                 (Text(n.text).foregroundColor(.white) + Text(" · Day \(n.day)").foregroundColor(T.sub))
-                    .font(.system(size: 23, weight: .medium))
+                    .font(.jk(23, .medium))
                 subLine(n, npc)
                 if n.kind == "follow" && !n.handle.isEmpty {
                     Button {
@@ -558,7 +558,7 @@ struct NotifsTab: View {
                         nav.chat = n.handle
                         nav.tab = 2
                     } label: {
-                        Text("Message").font(.system(size: 23, weight: .medium)).foregroundColor(.white)
+                        Text("Message").font(.jk(23, .medium)).foregroundColor(.white)
                             .padding(.horizontal, 36).padding(.vertical, 16)
                             .background(T.card2).clipShape(Capsule())
                     }
@@ -631,7 +631,7 @@ struct ProfileTab: View {
                         .offset(y: -75)
                     Spacer()
                     Button { edit = true } label: {
-                        Text("Edit Profile").font(.system(size: 22, weight: .medium)).foregroundColor(.white)
+                        Text("Edit Profile").font(.jk(22, .medium)).foregroundColor(.white)
                             .padding(.horizontal, 30).padding(.vertical, 18)
                             .background(T.card2).clipShape(Capsule())
                     }
@@ -642,14 +642,14 @@ struct ProfileTab: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
-                        Text(p.name).font(.system(size: 34, weight: .bold))
+                        Text(p.name).font(.jk(34, .bold))
                         if st.followers >= 10000 { VerifiedSeal(size: 28) }
                     }
-                    Text("@\(p.handle)").font(.system(size: 22)).foregroundColor(T.sub)
-                    if !p.bio.isEmpty { Text(p.bio).font(.system(size: 23)).padding(.top, 4) }
+                    Text("@\(p.handle)").font(.jk(22)).foregroundColor(T.sub)
+                    if !p.bio.isEmpty { Text(p.bio).font(.jk(23)).padding(.top, 4) }
                     (Text(short(st.followers)).fontWeight(.semibold).foregroundColor(.white)
                         + Text(" Followers").foregroundColor(T.sub))
-                        .font(.system(size: 25)).padding(.top, 6)
+                        .font(.jk(25)).padding(.top, 6)
                 }
                 .padding(.horizontal, 16).padding(.top, 14)
 
@@ -710,7 +710,7 @@ struct ProfileTab: View {
                 Image(systemName: icon)
                 Text(title)
             }
-            .font(.system(size: 24, weight: .medium)).foregroundColor(.white)
+            .font(.jk(24, .medium)).foregroundColor(.white)
             .frame(maxWidth: .infinity).padding(.vertical, 22)
             .background(T.card2).clipShape(Capsule())
         }
@@ -722,7 +722,7 @@ struct ProfileTab: View {
             ForEach(Array(names.enumerated()), id: \.offset) { i, n in
                 Button { seg = i } label: {
                     VStack(spacing: 14) {
-                        Text(n).font(.system(size: 23, weight: .medium)).foregroundColor(seg == i ? T.blue : T.sub)
+                        Text(n).font(.jk(23, .medium)).foregroundColor(seg == i ? T.blue : T.sub)
                         Rectangle().fill(seg == i ? T.blue : Color.clear).frame(height: 3)
                     }
                     .frame(maxWidth: .infinity)
@@ -740,16 +740,16 @@ struct ProfileTab: View {
         let prev = max(0, min(100, value - delta))
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
-                Text(emoji).font(.system(size: 32))
-                Text(name).font(.system(size: 26, weight: .medium)).padding(.top, 2)
+                Text(emoji).font(.jk(32))
+                Text(name).font(.jk(26, .medium)).padding(.top, 2)
                 Spacer()
                 VStack(alignment: .trailing, spacing: 4) {
                     if delta != 0 {
                         Text(String(format: "%+.1f%%", Double(delta)))
-                            .font(.system(size: 22, weight: .semibold))
+                            .font(.jk(22, .semibold))
                             .foregroundColor(delta > 0 ? T.lime : T.orange)
                     }
-                    Text(String(format: "%.1f%%", Double(v))).font(.system(size: 24, weight: .medium))
+                    Text(String(format: "%.1f%%", Double(v))).font(.jk(24, .medium))
                 }
             }
             GeometryReader { g in
@@ -764,7 +764,7 @@ struct ProfileTab: View {
             }
             .frame(height: 28)
             if let n = note, !n.isEmpty {
-                Text(n).font(.system(size: 21)).foregroundColor(T.sub)
+                Text(n).font(.jk(21)).foregroundColor(T.sub)
             }
         }
     }
@@ -776,7 +776,7 @@ struct ProfileTab: View {
                         delta: st.ex.statDelta[k.rawValue] ?? 0, note: st.ex.statNote[k.rawValue])
         }
         return VStack(alignment: .leading, spacing: 18) {
-            Text("Social Media Presence").font(.system(size: 26, weight: .medium))
+            Text("Social Media Presence").font(.jk(26, .medium))
             VStack(alignment: .leading, spacing: 0) {
                 stat(.humor).padding(.vertical, 16)
                 Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
@@ -797,7 +797,7 @@ struct ProfileTab: View {
             relationships(st)
 
             VStack(alignment: .leading, spacing: 10) {
-                Text("Achievements").font(.system(size: 22, weight: .medium))
+                Text("Achievements").font(.jk(22, .medium))
                 ForEach(Game.badgeDefs) { b in
                     let got = st.achievements.contains(b.id)
                     HStack {
@@ -822,14 +822,14 @@ struct ProfileTab: View {
         return VStack(alignment: .leading, spacing: 14) {
             Button { showHistory = true } label: {
                 HStack {
-                    Text("🌍").font(.system(size: 24))
-                    Text("World History").font(.system(size: 17, weight: .semibold))
+                    Text("🌍").font(.jk(24))
+                    Text("World History").font(.jk(17, .semibold))
                     Spacer()
                     Image(systemName: "chevron.right").foregroundColor(T.sub)
                 }
                 .padding(14).background(RoundedRectangle(cornerRadius: 16).fill(T.card))
             }.buttonStyle(.plain)
-            Text("Relationships (\(rels.count))").font(.system(size: 26, weight: .medium)).padding(.top, 6)
+            Text("Relationships (\(rels.count))").font(.jk(26, .medium)).padding(.top, 6)
             ForEach(rels) { n in
                 Button { npcSheet = n } label: {
                     VStack(alignment: .leading, spacing: 12) {
@@ -837,20 +837,20 @@ struct ProfileTab: View {
                             Avatar(emoji: n.emoji, key: n.handle, size: 76)
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 6) {
-                                    Text(n.name).font(.system(size: 25, weight: .semibold)).foregroundColor(.white)
+                                    Text(n.name).font(.jk(25, .semibold)).foregroundColor(.white)
                                     if n.followers >= 40000 { VerifiedSeal(size: 20) }
                                 }
-                                Text("@\(n.handle)").font(.system(size: 20)).foregroundColor(T.sub)
+                                Text("@\(n.handle)").font(.jk(20)).foregroundColor(T.sub)
                             }
                             Spacer()
                             Image(systemName: "chevron.right").font(.system(size: 20, weight: .semibold)).foregroundColor(T.sub)
                         }
                         HStack(spacing: 14) {
                             Bar(value: Double(n.affinity) / 100, color: T.lime, height: 24)
-                            Text("\(n.affinity)%").font(.system(size: 22, weight: .medium)).foregroundColor(.white)
+                            Text("\(n.affinity)%").font(.jk(22, .medium)).foregroundColor(.white)
                                 .frame(width: 70, alignment: .trailing)
                         }
-                        Text(relNote(n)).font(.system(size: 20)).foregroundColor(T.sub).multilineTextAlignment(.leading)
+                        Text(relNote(n)).font(.jk(20)).foregroundColor(T.sub).multilineTextAlignment(.leading)
                     }
                     .padding(18)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -863,7 +863,7 @@ struct ProfileTab: View {
             Button { unlockInfo = true } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "questionmark.circle.fill").font(.system(size: 24))
-                    Text("How do I unlock more characters?").font(.system(size: 19))
+                    Text("How do I unlock more characters?").font(.jk(19))
                 }
                 .foregroundColor(T.sub)
             }
@@ -875,23 +875,23 @@ struct ProfileTab: View {
         let stories = st.ex.stories
         return VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text("Your Stories").font(.system(size: 26, weight: .medium))
+                Text("Your Stories").font(.jk(26, .medium))
                 Spacer()
                 Button { allStories = true } label: {
-                    Text("View all").font(.system(size: 22, weight: .medium)).foregroundColor(T.blue)
+                    Text("View all").font(.jk(22, .medium)).foregroundColor(T.blue)
                 }
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     if stories.isEmpty {
-                        Text("No stories yet. Tap Add story on the feed.").font(.system(size: 18)).foregroundColor(T.sub)
+                        Text("No stories yet. Tap Add story on the feed.").font(.jk(18)).foregroundColor(T.sub)
                             .padding(.vertical, 40)
                     }
                     ForEach(stories.prefix(10)) { s in
                         Button { openStory = StoryOpen(story: s.id) } label: {
                             ZStack(alignment: .bottomLeading) {
                                 StoryThumb(story: s, width: 120, height: 190)
-                                Text(s.text).font(.system(size: 16)).foregroundColor(.white).lineLimit(1)
+                                Text(s.text).font(.jk(16)).foregroundColor(.white).lineLimit(1)
                                     .padding(10).frame(width: 120, alignment: .leading)
                             }
                         }
@@ -904,7 +904,7 @@ struct ProfileTab: View {
             .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(Color.white.opacity(0.09), lineWidth: 1.5))
 
-            Text("Your Posts").font(.system(size: 26, weight: .medium)).padding(.top, 6)
+            Text("Your Posts").font(.jk(26, .medium)).padding(.top, 6)
             if mine.isEmpty { EmptyState(emoji: "✍️", title: "No posts yet", detail: "Tap the compose button on the Feed.") }
             ForEach(mine) { p in
                 PostRow(post: p, onReply: {}, onOpen: {}).padding(.horizontal, -16)
@@ -919,13 +919,13 @@ struct ProfileTab: View {
             if acts.isEmpty { EmptyState(emoji: "📜", title: "Nothing yet", detail: "Your activity fills up as you play.") }
             ForEach(acts) { l in
                 HStack(alignment: .top, spacing: 10) {
-                    Text(l.emoji).font(.system(size: 22))
+                    Text(l.emoji).font(.jk(22))
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(l.title).font(.system(size: 14, weight: .bold))
-                        Text(l.detail).font(.system(size: 12)).foregroundColor(T.sub).lineLimit(2)
+                        Text(l.title).font(.jk(14, .bold))
+                        Text(l.detail).font(.jk(12)).foregroundColor(T.sub).lineLimit(2)
                     }
                     Spacer()
-                    Text("D\(l.day)").font(.system(size: 11)).foregroundColor(T.sub)
+                    Text("D\(l.day)").font(.jk(11)).foregroundColor(T.sub)
                 }.card(12)
             }
         }

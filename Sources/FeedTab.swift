@@ -6,15 +6,17 @@ struct GameShell: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        TabView(selection: $nav.tab) {
-            FeedTab().tabItem { Image(systemName: "house.fill") }.tag(0)
-            GoalsTab().tabItem { Image(systemName: "target") }.tag(1)
-            MessagesTab().tabItem { Image(systemName: "bubble.left.and.bubble.right.fill") }
-                .badge(game.s.unread.count).tag(2)
-            NotifsTab().tabItem { Image(systemName: "bell.fill") }
-                .badge(game.unreadNotifs).tag(3)
-            ProfileTab().tabItem { Image(systemName: "person.fill") }.tag(4)
+        ZStack {
+            T.bg.ignoresSafeArea()
+            switch nav.tab {
+            case 0: FeedTab()
+            case 1: GoalsTab()
+            case 2: MessagesTab()
+            case 3: NotifsTab()
+            default: ProfileTab()
+            }
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) { AppTabBar() }
         .tint(.white)
         .fullScreenCover(isPresented: Binding(get: { game.playing && game.s.intro?.done == false }, set: { _ in })) {
             IntroFlow()
@@ -30,6 +32,37 @@ struct GameShell: View {
             if phase == .active { game.checkStreak(); game.catchUp() }
             else { game.stampSim() }
         }
+    }
+}
+
+struct AppTabBar: View {
+    @EnvironmentObject var game: Game
+    @EnvironmentObject var nav: Nav
+
+    private func item(_ i: Int, _ icon: String, dot: Bool = false) -> some View {
+        Button { nav.tab = i } label: {
+            Image(systemName: icon)
+                .font(.system(size: 26))
+                .foregroundColor(nav.tab == i ? .white : Color.white.opacity(0.5))
+                .frame(maxWidth: .infinity).frame(height: 48)
+                .overlay(alignment: .topTrailing) {
+                    if dot { Circle().fill(T.red).frame(width: 13, height: 13).offset(x: -22, y: 4) }
+                }
+        }
+        .buttonStyle(.plain)
+    }
+
+    var body: some View {
+        let st = game.s
+        HStack(spacing: 0) {
+            item(0, "house.fill")
+            item(1, "target")
+            item(2, "ellipsis.message.fill", dot: !st.unread.isEmpty)
+            item(3, "bell.fill", dot: game.unreadNotifs > 0)
+            item(4, "person.fill", dot: st.points > 0)
+        }
+        .padding(.top, 8)
+        .background(T.bg.ignoresSafeArea(edges: .bottom))
     }
 }
 
@@ -51,6 +84,7 @@ struct FeedTab: View {
     @State private var npcSheet: NPC? = nil
     @State private var replyTo: UUID? = nil
     @State private var confirmExit = false
+    @State private var showStore = false
     @State private var path: [UUID] = []
     private let timer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
     private let olive = Color(red: 0.47, green: 0.38, blue: 0.08)
@@ -68,7 +102,7 @@ struct FeedTab: View {
                             stories(st)
                             Divider().background(Color.white.opacity(0.12))
                             if !game.aiNote.isEmpty {
-                                Text(game.aiNote).font(.system(size: 11)).foregroundColor(T.orange).padding(.vertical, 6)
+                                Text(game.aiNote).font(.jk(11)).foregroundColor(T.orange).padding(.vertical, 6)
                             }
                             ForEach(st.posts.filter { !st.hidden.contains($0.id) }) { p in
                                 PostRow(post: p, onReply: { replyTo = p.id }, onOpen: { path.append(p.id) })
@@ -97,6 +131,7 @@ struct FeedTab: View {
             if let id = r?.postID { path = [id] }
         }
         .sheet(item: $compose) { seed in ComposeSheet(seed: seed) }
+        .fullScreenCover(isPresented: $showStore) { StoreView() }
         .sheet(isPresented: $showEvent) { EventSheet() }
         .sheet(isPresented: $showExplore) { ExploreSheet() }
         .fullScreenCover(item: $storyOpen) { o in StoriesFlow(openStory: o.story) }
@@ -112,22 +147,26 @@ struct FeedTab: View {
 
     private func header(_ st: GameState) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: "sun.max.fill").font(.system(size: 28)).foregroundColor(T.gold)
-            Text("Day \(st.day)").font(.system(size: 26, weight: .bold))
+            Image(systemName: "sun.max.fill").font(.system(size: 30)).foregroundColor(T.gold)
+            Text("Day \(st.day)").font(.jk(25, .medium))
             Spacer()
             Button { game.refill() } label: {
                 HStack(spacing: 6) {
-                    Text(game.canRefill ? "Free refill" : "Refill used").font(.system(size: 17, weight: .medium))
+                    Text(game.canRefill ? "Free refill" : "Refill used").font(.jk(16, .medium))
                     Image(systemName: "bolt.fill").foregroundColor(T.gold)
                 }
                 .foregroundColor(game.canRefill ? .white : T.sub)
-                .padding(.horizontal, 18).padding(.vertical, 13)
+                .padding(.horizontal, 16).padding(.vertical, 12)
                 .background(T.card2).clipShape(Capsule())
                 .overlay(alignment: .topTrailing) {
                     if game.canRefill { Circle().fill(T.red).frame(width: 12, height: 12).offset(x: 2, y: -2) }
                 }
             }
             .disabled(!game.canRefill)
+            Button { showStore = true } label: {
+                Image(systemName: "storefront.fill").font(.system(size: 22)).foregroundColor(.white.opacity(0.85))
+                    .frame(width: 50, height: 50).background(T.card2).clipShape(RoundedRectangle(cornerRadius: 14))
+            }
             Button { confirmExit = true } label: {
                 Image(systemName: "rectangle.portrait.and.arrow.right").font(.system(size: 20, weight: .semibold))
                     .foregroundColor(T.red).frame(width: 50, height: 50).background(T.card2).clipShape(RoundedRectangle(cornerRadius: 14))
@@ -149,29 +188,37 @@ struct FeedTab: View {
                         Text("Energy full").foregroundColor(T.sub)
                     }
                 }
-                .font(.system(size: 17)).padding(.leading, 62)
+                .font(.jk(17)).padding(.leading, 62)
                 HStack(spacing: 10) {
                     Image(systemName: "bolt.fill").font(.system(size: 38)).foregroundColor(T.gold)
                     HStack(spacing: 3) {
-                        Text("\(s2.bonus)").font(.system(size: 20, weight: .bold)).foregroundColor(T.gold)
-                            .frame(width: 78, height: 42).background(olive).clipShape(RoundedRectangle(cornerRadius: 5))
+                        Text("\(s2.bonus)").font(.jk(20, .bold)).foregroundColor(T.gold)
+                            .frame(width: 64, height: 40).background(olive).clipShape(RoundedRectangle(cornerRadius: 5))
                         GeometryReader { g in
                             ZStack(alignment: .leading) {
                                 RoundedRectangle(cornerRadius: 5).fill(Color.white.opacity(0.05))
                                 RoundedRectangle(cornerRadius: 5).fill(olive)
                                     .frame(width: g.size.width * CGFloat(e) / CGFloat(Game.maxEnergy))
-                                Text("\(e)/\(Game.maxEnergy)").font(.system(size: 20, weight: .bold)).foregroundColor(T.gold).padding(.leading, 14)
+                                Text("\(e)/\(Game.maxEnergy)").font(.jk(20, .bold)).foregroundColor(T.gold).padding(.leading, 14)
                             }
-                        }.frame(height: 42)
+                        }.frame(height: 40)
                     }
                     .padding(4)
                     .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.white.opacity(0.28), lineWidth: 2))
                     Button { game.refill() } label: {
                         Image(systemName: "plus").font(.system(size: 22, weight: .bold)).foregroundColor(T.gold)
-                            .frame(width: 52, height: 52).background(olive).clipShape(RoundedRectangle(cornerRadius: 12))
+                            .frame(width: 46, height: 46).background(olive).clipShape(RoundedRectangle(cornerRadius: 12))
                     }.disabled(!game.canRefill)
-                    Text(short(st.followers)).font(.system(size: 15, weight: .bold)).foregroundColor(T.blue)
-                        .padding(.horizontal, 12).padding(.vertical, 10).background(T.card2).clipShape(Capsule())
+                    Spacer(minLength: 0)
+                    HStack(spacing: 6) {
+                        GemIcon(size: 30)
+                        Text("\(s2.ex.gems)").font(.jk(17, .medium)).foregroundColor(gemPurple)
+                    }
+                    Button { showStore = true } label: {
+                        Image(systemName: "plus").font(.system(size: 18, weight: .bold)).foregroundColor(.white)
+                            .frame(width: 40, height: 40).background(Color(red: 0.55, green: 0.30, blue: 0.90))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
                 }
             }
             .padding(.horizontal, 16).padding(.bottom, 10)
@@ -188,7 +235,7 @@ struct FeedTab: View {
                             Image(systemName: "plus.circle.fill").font(.system(size: 26)).foregroundColor(T.blue)
                                 .background(Circle().fill(T.bg))
                         }
-                        Text("Add story").font(.system(size: 14)).foregroundColor(T.sub)
+                        Text("Your story").font(.jk(14)).foregroundColor(T.sub)
                     }.frame(width: 80)
                 }
                 Rectangle().fill(Color.white.opacity(0.15)).frame(width: 1, height: 84)
@@ -198,7 +245,7 @@ struct FeedTab: View {
                             Circle().stroke(T.blue, lineWidth: 3).frame(width: 78, height: 78)
                             Image(systemName: "globe").font(.system(size: 34)).foregroundColor(T.blue)
                         }
-                        Text("Explore").font(.system(size: 14)).foregroundColor(T.sub)
+                        Text("Explore").font(.jk(14)).foregroundColor(T.sub)
                     }.frame(width: 84)
                 }
                 ForEach(st.npcs.filter { $0.id != "newsdesk" }) { n in
@@ -206,7 +253,7 @@ struct FeedTab: View {
                         VStack(spacing: 6) {
                             Avatar(emoji: n.emoji, key: n.handle, size: 74, ring: true)
                             Text(n.name.components(separatedBy: " ").first ?? n.name)
-                                .font(.system(size: 14)).foregroundColor(T.sub).lineLimit(1)
+                                .font(.jk(14)).foregroundColor(T.sub).lineLimit(1)
                         }.frame(width: 80)
                     }
                 }
@@ -221,9 +268,9 @@ struct FeedTab: View {
                 Button { nav.tab = 1 } label: {
                     HStack {
                         Image(systemName: "trophy.fill").foregroundColor(T.gold)
-                        Text("Level up!").font(.system(size: 22, weight: .bold)).foregroundColor(T.gold)
+                        Text("Level up!").font(.jk(22, .bold)).foregroundColor(T.gold)
                         Spacer()
-                        Text("Upgrade skills").font(.system(size: 19, weight: .medium)).foregroundColor(.white)
+                        Text("Upgrade skills").font(.jk(19, .medium)).foregroundColor(.white)
                     }
                     .padding(.horizontal, 24).padding(.vertical, 16)
                     .background(LinearGradient(colors: [Color(red: 0.45, green: 0.36, blue: 0.08), Color(red: 0.30, green: 0.24, blue: 0.06)],
@@ -236,8 +283,8 @@ struct FeedTab: View {
             ZStack {
                 Button { showEvent = true } label: {
                     HStack(spacing: 10) {
-                        Text("🎭").font(.system(size: 28)).rotationEffect(.degrees(-12)).offset(x: -4, y: -8)
-                        Text("Event").font(.system(size: 26, weight: .medium)).foregroundColor(.white)
+                        Text("🎭").font(.jk(28)).rotationEffect(.degrees(-12)).offset(x: -4, y: -8)
+                        Text("Event").font(.jk(26, .medium)).foregroundColor(.white)
                     }
                     .padding(.horizontal, 44).padding(.vertical, 16)
                     .background(T.blue).clipShape(Capsule())
@@ -276,9 +323,9 @@ struct PostRow: View {
             VStack(alignment: .leading, spacing: 6) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 5) {
-                        Text(post.authorName).font(.system(size: 18, weight: .bold)).lineLimit(1)
+                        Text(post.authorName).font(.jk(18, .bold)).lineLimit(1)
                         if post.verified { VerifiedSeal(size: 16) }
-                        Text("@\(post.authorHandle)").font(.system(size: 16)).foregroundColor(T.sub).lineLimit(1)
+                        Text("@\(post.authorHandle)").font(.jk(16)).foregroundColor(T.sub).lineLimit(1)
                         Spacer(minLength: 0)
                         Menu {
                             Button { game.toggleSave(post.id) } label: {
@@ -292,7 +339,7 @@ struct PostRow: View {
                     if !post.tag.isEmpty {
                         Chip(text: post.tag, color: post.tag == "Breaking" ? T.red.opacity(0.85) : T.card2)
                     }
-                    Text(post.text).font(.system(size: 20)).foregroundColor(.white)
+                    Text(post.text).font(.jk(20)).foregroundColor(.white)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .contentShape(Rectangle())
@@ -331,21 +378,21 @@ struct ReplySheet: View {
                             HStack(alignment: .top, spacing: 10) {
                                 Avatar(emoji: p.emoji, key: p.authorHandle, size: 42)
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text(p.authorName).font(.system(size: 15, weight: .bold))
-                                    Text(p.text).font(.system(size: 15))
+                                    Text(p.authorName).font(.jk(15, .bold))
+                                    Text(p.text).font(.jk(15))
                                 }
                             }
                             Divider()
-                            if p.comments.isEmpty { Text("No replies yet.").foregroundColor(T.sub).font(.system(size: 13)) }
+                            if p.comments.isEmpty { Text("No replies yet.").foregroundColor(T.sub).font(.jk(13)) }
                             ForEach(p.comments) { c in
                                 HStack(alignment: .top, spacing: 10) {
                                     Avatar(emoji: c.emoji, key: c.handle, size: 32)
                                     VStack(alignment: .leading, spacing: 2) {
                                         HStack(spacing: 4) {
-                                            Text(c.name).font(.system(size: 13, weight: .bold))
+                                            Text(c.name).font(.jk(13, .bold))
                                             if c.verified { VerifiedSeal(size: 11) }
                                         }
-                                        Text(c.text).font(.system(size: 14))
+                                        Text(c.text).font(.jk(14))
                                     }
                                 }
                             }
@@ -383,17 +430,17 @@ struct NPCSheet: View {
         VStack(spacing: 12) {
             Avatar(emoji: live.emoji, key: live.handle, size: 84, ring: true).padding(.top, 24)
             HStack(spacing: 5) {
-                Text(live.name).font(.system(size: 22, weight: .heavy))
+                Text(live.name).font(.jk(22, .heavy))
                 if live.followers >= 40000 { VerifiedSeal(size: 18) }
             }
-            Text("@\(live.handle) · \(short(live.followers)) followers").font(.system(size: 13)).foregroundColor(T.sub)
-            Text(live.bio).font(.system(size: 14)).multilineTextAlignment(.center).padding(.horizontal, 24)
+            Text("@\(live.handle) · \(short(live.followers)) followers").font(.jk(13)).foregroundColor(T.sub)
+            Text(live.bio).font(.jk(14)).multilineTextAlignment(.center).padding(.horizontal, 24)
             HStack(spacing: 8) {
                 Chip(text: live.trait.rawValue.capitalized)
                 if live.followsYou { Chip(text: "Follows you", color: T.blue.opacity(0.8)) }
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text("Relationship").font(.system(size: 12)).foregroundColor(T.sub)
+                Text("Relationship").font(.jk(12)).foregroundColor(T.sub)
                 Bar(value: Double(live.affinity) / 100, color: T.lime)
             }.padding(.horizontal, 28)
             MemoryBlock(handle: live.handle)
@@ -436,9 +483,9 @@ struct ComposeSheet: View {
                 VStack(alignment: .leading, spacing: 14) {
                     if let o = outcome {
                         VStack(spacing: 8) {
-                            Text(o.emoji).font(.system(size: 50))
-                            Text(o.title).font(.system(size: 22, weight: .heavy))
-                            Text(o.detail).font(.system(size: 14)).foregroundColor(T.sub).multilineTextAlignment(.center)
+                            Text(o.emoji).font(.jk(50))
+                            Text(o.title).font(.jk(22, .heavy))
+                            Text(o.detail).font(.jk(14)).foregroundColor(T.sub).multilineTextAlignment(.center)
                             BigButton(title: "Done") { dismiss() }.padding(.top, 8)
                         }.frame(maxWidth: .infinity).padding(.top, 30)
                     } else {
@@ -447,14 +494,14 @@ struct ComposeSheet: View {
                                 ForEach(kinds) { k in
                                     Button { kind = k } label: {
                                         Text("\(k.icon) \(k.label)")
-                                            .font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+                                            .font(.jk(14, .semibold)).foregroundColor(.white)
                                             .padding(.horizontal, 12).padding(.vertical, 8)
                                             .background(kind == k ? T.blue : T.card).clipShape(Capsule())
                                     }
                                 }
                             }
                         }
-                        Text(kind.blurb).font(.system(size: 13)).foregroundColor(T.sub)
+                        Text(kind.blurb).font(.jk(13)).foregroundColor(T.sub)
                         TextEditor(text: $text)
                             .scrollContentBackground(.hidden)
                             .frame(minHeight: 140)
@@ -463,14 +510,14 @@ struct ComposeSheet: View {
                         HStack {
                             Button { text = kind.suggestion() } label: { Label("Suggest", systemImage: "sparkles") }
                             Spacer()
-                            Text("\(240 - text.count)").font(.system(size: 12)).foregroundColor(T.sub)
+                            Text("\(240 - text.count)").font(.jk(12)).foregroundColor(T.sub)
                         }
                         HStack {
                             Image(systemName: "bolt.fill").foregroundColor(T.gold)
-                            Text("\(kind.cost) energy").font(.system(size: 13, weight: .semibold))
+                            Text("\(kind.cost) energy").font(.jk(13, .semibold))
                             Spacer()
                             if !game.canAfford(kind.cost) {
-                                Text("Not enough energy").font(.system(size: 12)).foregroundColor(T.orange)
+                                Text("Not enough energy").font(.jk(12)).foregroundColor(T.orange)
                             }
                         }
                         BigButton(title: "Post", enabled: !text.trimmed.isEmpty && game.canAfford(kind.cost)) {
@@ -506,9 +553,9 @@ struct EventSheet: View {
                 VStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
-                            Text("Aura").font(.system(size: 13, weight: .bold))
+                            Text("Aura").font(.jk(13, .bold))
                             Spacer()
-                            Text("\(st.aura)%").font(.system(size: 13, weight: .bold)).foregroundColor(T.lime)
+                            Text("\(st.aura)%").font(.jk(13, .bold)).foregroundColor(T.lime)
                         }
                         Bar(value: Double(st.aura) / 100, color: T.lime, height: 10)
                     }.card()
@@ -517,14 +564,14 @@ struct EventSheet: View {
                         resultCard(r)
                     } else if let e = st.currentEvent {
                         VStack(spacing: 10) {
-                            HStack { Text(e.emoji).font(.system(size: 30)); if e.ai { Chip(text: "AI written") }; Spacer() }
-                            Text(game.fill(e.text, st)).font(.system(size: 17, weight: .semibold))
+                            HStack { Text(e.emoji).font(.jk(30)); if e.ai { Chip(text: "AI written") }; Spacer() }
+                            Text(game.fill(e.text, st)).font(.jk(17, .semibold))
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }.card()
                         ForEach(Array(e.choices.enumerated()), id: \.offset) { i, c in
                             Button { game.choose(i) } label: {
                                 HStack {
-                                    Text(game.fill(c.text, st)).font(.system(size: 15, weight: .semibold))
+                                    Text(game.fill(c.text, st)).font(.jk(15, .semibold))
                                         .foregroundColor(.white).multilineTextAlignment(.leading)
                                     Spacer()
                                 }
@@ -549,10 +596,10 @@ struct EventSheet: View {
     @ViewBuilder
     private func resultCard(_ r: ResultRecord) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack { Text(r.emoji).font(.system(size: 34)); Spacer() }
-            Text(r.text).font(.system(size: 16))
-            if r.cancelled { Text("🚫 Cancelled. Lost 30% of followers.").font(.system(size: 14, weight: .bold)).foregroundColor(T.red) }
-            if r.iconUnlocked { Text("👑 Icon status! +20% followers.").font(.system(size: 14, weight: .bold)).foregroundColor(T.gold) }
+            HStack { Text(r.emoji).font(.jk(34)); Spacer() }
+            Text(r.text).font(.jk(16))
+            if r.cancelled { Text("🚫 Cancelled. Lost 30% of followers.").font(.jk(14, .bold)).foregroundColor(T.red) }
+            if r.iconUnlocked { Text("👑 Icon status! +20% followers.").font(.jk(14, .bold)).foregroundColor(T.gold) }
             HStack {
                 Chip(text: "Aura \(r.auraDelta >= 0 ? "+" : "")\(r.auraDelta)%", color: r.auraDelta >= 0 ? T.lime.opacity(0.35) : T.red.opacity(0.4))
                 Chip(text: "\(r.followerDelta >= 0 ? "+" : "")\(short(r.followerDelta)) followers")

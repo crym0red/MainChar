@@ -9,6 +9,14 @@
 		<key>UIImageRespectsSafeAreaInsets</key>
 		<true/>
 	</dict>
+	<key>UIAppFonts</key>
+	<array>
+		<string>PlusJakartaSans_400Regular.ttf</string>
+		<string>PlusJakartaSans_500Medium.ttf</string>
+		<string>PlusJakartaSans_600SemiBold.ttf</string>
+		<string>PlusJakartaSans_700Bold.ttf</string>
+		<string>PlusJakartaSans_800ExtraBold.ttf</string>
+	</array>
 	<key>UIRequiresFullScreen</key>
 	<true/>
 	<key>UISupportedInterfaceOrientations</key>

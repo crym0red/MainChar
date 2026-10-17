@@ -69,7 +69,7 @@ struct EditProfileSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
-                Text("Edit Profile").font(.system(size: 24, weight: .semibold))
+                Text("Edit Profile").font(.jk(24, .semibold))
                 HStack {
                     Button { dismiss() } label: {
                         Image(systemName: "arrow.left").font(.system(size: 22, weight: .semibold)).foregroundColor(.white)
@@ -124,7 +124,7 @@ struct EditProfileSheet: View {
 
                     label("Character name")
                     TextField("Name", text: $p.name)
-                        .font(.system(size: 22)).padding(.horizontal, 20).padding(.vertical, 18)
+                        .font(.jk(22)).padding(.horizontal, 20).padding(.vertical, 18)
                         .background(T.card2).clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
 
                     label("Handle").foregroundColor(T.sub.opacity(0.7)).padding(.top, 10)
@@ -133,17 +133,17 @@ struct EditProfileSheet: View {
                         Text(p.handle).foregroundColor(T.sub)
                         Spacer()
                     }
-                    .font(.system(size: 22)).padding(.horizontal, 20).padding(.vertical, 18)
+                    .font(.jk(22)).padding(.horizontal, 20).padding(.vertical, 18)
                     .background(T.card).clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    Text("Editing your handle is temporarily disabled.").font(.system(size: 16)).foregroundColor(T.sub.opacity(0.7))
+                    Text("Editing your handle is temporarily disabled.").font(.jk(16)).foregroundColor(T.sub.opacity(0.7))
 
                     label("Profile bio").padding(.top, 10)
                     TextEditor(text: $p.bio)
                         .scrollContentBackground(.hidden)
-                        .font(.system(size: 22)).frame(height: 150).padding(12)
+                        .font(.jk(22)).frame(height: 150).padding(12)
                         .background(T.card2).clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                         .onChange(of: p.bio) { v in if v.count > 1000 { p.bio = String(v.prefix(1000)) } }
-                    Text("\(p.bio.count)/1000").font(.system(size: 17)).foregroundColor(T.sub)
+                    Text("\(p.bio.count)/1000").font(.jk(17)).foregroundColor(T.sub)
                         .frame(maxWidth: .infinity, alignment: .trailing)
 
                     label("Vibe").padding(.top, 10)
@@ -151,7 +151,7 @@ struct EditProfileSheet: View {
                         HStack {
                             ForEach(Vibe.allCases) { v in
                                 Button { p.vibe = v } label: {
-                                    Text("\(v.emoji) \(v.label)").font(.system(size: 17, weight: .semibold)).foregroundColor(.white)
+                                    Text("\(v.emoji) \(v.label)").font(.jk(17, .semibold)).foregroundColor(.white)
                                         .padding(.horizontal, 16).padding(.vertical, 10)
                                         .background(p.vibe == v ? T.blue : T.card2).clipShape(Capsule())
                                 }
@@ -179,7 +179,7 @@ struct EditProfileSheet: View {
     }
 
     private func label(_ t: String) -> Text {
-        Text(t).font(.system(size: 22, weight: .medium)).foregroundColor(Color.white.opacity(0.8))
+        Text(t).font(.jk(22, .medium)).foregroundColor(Color.white.opacity(0.8))
     }
 
     private func save() {
@@ -207,7 +207,7 @@ struct AllStoriesSheet: View {
         let stories = game.s.ex.stories
         VStack(spacing: 0) {
             ZStack {
-                Text("Your Stories").font(.system(size: 24, weight: .semibold))
+                Text("Your Stories").font(.jk(24, .semibold))
                 HStack {
                     Button { dismiss() } label: {
                         Image(systemName: "arrow.left").font(.system(size: 22, weight: .semibold)).foregroundColor(.white)
@@ -227,7 +227,7 @@ struct AllStoriesSheet: View {
                             ZStack(alignment: .bottomLeading) {
                                 StoryThumb(story: s, width: 110, height: 170)
                                     .frame(maxWidth: .infinity)
-                                Text(s.text).font(.system(size: 14)).foregroundColor(.white).lineLimit(1).padding(8)
+                                Text(s.text).font(.jk(14)).foregroundColor(.white).lineLimit(1).padding(8)
                             }
                         }
                     }
@@ -251,7 +251,7 @@ struct CharactersSheet: View {
         let cast = game.s.npcs.filter { $0.id != "newsdesk" }
         VStack(spacing: 0) {
             ZStack {
-                Text("My characters").font(.system(size: 24, weight: .semibold))
+                Text("My characters").font(.jk(24, .semibold))
                 HStack {
                     Button { dismiss() } label: {
                         Image(systemName: "arrow.left").font(.system(size: 22, weight: .semibold)).foregroundColor(.white)
@@ -268,11 +268,11 @@ struct CharactersSheet: View {
                             HStack(spacing: 14) {
                                 Avatar(emoji: n.emoji, key: n.handle, size: 56)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(n.name).font(.system(size: 20, weight: .semibold)).foregroundColor(.white)
-                                    Text("@\(n.handle) · \(n.trait.rawValue.capitalized)").font(.system(size: 15)).foregroundColor(T.sub)
+                                    Text(n.name).font(.jk(20, .semibold)).foregroundColor(.white)
+                                    Text("@\(n.handle) · \(n.trait.rawValue.capitalized)").font(.jk(15)).foregroundColor(T.sub)
                                 }
                                 Spacer()
-                                Text("\(n.affinity)%").font(.system(size: 17, weight: .semibold)).foregroundColor(T.lime)
+                                Text("\(n.affinity)%").font(.jk(17, .semibold)).foregroundColor(T.lime)
                                 Image(systemName: "chevron.right").foregroundColor(T.sub)
                             }
                             .padding(14).background(T.card)
@@ -307,7 +307,7 @@ struct GameSettingsView: View {
         let st = game.s
         VStack(spacing: 0) {
             ZStack {
-                Text("Settings").font(.system(size: 24, weight: .semibold))
+                Text("Settings").font(.jk(24, .semibold))
                 HStack {
                     Button { dismiss() } label: {
                         Image(systemName: "arrow.left").font(.system(size: 22, weight: .semibold)).foregroundColor(.white)
@@ -382,7 +382,7 @@ struct GameSettingsView: View {
     }
 
     private func header(_ t: String) -> some View {
-        Text(t).font(.system(size: 20)).foregroundColor(T.sub).padding(.top, 4)
+        Text(t).font(.jk(20)).foregroundColor(T.sub).padding(.top, 4)
     }
 
     private func group<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
@@ -399,9 +399,9 @@ struct GameSettingsView: View {
             HStack(spacing: 16) {
                 Image(systemName: icon).font(.system(size: 22)).foregroundColor(tint == .white ? T.sub : tint)
                     .frame(width: 34)
-                Text(title).font(.system(size: 22)).foregroundColor(tint)
+                Text(title).font(.jk(22)).foregroundColor(tint)
                 Spacer(minLength: 6)
-                if let t = trailing { Text(t).font(.system(size: 21)).foregroundColor(T.sub) }
+                if let t = trailing { Text(t).font(.jk(21)).foregroundColor(T.sub) }
                 if let i2 = icon2 { Image(systemName: i2).font(.system(size: 24)).foregroundColor(T.sub) }
                 if chevron { Image(systemName: "chevron.right").font(.system(size: 18, weight: .semibold)).foregroundColor(T.sub) }
             }

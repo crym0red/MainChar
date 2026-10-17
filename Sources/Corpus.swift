@@ -68,12 +68,48 @@ enum Corpus {
         return words.randomElement() ?? fallback
     }
 
-    /// bucket: comment.pos, comment.neg, rebut.agree, rebut.fight, dm.warm, dm.cold
-    static func line(trait: Trait, bucket: String, me: String, topic: String, quote: String) -> String? {
-        guard var t = raw("\(trait.rawValue)|\(bucket)") else { return nil }
+    /// Picks the spicier or tamer variant of a bucket. heat 0 = polite, 1 = full wild west.
+    private static func flavor(_ b: String, _ heat: Double) -> String {
+        let r = Double.random(in: 0...1)
+        switch b {
+        case "comment.neg": return r < heat * 0.55 ? "roast.hard" : (r < heat * 0.55 + 0.22 ? "roast.nitpick" : b)
+        case "comment.pos": return r < heat * 0.45 ? "hype.max" : b
+        case "rebut.fight": return r < 0.2 + heat * 0.55 ? "rebut.fight.hot" : b
+        case "rebut.agree": return r < 0.3 ? "rebut.defend" : b
+        case "dm.cold": return r < heat * 0.65 ? "dm.hostile" : b
+        default: return b
+        }
+    }
+
+    /// bucket: comment.pos, comment.neg, rebut.agree, rebut.fight, dm.warm, dm.cold (plus the wild-west
+    /// variants roast.hard, roast.nitpick, hype.max, rebut.fight.hot, rebut.defend, dm.hostile,
+    /// post.subtweet, post.rant, post.hype which flavor() mixes in).
+    static func line(trait: Trait, bucket: String, me: String, topic: String, quote: String, heat: Double = 0.45) -> String? {
+        var h = heat
+        if trait == .hater || trait == .chaos { h += 0.2 } else if trait == .wholesome { h -= 0.2 }
+        h = min(0.95, max(0.0, h))
+        let b = flavor(bucket, h)
+        guard var t = raw("\(trait.rawValue)|\(b)") ?? raw("\(trait.rawValue)|\(bucket)") else { return nil }
         t = t.replacingOccurrences(of: "{me}", with: "@" + me)
         t = t.replacingOccurrences(of: "{topic}", with: topic)
         t = t.replacingOccurrences(of: "{quote}", with: quote)
+        return t
+    }
+
+    /// A feed post in the character's voice: subtweets, rants and hype.
+    static func post(trait: Trait, me: String, topic: String) -> String? {
+        let r = Double.random(in: 0...1)
+        let bucket: String
+        switch trait {
+        case .hater, .gossip: bucket = r < 0.5 ? "post.subtweet" : (r < 0.85 ? "post.rant" : "post.hype")
+        case .hype, .wholesome: bucket = r < 0.6 ? "post.hype" : (r < 0.8 ? "post.rant" : "post.subtweet")
+        case .chaos: bucket = r < 0.5 ? "post.rant" : (r < 0.75 ? "post.subtweet" : "post.hype")
+        case .mogul: bucket = r < 0.4 ? "post.hype" : (r < 0.7 ? "post.subtweet" : "post.rant")
+        }
+        guard var t = raw("\(trait.rawValue)|\(bucket)") else { return nil }
+        t = t.replacingOccurrences(of: "{me}", with: "@" + me)
+        t = t.replacingOccurrences(of: "{topic}", with: topic)
+        t = t.replacingOccurrences(of: "{quote}", with: topic)
         return t
     }
 }

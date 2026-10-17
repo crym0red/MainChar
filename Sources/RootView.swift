@@ -13,6 +13,7 @@ struct RootView: View {
         .environmentObject(game)
         .environmentObject(nav)
         .preferredColorScheme(.dark)
+        .dynamicTypeSize(.large)
         .tint(T.blue)
         .onChange(of: phase) { p in
             if p == .active { game.tickEnergy() } else { game.flush() }
@@ -64,7 +65,7 @@ struct HubView: View {
             Button { flow = FlowSeed(world: nil) } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "plus").font(.system(size: 20, weight: .semibold))
-                    Text("Create my own").font(.system(size: 20, weight: .medium))
+                    Text("Create my own").font(.jk(20, .medium))
                 }
                 .foregroundColor(.white).padding(.horizontal, 28).padding(.vertical, 18)
                 .background(T.blue).clipShape(Capsule())
@@ -82,7 +83,7 @@ struct HubView: View {
     private var header: some View {
         HStack(spacing: 10) {
             Text("MainChar")
-                .font(.system(size: 30, weight: .black))
+                .font(.jk(30, .black))
                 .foregroundStyle(LinearGradient(colors: [Color(red: 0.80, green: 0.62, blue: 1.0), Color(red: 0.55, green: 0.45, blue: 1.0)],
                                                 startPoint: .leading, endPoint: .trailing))
             Spacer()
@@ -106,12 +107,12 @@ struct HubView: View {
                     HStack(spacing: 12) {
                         Avatar(emoji: sv.persona.emoji, key: sv.persona.handle, size: 50)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(sv.persona.name).font(.system(size: 17, weight: .bold)).foregroundColor(.white)
+                            Text(sv.persona.name).font(.jk(17, .bold)).foregroundColor(.white)
                             Text("\(sv.world.title) · Day \(sv.day) · Lvl \(sv.level)")
-                                .font(.system(size: 13)).foregroundColor(T.sub)
+                                .font(.jk(13)).foregroundColor(T.sub)
                         }
                         Spacer()
-                        Text(short(sv.followers)).font(.system(size: 15, weight: .bold)).foregroundColor(T.blue)
+                        Text(short(sv.followers)).font(.jk(15, .bold)).foregroundColor(T.blue)
                         Image(systemName: "chevron.right").font(.system(size: 12)).foregroundColor(T.sub)
                     }
                     .card()
@@ -127,7 +128,7 @@ struct HubView: View {
     private func carousel(_ title: String, _ worlds: [WorldDef]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             if !worlds.isEmpty {
-                Text(title).font(.system(size: 24, weight: .regular)).padding(.horizontal, 16)
+                Text(title).font(.jk(24, .regular)).padding(.horizontal, 16)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 14) {
                         ForEach(worlds) { w in
@@ -141,7 +142,7 @@ struct HubView: View {
 
     private var myPresets: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("My presets").font(.system(size: 24, weight: .regular)).padding(.horizontal, 16)
+            Text("My presets").font(.jk(24, .regular)).padding(.horizontal, 16)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 14) {
                     ForEach(game.store.presets.filter(match)) { w in
@@ -175,21 +176,21 @@ struct WorldCardView: View {
                 LinearGradient(colors: [Color(hue: world.hue, saturation: 0.65, brightness: 0.6),
                                         Color(hue: h2, saturation: 0.7, brightness: 0.25)],
                                startPoint: .topLeading, endPoint: .bottomTrailing)
-                Text(world.emoji).font(.system(size: 120)).opacity(0.32)
+                Text(world.emoji).font(.jk(120)).opacity(0.32)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 HStack(spacing: 8) {
                     Text(world.emoji)
                     Text(world.title).lineLimit(1)
                 }
-                .font(.system(size: 17, weight: .medium)).foregroundColor(.white)
+                .font(.jk(17, .medium)).foregroundColor(.white)
                 .padding(.horizontal, 16).padding(.vertical, 10)
                 .background(Color.black.opacity(0.45)).clipShape(Capsule())
                 .padding(14)
             }
             .frame(height: 170)
             VStack(alignment: .leading, spacing: 8) {
-                Text(world.title).font(.system(size: 24, weight: .medium)).foregroundColor(.white).lineLimit(1)
-                Text(world.tagline).font(.system(size: 16)).foregroundColor(T.sub).lineLimit(2).multilineTextAlignment(.leading)
+                Text(world.title).font(.jk(24, .medium)).foregroundColor(.white).lineLimit(1)
+                Text(world.tagline).font(.jk(16)).foregroundColor(T.sub).lineLimit(2).multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 HStack {
                     HStack(spacing: -10) {
@@ -197,13 +198,13 @@ struct WorldCardView: View {
                             Avatar(emoji: n.emoji, key: n.handle, size: 34)
                                 .overlay(Circle().stroke(T.card, lineWidth: 2))
                         }
-                        Text("+\(max(0, world.cast.count - 4))").font(.system(size: 13, weight: .bold)).foregroundColor(.white)
+                        Text("+\(max(0, world.cast.count - 4))").font(.jk(13, .bold)).foregroundColor(.white)
                             .frame(width: 34, height: 34).background(T.card2).clipShape(Circle())
                             .overlay(Circle().stroke(T.card, lineWidth: 2))
                     }
                     Spacer()
                     Image(systemName: "person.fill").foregroundColor(T.sub)
-                    Text("\(world.cast.count)").font(.system(size: 15)).foregroundColor(T.sub)
+                    Text("\(world.cast.count)").font(.jk(15)).foregroundColor(T.sub)
                 }
             }
             .padding(16)
@@ -234,19 +235,19 @@ struct CreateCharacterSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack { Spacer(); Avatar(emoji: "😎", key: cleanHandle, size: 96); Spacer() }
-                    Text("Your profile picture is generated from your handle.").font(.system(size: 12)).foregroundColor(T.sub)
+                    Text("Your profile picture is generated from your handle.").font(.jk(12)).foregroundColor(T.sub)
                         .frame(maxWidth: .infinity)
                     TextField("Display name", text: $name).padding(14).background(T.card).clipShape(RoundedRectangle(cornerRadius: 14))
                     TextField("handle", text: $handle).textInputAutocapitalization(.never).autocorrectionDisabled()
                         .padding(14).background(T.card).clipShape(RoundedRectangle(cornerRadius: 14))
-                    Text("Vibe").font(.system(size: 14, weight: .bold))
+                    Text("Vibe").font(.jk(14, .bold))
                     ForEach(Vibe.allCases) { v in
                         Button { vibe = v } label: {
                             HStack {
-                                Text(v.emoji).font(.system(size: 24))
+                                Text(v.emoji).font(.jk(24))
                                 VStack(alignment: .leading) {
-                                    Text(v.label).font(.system(size: 15, weight: .bold)).foregroundColor(.white)
-                                    Text(v.blurb).font(.system(size: 12)).foregroundColor(T.sub)
+                                    Text(v.label).font(.jk(15, .bold)).foregroundColor(.white)
+                                    Text(v.blurb).font(.jk(12)).foregroundColor(T.sub)
                                 }
                                 Spacer()
                                 if vibe == v { Image(systemName: "checkmark.circle.fill").foregroundColor(T.blue) }
