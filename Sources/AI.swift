@@ -3,18 +3,9 @@ import Foundation
 // MARK: - Config (keys match @AppStorage in Settings)
 
 enum AIConfig {
-    static let defaultURL = "https://text.pollinations.ai/openai"
-    static let defaultModel = "openai"
-
     static var enabled: Bool { UserDefaults.standard.object(forKey: "ai.enabled") as? Bool ?? true }
-    static var url: String {
-        let v = UserDefaults.standard.string(forKey: "ai.url") ?? ""
-        return v.trimmed.isEmpty ? defaultURL : v.trimmed
-    }
-    static var model: String {
-        let v = UserDefaults.standard.string(forKey: "ai.model") ?? ""
-        return v.trimmed.isEmpty ? defaultModel : v.trimmed
-    }
+    static var customURL: String { (UserDefaults.standard.string(forKey: "ai.url") ?? "").trimmed }
+    static var customModel: String { (UserDefaults.standard.string(forKey: "ai.model") ?? "").trimmed }
     static var key: String { (UserDefaults.standard.string(forKey: "ai.key") ?? "").trimmed }
 }
 
@@ -30,38 +21,68 @@ enum AIError: LocalizedError {
     }
 }
 
+struct AIProvider {
+    let name: String
+    let url: String
+    let model: String
+    let key: String
+}
+
 // MARK: - Client
 
 enum AI {
     private static var lastCall = Date.distantPast
+    private static var preferred = 0
 
-    /// Anonymous Pollinations allows roughly one request per 15s. Space calls out so they queue instead of failing.
+    /// Free endpoints rate-limit anonymous callers, so space requests out.
     private static func throttle() async {
-        let gap: TimeInterval = AIConfig.key.isEmpty ? 15 : 1
+        let gap: TimeInterval = 4
         let wait = gap - Date().timeIntervalSince(lastCall)
         lastCall = Date().addingTimeInterval(max(0, wait))
         if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
     }
 
-    static func chat(system: String, user: String, timeout: TimeInterval = 30) async throws -> String {
-        await throttle()
-        do {
-            return try await post(system: system, user: user, timeout: timeout)
-        } catch {
-            if let r = try? await getSimple(system: system, user: user, timeout: timeout), !r.trimmed.isEmpty { return r }
-            throw error
+    /// Provider chain: your own endpoint first (if set), then free keyless public ones.
+    private static func chain() -> [AIProvider] {
+        var l: [AIProvider] = []
+        if !AIConfig.customURL.isEmpty {
+            l.append(AIProvider(name: "custom", url: AIConfig.customURL,
+                                model: AIConfig.customModel.isEmpty ? "gpt-4o-mini" : AIConfig.customModel,
+                                key: AIConfig.key))
         }
+        l.append(AIProvider(name: "llm7", url: "https://api.llm7.io/v1/chat/completions", model: "gpt-oss", key: "unused"))
+        l.append(AIProvider(name: "pollinations", url: "https://text.pollinations.ai/openai", model: "openai", key: AIConfig.key))
+        l.append(AIProvider(name: "llm7-mistral", url: "https://api.llm7.io/v1/chat/completions", model: "mistral-Nemo-Instruct-2407", key: "unused"))
+        return l
     }
 
-    private static func post(system: String, user: String, timeout: TimeInterval) async throws -> String {
-        guard let url = URL(string: AIConfig.url) else { throw AIError.badURL }
+    static func chat(system: String, user: String, timeout: TimeInterval = 28) async throws -> String {
+        await throttle()
+        let providers = chain()
+        var lastError: Error = AIError.badResponse
+        for off in 0..<providers.count {
+            let idx = (preferred + off) % providers.count
+            do {
+                let r = try await post(providers[idx], system: system, user: user, timeout: timeout)
+                preferred = idx
+                return r
+            } catch {
+                lastError = error
+            }
+        }
+        if let r = try? await getSimple(system: system, user: user, timeout: timeout), !r.trimmed.isEmpty { return r }
+        throw lastError
+    }
+
+    private static func post(_ p: AIProvider, system: String, user: String, timeout: TimeInterval) async throws -> String {
+        guard let url = URL(string: p.url) else { throw AIError.badURL }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.timeoutInterval = timeout
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if !AIConfig.key.isEmpty { req.setValue("Bearer \(AIConfig.key)", forHTTPHeaderField: "Authorization") }
+        if !p.key.isEmpty { req.setValue("Bearer \(p.key)", forHTTPHeaderField: "Authorization") }
         let body: [String: Any] = [
-            "model": AIConfig.model,
+            "model": p.model,
             "messages": [["role": "system", "content": system], ["role": "user", "content": user]],
             "temperature": 0.95,
             "private": true
@@ -84,10 +105,9 @@ enum AI {
         var allowed = CharacterSet.urlPathAllowed
         allowed.remove(charactersIn: "/?#&%+")
         let prompt = (system + "\n\n" + user).addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
-        guard let url = URL(string: "https://text.pollinations.ai/\(prompt)?model=\(AIConfig.model)&private=true") else { throw AIError.badURL }
+        guard let url = URL(string: "https://text.pollinations.ai/\(prompt)?model=openai&private=true") else { throw AIError.badURL }
         var req = URLRequest(url: url)
         req.timeoutInterval = timeout
-        if !AIConfig.key.isEmpty { req.setValue("Bearer \(AIConfig.key)", forHTTPHeaderField: "Authorization") }
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard let http = resp as? HTTPURLResponse else { throw AIError.badResponse }
         guard (200..<300).contains(http.statusCode) else { throw AIError.http(http.statusCode) }
@@ -179,7 +199,7 @@ enum AI {
 
     static func generateWorld(goal: String, setting: String) async throws -> WorldDef {
         let (system, user) = AIPrompt.world(goal: goal, setting: setting)
-        let raw = try await chat(system: system, user: user, timeout: 60)
+        let raw = try await chat(system: system, user: user, timeout: 45)
         guard let data = jsonData(raw), let w = try? JSONDecoder().decode(WWorld.self, from: data), w.cast.count >= 4 else {
             throw AIError.badEvent
         }
@@ -236,18 +256,52 @@ enum AI {
 
     // MARK: Feed posts
 
-    private struct DTOPost: Decodable { var handle: String; var text: String }
+    struct GenPost { var handle: String; var text: String; var rHandle: String?; var rText: String? }
+    private struct DTOReply: Decodable { var handle: String?; var text: String? }
+    private struct DTOPost: Decodable { var handle: String; var text: String; var reply: DTOReply? }
     private struct DTOPosts: Decodable { var posts: [DTOPost] }
 
-    static func generatePosts(system: String, user: String) async throws -> [(String, String)] {
-        let raw = try await chat(system: system, user: user)
+    static func generatePosts(system: String, user: String) async throws -> [GenPost] {
+        let raw = try await chat(system: system, user: user, timeout: 40)
         guard let data = jsonData(raw), let dto = try? JSONDecoder().decode(DTOPosts.self, from: data) else { throw AIError.badEvent }
-        let out = dto.posts.compactMap { p -> (String, String)? in
+        let out = dto.posts.compactMap { p -> GenPost? in
             let t = p.text.trimmed
-            return t.isEmpty ? nil : (clean(p.handle), String(t.prefix(240)))
+            if t.isEmpty { return nil }
+            let rt = (p.reply?.text ?? "").trimmed
+            return GenPost(handle: clean(p.handle), text: String(t.prefix(260)),
+                           rHandle: p.reply?.handle.map { clean($0) },
+                           rText: rt.isEmpty ? nil : String(rt.prefix(160)))
         }
         if out.isEmpty { throw AIError.badEvent }
         return out
+    }
+
+    // MARK: Replies to the player's post
+
+    struct GenReply { var handle: String; var text: String }
+    private struct DTOReplyItem: Decodable { var handle: String; var text: String }
+    private struct DTOReplies: Decodable { var replies: [DTOReplyItem] }
+
+    static func generateReplies(system: String, user: String) async throws -> [GenReply] {
+        let raw = try await chat(system: system, user: user, timeout: 30)
+        guard let data = jsonData(raw), let dto = try? JSONDecoder().decode(DTOReplies.self, from: data) else { throw AIError.badEvent }
+        let out = dto.replies.compactMap { r -> GenReply? in
+            let t = r.text.trimmed
+            return t.isEmpty ? nil : GenReply(handle: clean(r.handle), text: String(t.prefix(200)))
+        }
+        if out.isEmpty { throw AIError.badEvent }
+        return out
+    }
+
+    // MARK: Intro story
+
+    private struct DTOIntro: Decodable { var story: String; var quest: String; var post: String }
+
+    static func generateIntro(system: String, user: String) async throws -> Intro {
+        let raw = try await chat(system: system, user: user, timeout: 20)
+        guard let data = jsonData(raw), let d = try? JSONDecoder().decode(DTOIntro.self, from: data),
+              !d.story.trimmed.isEmpty, !d.quest.trimmed.isEmpty, !d.post.trimmed.isEmpty else { throw AIError.badEvent }
+        return Intro(story: d.story.trimmed, questText: String(d.quest.trimmed.prefix(120)), questPost: String(d.post.trimmed.prefix(240)))
     }
 
     // MARK: DM reply
@@ -314,13 +368,52 @@ enum AIPrompt {
     }
 
     static func posts(_ s: GameState) -> (String, String) {
-        let system = "You write short in-character social media posts for a mobile social-sim game. Output ONLY valid minified JSON. No markdown."
+        let mine = s.posts.filter { $0.isYou }.prefix(3).map { "- \($0.text)" }.joined(separator: "\n")
+        let events = s.recent.suffix(2).map { "- \($0)" }.joined(separator: "\n")
+        let system = "You write the live social feed of a fictional online world for a mobile game. Posts must read like real people posting in that specific niche: casual, specific, jargon-aware, never generic motivational filler. Output ONLY valid minified JSON. No markdown."
         let user = """
         \(worldBlock(s))
         Cast (use these exact handles): \(castBlock(s))
-        The player is \(s.persona.name) (@\(s.persona.handle)) with \(short(s.followers)) followers. It is day \(s.day).
-        Write 4 posts from 4 DIFFERENT cast members. Each post in that character's voice, <= 140 chars, fits the world, PG-13, no real people or brands. Some may mention @\(s.persona.handle).
-        JSON shape: {"posts":[{"handle":"cast_handle","text":"..."}]}
+        The player is \(s.persona.name) (@\(s.persona.handle)), \(short(s.followers)) followers, aura \(s.aura)%. It is day \(s.day).
+        What the player posted recently:
+        \(mine.isEmpty ? "- nothing yet" : mine)
+        Recent events in their life:
+        \(events.isEmpty ? "- nothing yet" : events)
+
+        Write 6 posts from 6 DIFFERENT cast members, in each character's own voice and niche.
+        Rules:
+        - Talk about the real stuff people in THIS world care about: its tools, places, slang, rivalries, news, memes. Be concrete (name specific in-world things).
+        - Vary the format: a flex, a complaint, a question to followers, a hot take, a meme-ish one-liner, a shoutout.
+        - At least two should react to the player (mention @\(s.persona.handle) or their recent posts/events) and at least one should be about another cast member.
+        - 30 to 200 characters. Mostly lowercase, natural, few emoji, no hashtags spam. PG-13. No real people or brands.
+        - For 4 of the posts add a short "reply" from a different cast member (<= 90 chars).
+        JSON shape: {"posts":[{"handle":"cast_handle","text":"...","reply":{"handle":"other_handle","text":"..."}}]}
+        """
+        return (system, user)
+    }
+
+    static func replies(_ s: GameState, text: String, delta: Int) -> (String, String) {
+        let system = "You write the replies under a post in a fictional online world for a mobile game. Replies must sound like real people in that specific niche. Output ONLY valid minified JSON. No markdown."
+        let mood = delta >= 0 ? "mostly positive, a couple of playful or skeptical" : "mixed to negative, some people roast it"
+        let user = """
+        \(worldBlock(s))
+        Cast (use these exact handles): \(castBlock(s))
+        The player \(s.persona.name) (@\(s.persona.handle)) just posted: "\(text)"
+        Write 4 replies from 4 DIFFERENT cast members, in character, \(mood). Be concrete and use this world's jargon. Some may @mention the player or each other. 20 to 140 characters each, casual, PG-13, no real people or brands.
+        JSON shape: {"replies":[{"handle":"cast_handle","text":"..."}]}
+        """
+        return (system, user)
+    }
+
+    static func intro(_ w: WorldDef, _ p: Persona) -> (String, String) {
+        let system = "You write the opening of a social-media simulation game. Output ONLY valid minified JSON. No markdown."
+        let user = """
+        World: \(w.title) - \(w.tagline)
+        Setting: \(String(w.setting.prefix(500)))
+        Player: \(p.name) (@\(p.handle)), vibe: \(p.vibe.label)
+        Goal: \(w.goal)
+        Write: "story" = 2 short paragraphs (<= 320 chars total) starting with a one-line scene-setter about this world, then addressing the player as @\(p.handle) and what they are trying to do; "quest" = a first side quest <= 80 chars (an instruction like "Start a fight with..."); "post" = the exact first post the player could publish for that quest, <= 160 chars, first person, casual, specific to this world. PG-13, no real people or brands.
+        JSON shape: {"story":"...","quest":"...","post":"..."}
         """
         return (system, user)
     }
@@ -339,19 +432,20 @@ enum AIPrompt {
     }
 
     static func world(goal: String, setting: String) -> (String, String) {
-        let system = "You design worlds for a mobile social-media simulation game. Output ONLY valid minified JSON. No markdown, no commentary."
+        let system = "You design believable social-media worlds for a mobile simulation game. Output ONLY valid minified JSON. No markdown, no commentary."
         let user = """
         The player wrote this world.
         Main character goal: \(goal)
         World setting: \(String(setting.prefix(1500)))
 
-        Create the cast and progression for this world. Rules:
-        - PG-13. Entirely fictional people. No real people, brands, or copyrighted characters.
-        - cast: exactly 6 characters, one for each trait: hype, hater, wholesome, gossip, mogul, chaos. Each has name, handle (lowercase letters/numbers/underscores, no spaces), one emoji, a bio <= 60 chars in their voice, trait, followers (integer 2000-500000).
-        - news: a gossip/news account for this world: name, handle, emoji.
-        - skills: exactly 3, each with a name (2-3 words) and a funny desc <= 70 chars that fits the world.
-        - milestones: exactly 5 steps toward the goal in order. Each has text <= 70 chars and reqs: list of {"skill":0-2,"level":number}; early ones need level 10-12 in one skill, the last needs levels 16-20 in all three.
-        - quests: exactly 6 short post prompts <= 70 chars that fit the world.
+        Build the cast and progression so the world feels real and specific to the text above.
+        Rules:
+        - PG-13. Entirely fictional people. No real people, brands, or copyrighted characters (invented names for in-world products and groups are fine).
+        - cast: exactly 6 accounts that would realistically exist in this exact world. Give each a believable full name (mix genders, ages and cultures), a handle that looks like a real username for their niche (lowercase letters, numbers, underscores or dots; may use in-world jargon, e.g. like "dylib_dani" or "nightshift.rae"), one emoji, a bio written the way that person would write their own social bio (<= 70 chars, specific to their niche, never generic like "loves life"), a trait (one each of hype, hater, wholesome, gossip, mogul, chaos), and followers (integer 2000-500000, the mogul the biggest).
+        - news: an account that reports on this world (name, handle, emoji).
+        - skills: exactly 3 skills a person needs to succeed in THIS world, name (2-3 words) + funny desc <= 70 chars.
+        - milestones: exactly 5 steps toward the goal in order, using this world's own language. Each has text <= 70 chars and reqs: list of {"skill":0-2,"level":number}; early ones need level 10-12 in one skill, the last needs levels 16-20 in all three.
+        - quests: exactly 6 short post prompts <= 70 chars that fit this world.
         - title: <= 22 chars. emoji: one emoji. tagline: <= 80 chars.
         JSON shape:
         {"title":"","emoji":"","tagline":"","cast":[{"name":"","handle":"","emoji":"","bio":"","trait":"hype","followers":12000}],"news":{"name":"","handle":"","emoji":""},"skills":[{"name":"","desc":""}],"milestones":[{"text":"","reqs":[{"skill":0,"level":11}]}],"quests":[""]}

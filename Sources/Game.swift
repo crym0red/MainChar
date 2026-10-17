@@ -8,6 +8,7 @@ final class Game: ObservableObject {
     @Published var typing: Set<String> = []
     @Published var aiNote = ""
     @Published var openChat: String? = nil
+    @Published var pendingResult: Outcome? = nil
 
     var prefetched: StoryEvent?
     private var prefetching = false
@@ -209,7 +210,7 @@ final class Game: ObservableObject {
 
     // MARK: Starting games / worlds
 
-    func start(world: WorldDef, persona: Persona, asNPC: String? = nil) {
+    func start(world: WorldDef, persona: Persona, asNPC: String? = nil, first: String? = nil, intro: Intro? = nil) {
         var w = world
         w.news.id = "newsdesk"
         var npcs = w.cast
@@ -218,8 +219,13 @@ final class Game: ObservableObject {
             followers = max(150, min(5000, npcs[idx].followers / 20))
             npcs.remove(at: idx)
         }
+        if let f = first, let j = npcs.firstIndex(where: { $0.handle == f }) {
+            npcs[j].followsYou = true
+            npcs[j].affinity = 45
+        }
         npcs.append(w.news)
         var st = GameState(world: w, persona: persona, followers: followers)
+        st.intro = intro ?? fallbackIntro(w, persona)
         st.npcs = npcs
         st.skills = w.skills
         st.milestones = w.milestones.map { var m = $0; m.done = false; m.skipped = false; return m }
@@ -284,13 +290,15 @@ final class Game: ObservableObject {
     // MARK: Feed
 
     private func fallbackPosts(_ st: GameState, _ n: Int) -> [Post] {
-        let pool = st.npcs.filter { $0.id != "newsdesk" }
+        let pool = st.npcs.filter { $0.id != "newsdesk" }.shuffled()
         guard !pool.isEmpty else { return [] }
+        let topics = Topics.forWorld(st.world)
         var out: [Post] = []
-        for _ in 0..<n {
-            guard let npc = pool.randomElement() else { break }
-            let text = Lines.feed[npc.trait]?.randomElement() ?? "just vibing"
-            out.append(makePost(npc, text, st))
+        for npc in pool.prefix(n) {
+            var text: String? = nil
+            if Double.random(in: 0...1) < 0.85 { text = Topics.line(trait: npc.trait, topics: topics) }
+            if text == nil { text = Lines.feed[npc.trait]?.randomElement() }
+            out.append(makePost(npc, text ?? "just vibing", st))
         }
         return out
     }
@@ -314,17 +322,26 @@ final class Game: ObservableObject {
         }
     }
 
+    private var lastPostFetch = Date.distantPast
+
     func refreshFeed(ai: Bool = true) {
         var st = s
-        st.posts.insert(contentsOf: fallbackPosts(st, 3), at: 0)
-        if st.posts.count > 80 { st.posts.removeLast(st.posts.count - 80) }
-        s = st
+        if !aiOK || st.posts.count < 6 {
+            st.posts.insert(contentsOf: fallbackPosts(st, 3), at: 0)
+            if st.posts.count > 80 { st.posts.removeLast(st.posts.count - 80) }
+            s = st
+        }
         if ai { fetchAIPosts() }
+    }
+
+    func refreshIfStale() {
+        if playing, Date().timeIntervalSince(lastPostFetch) > 150 { fetchAIPosts() }
     }
 
     func fetchAIPosts() {
         guard playing, aiOK, !fetchingPosts else { return }
         fetchingPosts = true
+        lastPostFetch = Date()
         let st = s
         let (sys, usr) = AIPrompt.posts(st)
         let sid = st.id
@@ -334,21 +351,37 @@ final class Game: ObservableObject {
                 self.applyAIPosts(items, sid)
             } catch {
                 self.markDown()
+                self.addFallback(sid)
             }
             self.fetchingPosts = false
         }
     }
 
-    private func applyAIPosts(_ items: [(String, String)], _ sid: UUID) {
+    private func addFallback(_ sid: UUID) {
         guard let i = saveIndex(sid) else { return }
         var st = store.saves[i]
+        st.posts.insert(contentsOf: fallbackPosts(st, 3), at: 0)
+        if st.posts.count > 80 { st.posts.removeLast(st.posts.count - 80) }
+        store.saves[i] = st
+    }
+
+    private func applyAIPosts(_ items: [AI.GenPost], _ sid: UUID) {
+        guard let i = saveIndex(sid) else { return }
+        var st = store.saves[i]
+        let cast = st.npcs.filter { $0.id != "newsdesk" }
         var added: [Post] = []
-        for (h, t) in items {
-            if let npc = st.npcs.first(where: { $0.handle == h && $0.id != "newsdesk" }) {
-                added.append(makePost(npc, t, st))
+        for g in items {
+            guard let npc = cast.first(where: { $0.handle == g.handle }) ?? cast.randomElement() else { continue }
+            var p = makePost(npc, g.text, st)
+            p.comments = []
+            if let rt = g.rText, let rh = g.rHandle,
+               let r = cast.first(where: { $0.handle == rh && $0.handle != npc.handle }) {
+                p.comments = [Comment(name: r.name, handle: r.handle, emoji: r.emoji, text: rt, verified: r.followers >= 40000)]
             }
+            added.append(p)
         }
         guard !added.isEmpty else { return }
+        aiNote = ""
         st.posts.insert(contentsOf: added, at: 0)
         if st.posts.count > 80 { st.posts.removeLast(st.posts.count - 80) }
         store.saves[i] = st
@@ -390,10 +423,10 @@ final class Game: ObservableObject {
     // MARK: Posting
 
     @discardableResult
-    func publish(kind: PostKind, text: String, quest: UUID? = nil) -> Outcome? {
+    func publish(kind: PostKind, text: String, quest: UUID? = nil, free: Bool = false) -> Outcome? {
         let t = text.trimmed
         guard !t.isEmpty else { return nil }
-        guard spend(kind.cost) else { return nil }
+        guard free || spend(kind.cost) else { return nil }
         var st = s
         let delta = Int.random(in: kind.aura)
         let base = Double(max(30, st.followers)) / 10.0
@@ -444,15 +477,81 @@ final class Game: ObservableObject {
         let (cancelled, icon) = settleAura(&st)
         logIt(&st, kind.icon, "Posted a \(kind.label)", String(t.prefix(80)))
         let net = st.followers - before
+        let auraNow = st.aura
+        let sid = st.id
         s = st
         checkBadges()
+        fetchReplies(postID: post.id, text: t, sid: sid, delta: delta)
 
         var detail = "+\(short(likes)) likes · \(net >= 0 ? "+" : "")\(short(net)) followers · aura \(delta >= 0 ? "+" : "")\(delta)%"
         var title = viral ? "Went viral!" : "Posted"
         var emoji = viral ? "🔥" : kind.icon
         if cancelled { title = "Cancelled"; emoji = "🚫"; detail = "Aura hit 0. Lost 30% of followers." }
         if icon { title = "Icon status!"; emoji = "👑"; detail = "Aura hit 100%. +20% followers." }
-        return Outcome(emoji: emoji, title: title, detail: detail)
+        let good = ["That one landed.", "People are talking.", "Quietly effective.", "The timeline noticed.", "Sowing seeds is always a vibe."]
+        let bad = ["Not everyone liked that.", "Bold. Risky.", "The replies are getting spicy.", "That might come back to haunt you."]
+        var o = Outcome(emoji: emoji, title: title, detail: detail)
+        o.xp = xp
+        o.auraDelta = delta
+        o.auraAfter = auraNow
+        o.postID = post.id
+        o.line = (delta >= 0 ? good : bad).randomElement() ?? ""
+        o.ups = ["\(stat.emoji) \(stat.label) ↑", net >= 0 ? "👥 Followers ↑" : "👥 Followers ↓"]
+        return o
+    }
+
+    // MARK: Replies to your posts (AI)
+
+    private func fetchReplies(postID: UUID, text: String, sid: UUID, delta: Int) {
+        guard aiOK, let i = saveIndex(sid) else { return }
+        let (sys, usr) = AIPrompt.replies(store.saves[i], text: text, delta: delta)
+        Task {
+            do {
+                let items = try await AI.generateReplies(system: sys, user: usr)
+                self.applyReplies(items, postID, sid)
+            } catch {
+                self.markDown()
+            }
+        }
+    }
+
+    private func applyReplies(_ items: [AI.GenReply], _ postID: UUID, _ sid: UUID) {
+        guard let i = saveIndex(sid) else { return }
+        var st = store.saves[i]
+        guard let pi = st.posts.firstIndex(where: { $0.id == postID }) else { return }
+        var out: [Comment] = []
+        for r in items {
+            guard let n = st.npcs.first(where: { $0.handle == r.handle && $0.id != "newsdesk" }) else { continue }
+            out.append(Comment(name: n.name, handle: n.handle, emoji: n.emoji, text: r.text, verified: n.followers >= 40000))
+        }
+        guard !out.isEmpty else { return }
+        st.posts[pi].comments = out
+        store.saves[i] = st
+    }
+
+    // MARK: Intro
+
+    func buildIntro(world: WorldDef, persona: Persona) async -> Intro? {
+        guard AIConfig.enabled else { return nil }
+        let (sys, usr) = AIPrompt.intro(world, persona)
+        return try? await AI.generateIntro(system: sys, user: usr)
+    }
+
+    private func fallbackIntro(_ w: WorldDef, _ p: Persona) -> Intro {
+        let t = Topics.forWorld(w).first ?? "the scene"
+        let tag = w.tagline.isEmpty ? "" : w.tagline + " "
+        return Intro(story: "Welcome to \(w.title).\n\n\(tag)As @\(p.handle), you're chasing one thing: \(w.goal)",
+                     questText: w.quests.first?.text ?? "Introduce yourself to the timeline.",
+                     questPost: "new here. came for \(t), staying until people know my name.")
+    }
+
+    func publishIntro() -> Outcome? {
+        guard var it = s.intro, !it.done else { return nil }
+        let o = publish(kind: .meme, text: it.questPost, free: true)
+        it.done = true
+        s.intro = it
+        pendingResult = o
+        return o
     }
 
     // MARK: Events

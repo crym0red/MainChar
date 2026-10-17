@@ -6,15 +6,18 @@ struct GameShell: View {
 
     var body: some View {
         TabView(selection: $nav.tab) {
-            FeedTab().tabItem { Label("Feed", systemImage: "house.fill") }.tag(0)
-            GoalsTab().tabItem { Label("Goals", systemImage: "target") }.tag(1)
-            MessagesTab().tabItem { Label("Messages", systemImage: "bubble.left.and.bubble.right.fill") }
+            FeedTab().tabItem { Image(systemName: "house.fill") }.tag(0)
+            GoalsTab().tabItem { Image(systemName: "target") }.tag(1)
+            MessagesTab().tabItem { Image(systemName: "bubble.left.and.bubble.right.fill") }
                 .badge(game.s.unread.count).tag(2)
-            NotifsTab().tabItem { Label("Alerts", systemImage: "bell.fill") }
+            NotifsTab().tabItem { Image(systemName: "bell.fill") }
                 .badge(game.unreadNotifs).tag(3)
-            ProfileTab().tabItem { Label("Profile", systemImage: "person.fill") }.tag(4)
+            ProfileTab().tabItem { Image(systemName: "person.fill") }.tag(4)
         }
-        .tint(T.blue)
+        .tint(.white)
+        .fullScreenCover(isPresented: Binding(get: { game.playing && game.s.intro?.done == false }, set: { _ in })) {
+            IntroFlow()
+        }
     }
 }
 
@@ -31,45 +34,55 @@ struct FeedTab: View {
     @EnvironmentObject var nav: Nav
     @State private var compose: ComposeSeed? = nil
     @State private var showEvent = false
+    @State private var showExplore = false
     @State private var npcSheet: NPC? = nil
     @State private var replyTo: UUID? = nil
     @State private var confirmExit = false
+    @State private var path: [UUID] = []
     private let timer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
+    private let olive = Color(red: 0.47, green: 0.38, blue: 0.08)
 
     var body: some View {
         let st = game.s
-        ZStack(alignment: .bottomTrailing) {
-            ScrollView {
-                LazyVStack(spacing: 0) {
+        NavigationStack(path: $path) {
+            ZStack(alignment: .bottom) {
+                VStack(spacing: 0) {
                     header(st)
-                    EnergyBar()
-                        .padding(.horizontal, 16).padding(.bottom, 10)
-                    stories(st)
-                    eventPill(st)
-                    if !game.aiNote.isEmpty {
-                        Text(game.aiNote).font(.system(size: 11)).foregroundColor(T.orange).padding(.bottom, 6)
+                    energyRow(st)
+                    Divider().background(Color.white.opacity(0.12))
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            stories(st)
+                            Divider().background(Color.white.opacity(0.12))
+                            if !game.aiNote.isEmpty {
+                                Text(game.aiNote).font(.system(size: 11)).foregroundColor(T.orange).padding(.vertical, 6)
+                            }
+                            ForEach(st.posts.filter { !st.hidden.contains($0.id) }) { p in
+                                PostRow(post: p, onReply: { replyTo = p.id }, onOpen: { path.append(p.id) })
+                                Divider().background(Color.white.opacity(0.1))
+                            }
+                            Color.clear.frame(height: 150)
+                        }
                     }
-                    ForEach(st.posts.filter { !st.hidden.contains($0.id) }) { p in
-                        PostRow(post: p, onReply: { replyTo = p.id })
-                        Divider().background(Color.white.opacity(0.08))
-                    }
-                    Color.clear.frame(height: 90)
+                    .refreshable { game.refreshFeed() }
                 }
+                floating(st)
             }
-            .refreshable { game.refreshFeed() }
-
-            Button { compose = ComposeSeed() } label: {
-                Image(systemName: "square.and.pencil")
-                    .font(.system(size: 22, weight: .bold)).foregroundColor(.white)
-                    .frame(width: 58, height: 58).background(T.blue).clipShape(Circle())
-                    .shadow(color: .black.opacity(0.4), radius: 8, y: 4)
-            }
-            .padding(20)
+            .background(T.bg)
+            .navigationDestination(for: UUID.self) { PostDetailView(postID: $0) }
+            .toolbar(.hidden, for: .navigationBar)
         }
-        .background(T.bg)
         .onReceive(timer) { _ in game.tickEnergy() }
+        .onAppear {
+            game.refreshIfStale()
+            if let id = game.pendingResult?.postID, path.last != id { path = [id] }
+        }
+        .onChange(of: game.pendingResult) { r in
+            if let id = r?.postID { path = [id] }
+        }
         .sheet(item: $compose) { seed in ComposeSheet(seed: seed) }
         .sheet(isPresented: $showEvent) { EventSheet() }
+        .sheet(isPresented: $showExplore) { ExploreSheet() }
         .sheet(item: $npcSheet) { n in NPCSheet(npc: n) }
         .sheet(item: Binding(get: { replyTo.map { IDBox(id: $0) } }, set: { replyTo = $0?.id })) { b in
             ReplySheet(postID: b.id)
@@ -78,97 +91,156 @@ struct FeedTab: View {
             Button("Leave") { game.exitToHub() }
             Button("Stay", role: .cancel) {}
         } message: { Text("Your progress is saved.") }
-        .onChange(of: game.s.threads.count) { _ in }
     }
 
     private func header(_ st: GameState) -> some View {
-        HStack {
+        HStack(spacing: 10) {
+            Image(systemName: "sun.max.fill").font(.system(size: 28)).foregroundColor(T.gold)
+            Text("Day \(st.day)").font(.system(size: 26, weight: .bold))
+            Spacer()
+            Button { game.refill() } label: {
+                HStack(spacing: 6) {
+                    Text(game.canRefill ? "Free refill" : "Refill used").font(.system(size: 17, weight: .medium))
+                    Image(systemName: "bolt.fill").foregroundColor(T.gold)
+                }
+                .foregroundColor(game.canRefill ? .white : T.sub)
+                .padding(.horizontal, 18).padding(.vertical, 13)
+                .background(T.card2).clipShape(Capsule())
+                .overlay(alignment: .topTrailing) {
+                    if game.canRefill { Circle().fill(T.red).frame(width: 12, height: 12).offset(x: 2, y: -2) }
+                }
+            }
+            .disabled(!game.canRefill)
             Button { confirmExit = true } label: {
-                Image(systemName: "rectangle.portrait.and.arrow.right")
-                    .font(.system(size: 16, weight: .semibold)).foregroundColor(T.sub)
-                    .frame(width: 36, height: 36).background(T.card).clipShape(Circle())
+                Image(systemName: "rectangle.portrait.and.arrow.right").font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(T.red).frame(width: 50, height: 50).background(T.card2).clipShape(RoundedRectangle(cornerRadius: 14))
             }
-            Spacer()
-            VStack(spacing: 0) {
-                Text("Day \(st.day)").font(.system(size: 20, weight: .heavy))
-                Text(st.world.title).font(.system(size: 11)).foregroundColor(T.sub)
-            }
-            Spacer()
-            Text(short(st.followers)).font(.system(size: 13, weight: .bold)).foregroundColor(T.blue)
-                .padding(.horizontal, 10).padding(.vertical, 8).background(T.card).clipShape(Capsule())
         }
-        .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 10)
+        .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 6)
+    }
+
+    private func energyRow(_ st: GameState) -> some View {
+        TimelineView(.periodic(from: .now, by: 1)) { ctx in
+            let (e, secs) = game.liveEnergy(at: ctx.date)
+            let s2 = game.s
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 18) {
+                    Text("Bonus").foregroundColor(T.sub)
+                    if let secs = secs {
+                        Text("Refill in \(clockString(secs))").foregroundColor(T.sub).monospacedDigit()
+                    } else {
+                        Text("Energy full").foregroundColor(T.sub)
+                    }
+                }
+                .font(.system(size: 17)).padding(.leading, 62)
+                HStack(spacing: 10) {
+                    Image(systemName: "bolt.fill").font(.system(size: 38)).foregroundColor(T.gold)
+                    HStack(spacing: 3) {
+                        Text("\(s2.bonus)").font(.system(size: 20, weight: .bold)).foregroundColor(T.gold)
+                            .frame(width: 78, height: 42).background(olive).clipShape(RoundedRectangle(cornerRadius: 5))
+                        GeometryReader { g in
+                            ZStack(alignment: .leading) {
+                                RoundedRectangle(cornerRadius: 5).fill(Color.white.opacity(0.05))
+                                RoundedRectangle(cornerRadius: 5).fill(olive)
+                                    .frame(width: g.size.width * CGFloat(e) / CGFloat(Game.maxEnergy))
+                                Text("\(e)/\(Game.maxEnergy)").font(.system(size: 20, weight: .bold)).foregroundColor(T.gold).padding(.leading, 14)
+                            }
+                        }.frame(height: 42)
+                    }
+                    .padding(4)
+                    .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.white.opacity(0.28), lineWidth: 2))
+                    Button { game.refill() } label: {
+                        Image(systemName: "plus").font(.system(size: 22, weight: .bold)).foregroundColor(T.gold)
+                            .frame(width: 52, height: 52).background(olive).clipShape(RoundedRectangle(cornerRadius: 12))
+                    }.disabled(!game.canRefill)
+                    Text(short(st.followers)).font(.system(size: 15, weight: .bold)).foregroundColor(T.blue)
+                        .padding(.horizontal, 12).padding(.vertical, 10).background(T.card2).clipShape(Capsule())
+                }
+            }
+            .padding(.horizontal, 16).padding(.bottom, 10)
+        }
     }
 
     private func stories(_ st: GameState) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 14) {
+            HStack(alignment: .top, spacing: 14) {
+                Button { compose = ComposeSeed() } label: {
+                    VStack(spacing: 6) {
+                        ZStack(alignment: .bottomTrailing) {
+                            Avatar(emoji: st.persona.emoji, key: st.persona.handle, size: 72)
+                            Image(systemName: "plus.circle.fill").font(.system(size: 26)).foregroundColor(T.blue)
+                                .background(Circle().fill(T.bg))
+                        }
+                        Text("Add story").font(.system(size: 14)).foregroundColor(T.sub)
+                    }.frame(width: 80)
+                }
+                Rectangle().fill(Color.white.opacity(0.15)).frame(width: 1, height: 84)
+                Button { showExplore = true } label: {
+                    VStack(spacing: 6) {
+                        ZStack {
+                            Circle().stroke(T.blue, lineWidth: 3).frame(width: 78, height: 78)
+                            Image(systemName: "globe").font(.system(size: 34)).foregroundColor(T.blue)
+                        }
+                        Text("Explore").font(.system(size: 14)).foregroundColor(T.sub)
+                    }.frame(width: 84)
+                }
                 ForEach(st.npcs.filter { $0.id != "newsdesk" }) { n in
                     Button { npcSheet = n } label: {
-                        VStack(spacing: 4) {
-                            Avatar(emoji: n.emoji, key: n.handle, size: 56, ring: true)
+                        VStack(spacing: 6) {
+                            Avatar(emoji: n.emoji, key: n.handle, size: 74, ring: true)
                             Text(n.name.components(separatedBy: " ").first ?? n.name)
-                                .font(.system(size: 11)).foregroundColor(T.sub).lineLimit(1)
-                        }.frame(width: 64)
+                                .font(.system(size: 14)).foregroundColor(T.sub).lineLimit(1)
+                        }.frame(width: 80)
                     }
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 16).padding(.vertical, 12)
         }
-        .padding(.bottom, 10)
     }
 
-    private func eventPill(_ st: GameState) -> some View {
-        Button { showEvent = true } label: {
-            HStack(spacing: 8) {
-                Circle().fill(T.orange).frame(width: 8, height: 8)
-                Text(st.result != nil ? "See what happened" : "New event")
-                    .font(.system(size: 14, weight: .bold))
-                Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold))
+    private func floating(_ st: GameState) -> some View {
+        VStack(spacing: 12) {
+            if st.points > 0 {
+                Button { nav.tab = 1 } label: {
+                    HStack {
+                        Image(systemName: "trophy.fill").foregroundColor(T.gold)
+                        Text("Level up!").font(.system(size: 22, weight: .bold)).foregroundColor(T.gold)
+                        Spacer()
+                        Text("Upgrade skills").font(.system(size: 19, weight: .medium)).foregroundColor(.white)
+                    }
+                    .padding(.horizontal, 24).padding(.vertical, 16)
+                    .background(LinearGradient(colors: [Color(red: 0.45, green: 0.36, blue: 0.08), Color(red: 0.30, green: 0.24, blue: 0.06)],
+                                               startPoint: .leading, endPoint: .trailing))
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(T.gold.opacity(0.7), lineWidth: 2))
+                }
+                .padding(.horizontal, 20)
             }
-            .foregroundColor(.white)
-            .padding(.horizontal, 18).padding(.vertical, 10)
-            .background(T.card2).clipShape(Capsule())
+            ZStack {
+                Button { showEvent = true } label: {
+                    HStack(spacing: 10) {
+                        Text("🎭").font(.system(size: 28)).rotationEffect(.degrees(-12)).offset(x: -4, y: -8)
+                        Text("Event").font(.system(size: 26, weight: .medium)).foregroundColor(.white)
+                    }
+                    .padding(.horizontal, 44).padding(.vertical, 16)
+                    .background(T.blue).clipShape(Capsule())
+                    .shadow(color: .black.opacity(0.4), radius: 8, y: 4)
+                }
+                HStack {
+                    Spacer()
+                    Button { compose = ComposeSeed() } label: {
+                        Image(systemName: "plus").font(.system(size: 28, weight: .medium)).foregroundColor(.white)
+                            .frame(width: 62, height: 62).background(T.blue).clipShape(Circle())
+                            .shadow(color: .black.opacity(0.4), radius: 8, y: 4)
+                    }
+                }.padding(.horizontal, 20)
+            }
         }
-        .padding(.bottom, 12)
+        .padding(.bottom, 10)
     }
 }
 
 struct IDBox: Identifiable { let id: UUID }
-
-// MARK: - Energy
-
-struct EnergyBar: View {
-    @EnvironmentObject var game: Game
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { ctx in
-            let (e, secs) = game.liveEnergy(at: ctx.date)
-            let st = game.s
-            HStack(spacing: 10) {
-                Image(systemName: "bolt.fill").foregroundColor(T.gold)
-                HStack(spacing: 3) {
-                    ForEach(0..<Game.maxEnergy, id: \.self) { i in
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(i < e ? T.gold : Color.white.opacity(0.12))
-                            .frame(height: 10)
-                    }
-                }
-                Text("\(e)/\(Game.maxEnergy)").font(.system(size: 12, weight: .bold))
-                if st.bonus > 0 { Chip(text: "+\(st.bonus) Bonus", color: T.orange.opacity(0.9)) }
-                if let secs = secs {
-                    Text(clockString(secs)).font(.system(size: 11, weight: .medium)).foregroundColor(T.sub).monospacedDigit()
-                }
-                if game.canRefill {
-                    Button("Refill") { game.refill() }
-                        .font(.system(size: 12, weight: .bold)).foregroundColor(T.blue)
-                }
-            }
-            .padding(.horizontal, 12).padding(.vertical, 10)
-            .background(T.card).clipShape(RoundedRectangle(cornerRadius: 14))
-        }
-    }
-}
 
 // MARK: - Post row
 
@@ -176,32 +248,38 @@ struct PostRow: View {
     @EnvironmentObject var game: Game
     let post: Post
     var onReply: () -> Void
+    var onOpen: () -> Void
 
     var body: some View {
-        let saved = game.s.saved.contains(post.id)
-        HStack(alignment: .top, spacing: 10) {
-            Avatar(emoji: post.emoji, key: post.authorHandle, size: 42)
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 4) {
-                    Text(post.authorName).font(.system(size: 15, weight: .bold)).lineLimit(1)
-                    if post.verified { VerifiedSeal() }
-                    Text("@\(post.authorHandle) · D\(post.day)")
-                        .font(.system(size: 12)).foregroundColor(T.sub).lineLimit(1)
-                    Spacer(minLength: 0)
-                    Menu {
-                        Button { game.toggleSave(post.id) } label: {
-                            Label(saved ? "Remove bookmark" : "Bookmark", systemImage: "bookmark")
+        let st = game.s
+        let saved = st.saved.contains(post.id)
+        let isNews = st.npcs.first(where: { $0.handle == post.authorHandle })?.id == "newsdesk"
+        HStack(alignment: .top, spacing: 12) {
+            Avatar(emoji: post.emoji, key: post.authorHandle, size: 52, photo: !isNews)
+            VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 5) {
+                        Text(post.authorName).font(.system(size: 18, weight: .bold)).lineLimit(1)
+                        if post.verified { VerifiedSeal(size: 16) }
+                        Text("@\(post.authorHandle)").font(.system(size: 16)).foregroundColor(T.sub).lineLimit(1)
+                        Spacer(minLength: 0)
+                        Menu {
+                            Button { game.toggleSave(post.id) } label: {
+                                Label(saved ? "Remove bookmark" : "Bookmark", systemImage: "bookmark")
+                            }
+                            Button(role: .destructive) { game.hide(post.id) } label: { Label("Hide post", systemImage: "eye.slash") }
+                        } label: {
+                            Image(systemName: "ellipsis").foregroundColor(T.sub).padding(6)
                         }
-                        Button(role: .destructive) { game.hide(post.id) } label: { Label("Hide post", systemImage: "eye.slash") }
-                    } label: {
-                        Image(systemName: "ellipsis").foregroundColor(T.sub).padding(6)
                     }
+                    if !post.tag.isEmpty {
+                        Chip(text: post.tag, color: post.tag == "Breaking" ? T.red.opacity(0.85) : T.card2)
+                    }
+                    Text(post.text).font(.system(size: 20)).foregroundColor(.white)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                if !post.tag.isEmpty {
-                    Chip(text: post.tag, color: post.tag == "Breaking" ? T.red.opacity(0.85) : T.card2)
-                }
-                Text(post.text).font(.system(size: 15)).foregroundColor(.white.opacity(0.95))
-                    .fixedSize(horizontal: false, vertical: true)
+                .contentShape(Rectangle())
+                .onTapGesture(perform: onOpen)
                 HStack(spacing: 22) {
                     Button(action: onReply) { Label("\(post.comments.count)", systemImage: "bubble.left") }
                     Label("\(short(post.reposts))", systemImage: "arrow.2.squarepath")
@@ -209,17 +287,14 @@ struct PostRow: View {
                         Label(short(post.likes), systemImage: post.liked ? "heart.fill" : "heart")
                             .foregroundColor(post.liked ? T.red : T.sub)
                     }
-                    Image(systemName: saved ? "bookmark.fill" : "bookmark").foregroundColor(saved ? T.blue : T.sub)
+                    Spacer()
+                    Image(systemName: saved ? "star.fill" : "star").foregroundColor(saved ? T.gold : T.sub)
                         .onTapGesture { game.toggleSave(post.id) }
                 }
-                .font(.system(size: 13)).foregroundColor(T.sub).padding(.top, 2)
-                if let c = post.comments.first {
-                    Text("\(c.name): \(c.text)").font(.system(size: 12)).foregroundColor(T.sub).lineLimit(2)
-                        .padding(.top, 2)
-                }
+                .font(.system(size: 17)).foregroundColor(T.sub).padding(.top, 2)
             }
         }
-        .padding(.horizontal, 16).padding(.vertical, 12)
+        .padding(.horizontal, 16).padding(.vertical, 14)
     }
 }
 
@@ -326,6 +401,7 @@ struct ComposeSheet: View {
     @State private var kind: PostKind = .meme
     @State private var text = ""
     @State private var outcome: Outcome? = nil
+    @EnvironmentObject private var nav: Nav
 
     private var kinds: [PostKind] {
         PostKind.allCases.filter { $0 != .apology || game.s.aura < 30 }
@@ -375,7 +451,11 @@ struct ComposeSheet: View {
                             }
                         }
                         BigButton(title: "Post", enabled: !text.trimmed.isEmpty && game.canAfford(kind.cost)) {
-                            outcome = game.publish(kind: kind, text: text, quest: seed.quest)
+                            if let o = game.publish(kind: kind, text: text, quest: seed.quest) {
+                                game.pendingResult = o
+                                nav.tab = 0
+                                dismiss()
+                            }
                         }
                     }
                 }

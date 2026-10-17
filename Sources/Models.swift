@@ -111,6 +111,19 @@ struct Outcome: Identifiable, Equatable {
     var emoji: String
     var title: String
     var detail: String
+    var xp: Int = 0
+    var auraDelta: Int = 0
+    var auraAfter: Int = 0
+    var line: String = ""
+    var ups: [String] = []
+    var postID: UUID? = nil
+}
+
+struct Intro: Codable, Hashable {
+    var story: String
+    var questText: String
+    var questPost: String
+    var done: Bool = false
 }
 
 struct Badge: Identifiable { let id: String; let title: String; let emoji: String }
@@ -350,6 +363,7 @@ struct GameState: Codable, Identifiable {
     var eventsDone = 0
     var icon = 0
     var lastPlayed = Date()
+    var intro: Intro? = nil
 
     static let blank = GameState(
         world: WorldDef.blank,

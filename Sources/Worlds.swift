@@ -175,22 +175,39 @@ extension WorldDef {
     // MARK: Generic fallback (custom worlds when the AI is offline)
 
     static func generic(goal: String, setting: String) -> WorldDef {
+        let topics = Topics.extract(goal + ". " + setting)
+        let t0 = topics.first ?? "the scene"
         let words = goal.split(separator: " ").prefix(3).joined(separator: " ")
         let title = words.isEmpty ? "My World" : words.capitalized
-        let cast: [NPC] = [
-            npc("Avery Quinn", "averyquinn", "🌟", "everyone's favorite hype person", .hype, 24000),
-            npc("Rhys Calder", "rhyscalder", "😏", "has opinions about everything", .hater, 9000),
-            npc("Sage Willow", "sagewillow", "🌿", "kind to a fault", .wholesome, 6000),
-            npc("Mara Voss", "maravoss", "👀", "knows things. says things", .gossip, 18000),
-            npc("Dorian Locke", "dorianlocke", "💼", "always closing a deal", .mogul, 60000),
-            npc("Pixie Tran", "pixietran", "🎭", "plot twist as a lifestyle", .chaos, 14000)
-        ]
+        var firsts = Topics.firsts.shuffled()
+        var lasts = Topics.lasts.shuffled()
+        var used = Set<String>()
+        var cast: [NPC] = []
+        let plan: [(Trait, Int)] = [(.hype, 24000), (.hater, 9000), (.wholesome, 6000), (.gossip, 18000), (.mogul, 60000), (.chaos, 14000)]
+        for (i, (trait, f)) in plan.enumerated() {
+            let first = firsts.removeFirst(), last = lasts.removeFirst()
+            var h: String
+            switch i % 4 {
+            case 0: h = "\(first)\(last)"
+            case 1: h = "\(first)_\(last)"
+            case 2: h = "\(t0.replacingOccurrences(of: " ", with: ""))\(first)"
+            default: h = "\(first).\(last)\(Int.random(in: 2...99))"
+            }
+            h = h.lowercased().filter { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "." }
+            while used.contains(h) { h += "\(Int.random(in: 2...9))" }
+            used.insert(h)
+            let bio = (Topics.bios[trait] ?? "").replacingOccurrences(of: "{t}", with: topics.randomElement() ?? t0)
+            let emoji = Topics.emojis[trait]?.randomElement() ?? "🙂"
+            cast.append(npc("\(first) \(last)", h, emoji, bio, trait, f))
+        }
+        let newsName = "The \(t0.capitalized) Report"
+        let newsHandle = (t0.replacingOccurrences(of: " ", with: "") + "report").lowercased().filter { $0.isLetter || $0.isNumber }
         return WorldDef(
             id: UUID().uuidString, title: title, emoji: "🌐",
             tagline: String(setting.prefix(90)),
             goal: goal, setting: setting, cast: cast,
-            news: npc("The Daily Feed", "dailyfeed", "📰", "all the news that's fit to post", .gossip, 500_000),
-            skills: genericSkills(), milestones: genericMilestones(goal), quests: genericQuests(),
+            news: npc(newsName, newsHandle, "📰", "everything happening in \(t0), reported loosely", .gossip, 500_000),
+            skills: genericSkills(), milestones: genericMilestones(goal), quests: genericQuests(t0),
             preset: false, hue: Double.random(in: 0...1))
     }
 
@@ -208,13 +225,13 @@ extension WorldDef {
          ms(goal.isEmpty ? "Reach the top" : String(goal.prefix(80)), [(0, 18), (1, 16), (2, 14)])]
     }
 
-    static func genericQuests() -> [Quest] {
-        [qu("Post something that shows who you really are.", 22),
-         qu("Thank someone who helped you.", 22),
+    static func genericQuests(_ topic: String = "your world") -> [Quest] {
+        [qu("Show off your latest win in \(topic).", 22),
+         qu("Thank someone who helped you with \(topic).", 22),
          qu("Hint at a big announcement.", 24),
-         qu("Share a harmless secret.", 24),
+         qu("Share a harmless secret about \(topic).", 24),
          qu("Compliment a rival.", 26),
-         qu("Post your hot take of the day.", 24)]
+         qu("Post your hot take on \(topic).", 24)]
     }
 }
 

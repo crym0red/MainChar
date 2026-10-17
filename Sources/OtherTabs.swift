@@ -316,7 +316,7 @@ struct NotifsTab: View {
                     LazyVStack(spacing: 0) {
                         ForEach(st.notifs) { n in
                             HStack(alignment: .top, spacing: 12) {
-                                Avatar(emoji: n.emoji, key: n.handle.isEmpty ? n.kind : n.handle, size: 44)
+                                Avatar(emoji: n.emoji, key: n.handle.isEmpty ? n.kind : n.handle, size: 44, photo: !n.handle.isEmpty)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(n.text).font(.system(size: 14, weight: .semibold))
                                     if !n.sub.isEmpty { Text(n.sub).font(.system(size: 12)).foregroundColor(T.sub).lineLimit(2) }
@@ -469,7 +469,7 @@ struct ProfileTab: View {
         return VStack(spacing: 0) {
             if mine.isEmpty { EmptyState(emoji: "✍️", title: "No posts yet", detail: "Tap the compose button on the Feed.") }
             ForEach(mine) { p in
-                PostRow(post: p, onReply: {}).padding(.horizontal, -16)
+                PostRow(post: p, onReply: {}, onOpen: {}).padding(.horizontal, -16)
                 Divider().background(Color.white.opacity(0.08))
             }
         }
