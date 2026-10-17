@@ -231,7 +231,7 @@ struct PostDetailView: View {
             }
         }
         .toolbar(.hidden, for: .navigationBar)
-        .sheet(isPresented: $reply) { ReplySheet(postID: postID) }
+        .sheet(isPresented: $reply) { ReplySheet(postID: postID).zoomed() }
         .onDisappear { game.pendingResult = nil }
     }
 }
@@ -262,7 +262,7 @@ struct ExploreSheet: View {
             .background(T.bg)
             .navigationTitle("Explore").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-            .sheet(item: $pick) { NPCSheet(npc: $0) }
+            .sheet(item: $pick) { NPCSheet(npc: $0).zoomed() }
         }
     }
 }

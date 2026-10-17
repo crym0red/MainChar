@@ -28,10 +28,10 @@ struct GoalsTab: View {
             }
         }
         .background(T.bg)
-        .sheet(item: $compose) { ComposeSheet(seed: $0) }
-        .sheet(isPresented: $customize) { CustomizeWorldSheet() }
-        .fullScreenCover(isPresented: $showLog) { ActivityLogView() }
-        .fullScreenCover(isPresented: $showStore) { StoreView() }
+        .sheet(item: $compose) { ComposeSheet(seed: $0).zoomed() }
+        .sheet(isPresented: $customize) { CustomizeWorldSheet().zoomed() }
+        .fullScreenCover(isPresented: $showLog) { ActivityLogView().zoomed() }
+        .fullScreenCover(isPresented: $showStore) { StoreView().zoomed() }
         .alert("How does this work?", isPresented: $how) {
             Button("Got it", role: .cancel) {}
         } message: {
@@ -368,7 +368,7 @@ struct MessagesTab: View {
                 NewChatSheet { h in
                     game.startChat(h)
                     path = [h]
-                }
+                }.zoomed()
             }
         }
         .onChange(of: nav.chat) { h in
@@ -504,7 +504,7 @@ struct NotifsTab: View {
         }
         .background(T.bg)
         .onDisappear { game.markNotifsRead() }
-        .fullScreenCover(item: $openStory) { o in StoriesFlow(openStory: o.story) }
+        .fullScreenCover(item: $openStory) { o in StoriesFlow(openStory: o.story).zoomed() }
     }
 
     @ViewBuilder
@@ -681,20 +681,20 @@ struct ProfileTab: View {
         }
         }
         .background(T.bg)
-        .fullScreenCover(isPresented: $edit) { EditProfileSheet() }
-        .sheet(isPresented: $customize) { CustomizeWorldSheet() }
-        .fullScreenCover(isPresented: $settings) { GameSettingsView() }
-        .sheet(item: $npcSheet) { NPCSheet(npc: $0) }
-        .fullScreenCover(item: $openStory) { o in StoriesFlow(openStory: o.story) }
-        .fullScreenCover(isPresented: $allStories) { AllStoriesSheet() }
-        .fullScreenCover(isPresented: $showHistory) { WorldHistoryView() }
+        .fullScreenCover(isPresented: $edit) { EditProfileSheet().zoomed() }
+        .sheet(isPresented: $customize) { CustomizeWorldSheet().zoomed() }
+        .fullScreenCover(isPresented: $settings) { GameSettingsView().zoomed() }
+        .sheet(item: $npcSheet) { NPCSheet(npc: $0).zoomed() }
+        .fullScreenCover(item: $openStory) { o in StoriesFlow(openStory: o.story).zoomed() }
+        .fullScreenCover(isPresented: $allStories) { AllStoriesSheet().zoomed() }
+        .fullScreenCover(isPresented: $showHistory) { WorldHistoryView().zoomed() }
         .alert("More characters", isPresented: $unlockInfo) {
             Button("Got it", role: .cancel) {}
         } message: {
             Text("Characters warm up to you as you post, reply, message them and send gifts. Once they follow you they show up here.")
         }
-        .fullScreenCover(isPresented: $showLog) { ActivityLogView() }
-        .fullScreenCover(isPresented: $showStore) { StoreView() }
+        .fullScreenCover(isPresented: $showLog) { ActivityLogView().zoomed() }
+        .fullScreenCover(isPresented: $showStore) { StoreView().zoomed() }
     }
 
     private func topButton(_ icon: String, _ action: @escaping () -> Void) -> some View {

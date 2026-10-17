@@ -275,7 +275,7 @@ struct CreateStoryView: View {
                 }
             }
         }
-        .sheet(isPresented: $audience) { AudienceSheet() }
+        .sheet(isPresented: $audience) { AudienceSheet().zoomed() }
     }
 
     private func post() {
@@ -362,8 +362,8 @@ struct StoryViewer: View {
                 }
             }
         }
-        .sheet(isPresented: $showComments) { StoryCommentsSheet(storyID: storyID) }
-        .sheet(isPresented: $audience) { AudienceSheet() }
+        .sheet(isPresented: $showComments) { StoryCommentsSheet(storyID: storyID).zoomed() }
+        .sheet(isPresented: $audience) { AudienceSheet().zoomed() }
         .alert("Delete this story?", isPresented: $confirmDelete) {
             Button("Delete", role: .destructive) { game.deleteStory(storyID); onClose() }
             Button("Cancel", role: .cancel) {}

@@ -95,7 +95,7 @@ struct ActivityLogView: View {
         }
         .background(T.bg.ignoresSafeArea())
         .toastOverlay()
-        .fullScreenCover(item: $openStory) { o in StoriesFlow(openStory: o.story) }
+        .fullScreenCover(item: $openStory) { o in StoriesFlow(openStory: o.story).zoomed() }
     }
 
     // MARK: Pieces

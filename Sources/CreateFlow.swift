@@ -79,7 +79,7 @@ struct CreateFlow: View {
                 persona = p
                 playAs = nil
                 step = .first
-            }
+            }.zoomed()
         }
     }
 

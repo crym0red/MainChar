@@ -236,7 +236,7 @@ struct AllStoriesSheet: View {
             }
         }
         .background(T.bg.ignoresSafeArea())
-        .fullScreenCover(item: $open) { o in StoriesFlow(openStory: o.story) }
+        .fullScreenCover(item: $open) { o in StoriesFlow(openStory: o.story).zoomed() }
     }
 }
 
@@ -284,7 +284,7 @@ struct CharactersSheet: View {
             }
         }
         .background(T.bg.ignoresSafeArea())
-        .sheet(item: $pick) { NPCSheet(npc: $0) }
+        .sheet(item: $pick) { NPCSheet(npc: $0).zoomed() }
     }
 }
 
@@ -360,8 +360,8 @@ struct GameSettingsView: View {
         }
         .background(T.bg.ignoresSafeArea())
         .toastOverlay()
-        .sheet(isPresented: $aiSheet) { SettingsSheet() }
-        .fullScreenCover(isPresented: $chars) { CharactersSheet() }
+        .sheet(isPresented: $aiSheet) { SettingsSheet().zoomed() }
+        .fullScreenCover(isPresented: $chars) { CharactersSheet().zoomed() }
         .alert("Leave this world?", isPresented: $confirmLeave) {
             Button("Leave") { leave() }
             Button("Stay", role: .cancel) {}

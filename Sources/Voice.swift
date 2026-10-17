@@ -144,7 +144,7 @@ extension Game {
                 return true
             })
         }
-        guard let line = out else { return nil }
+        guard let line = out, ContentPrefs.allows(line) else { return nil }
 
         // 6) remember what was said
         let hh = VoiceT.fnv(line)

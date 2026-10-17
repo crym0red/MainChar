@@ -19,13 +19,13 @@ struct GameShell: View {
         .safeAreaInset(edge: .bottom, spacing: 0) { AppTabBar() }
         .tint(.white)
         .fullScreenCover(isPresented: Binding(get: { game.playing && game.s.intro?.done == false }, set: { _ in })) {
-            IntroFlow()
+            IntroFlow().zoomed()
         }
         .toastOverlay()
         .background(Color.clear.fullScreenCover(isPresented: Binding(
             get: { game.playing && game.s.ex.digest != nil && game.s.intro?.done != false },
             set: { if !$0 { game.dismissDigest() } })) {
-            AwayDigestSheet()
+            AwayDigestSheet().zoomed()
         })
         .onAppear { game.checkStreak(); game.catchUp() }
         .onChange(of: scenePhase) { phase in
@@ -130,14 +130,14 @@ struct FeedTab: View {
         .onChange(of: game.pendingResult) { r in
             if let id = r?.postID { path = [id] }
         }
-        .sheet(item: $compose) { seed in ComposeSheet(seed: seed) }
-        .fullScreenCover(isPresented: $showStore) { StoreView() }
-        .sheet(isPresented: $showEvent) { EventSheet() }
-        .sheet(isPresented: $showExplore) { ExploreSheet() }
-        .fullScreenCover(item: $storyOpen) { o in StoriesFlow(openStory: o.story) }
-        .sheet(item: $npcSheet) { n in NPCSheet(npc: n) }
+        .sheet(item: $compose) { seed in ComposeSheet(seed: seed).zoomed() }
+        .fullScreenCover(isPresented: $showStore) { StoreView().zoomed() }
+        .sheet(isPresented: $showEvent) { EventSheet().zoomed() }
+        .sheet(isPresented: $showExplore) { ExploreSheet().zoomed() }
+        .fullScreenCover(item: $storyOpen) { o in StoriesFlow(openStory: o.story).zoomed() }
+        .sheet(item: $npcSheet) { n in NPCSheet(npc: n).zoomed() }
         .sheet(item: Binding(get: { replyTo.map { IDBox(id: $0) } }, set: { replyTo = $0?.id })) { b in
-            ReplySheet(postID: b.id)
+            ReplySheet(postID: b.id).zoomed()
         }
         .alert("Leave this world?", isPresented: $confirmExit) {
             Button("Leave") { game.exitToHub() }

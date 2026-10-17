@@ -91,12 +91,14 @@ enum Corpus {
         h = min(0.95, max(0.0, h))
         let b = flavor(bucket, h)
         var pick: String? = nil
-        for _ in 0..<(accept == nil ? 1 : 14) {
+        var fallback: String? = nil
+        for _ in 0..<24 {
             guard let c = raw("\(trait.rawValue)|\(b)") ?? raw("\(trait.rawValue)|\(bucket)") else { return nil }
-            pick = c
-            if accept?(c) ?? true { break }
+            guard ContentPrefs.allows(c) else { continue }
+            fallback = fallback ?? c
+            if accept?(c) ?? true { pick = c; break }
         }
-        guard var t = pick else { return nil }
+        guard var t = pick ?? fallback else { return nil }
         t = t.replacingOccurrences(of: "{me}", with: "@" + me)
         t = t.replacingOccurrences(of: "{topic}", with: topic)
         t = t.replacingOccurrences(of: "{quote}", with: quote)
@@ -113,7 +115,12 @@ enum Corpus {
         case .chaos: bucket = r < 0.5 ? "post.rant" : (r < 0.75 ? "post.subtweet" : "post.hype")
         case .mogul: bucket = r < 0.4 ? "post.hype" : (r < 0.7 ? "post.subtweet" : "post.rant")
         }
-        guard var t = raw("\(trait.rawValue)|\(bucket)") else { return nil }
+        var pick: String? = nil
+        for _ in 0..<24 {
+            guard let c = raw("\(trait.rawValue)|\(bucket)") else { return nil }
+            if ContentPrefs.allows(c) { pick = c; break }
+        }
+        guard var t = pick else { return nil }
         t = t.replacingOccurrences(of: "{me}", with: "@" + me)
         t = t.replacingOccurrences(of: "{topic}", with: topic)
         t = t.replacingOccurrences(of: "{quote}", with: topic)

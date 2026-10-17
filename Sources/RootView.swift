@@ -8,7 +8,7 @@ struct RootView: View {
     var body: some View {
         ZStack {
             T.bg.ignoresSafeArea()
-            if game.playing { GameShell() } else { HubView() }
+            Group { if game.playing { GameShell() } else { HubView() } }.zoomed()
         }
         .environmentObject(game)
         .environmentObject(nav)
@@ -75,9 +75,9 @@ struct HubView: View {
         }
         .background(T.bg.ignoresSafeArea())
         .fullScreenCover(item: $flow) { seed in
-            CreateFlow(initialWorld: seed.world) { flow = nil }
+            CreateFlow(initialWorld: seed.world) { flow = nil }.zoomed()
         }
-        .sheet(isPresented: $showSettings) { SettingsSheet() }
+        .sheet(isPresented: $showSettings) { SettingsSheet().zoomed() }
     }
 
     private var header: some View {
@@ -327,6 +327,7 @@ struct SettingsSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                ContentSection()
                 Section(header: Text("AI"), footer: Text("Tries free public AI services (LLM7, Pollinations) with no key. If none respond, on-topic built-in content is used. Free tiers are rate limited, so AI content can take a few seconds.")) {
                     Toggle("AI-written content", isOn: $enabled)
                     Button {
