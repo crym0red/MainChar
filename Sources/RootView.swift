@@ -36,6 +36,7 @@ struct HubView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
+                    Image("Logo").resizable().scaledToFit().frame(height: 150).frame(maxWidth: .infinity)
                     if !game.store.saves.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
                             SectionTitle("Continue playing")
