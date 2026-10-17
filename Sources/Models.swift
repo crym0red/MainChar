@@ -184,13 +184,14 @@ struct Quest: Codable, Hashable, Identifiable {
 
 struct Notif: Codable, Hashable, Identifiable {
     var id = UUID()
-    var kind: String          // follow, reply, level, milestone, event
+    var kind: String          // follow, reply, story, level, milestone, event
     var text: String
     var sub: String
     var handle: String
     var emoji: String
     var day: Int
     var unread: Bool = true
+    var ref: UUID? = nil      // story id for "story" notifications
 }
 
 struct LogEntry: Codable, Hashable, Identifiable {
@@ -199,6 +200,36 @@ struct LogEntry: Codable, Hashable, Identifiable {
     var emoji: String
     var title: String
     var detail: String
+    // New optional fields (so older saves still decode)
+    var kind: String? = nil       // post, story, outcome, dm, activity
+    var time: Date? = nil
+    var delta: Double? = nil
+    var refID: UUID? = nil
+    var body: String? = nil
+    var handle: String? = nil
+}
+
+struct Story: Codable, Hashable, Identifiable {
+    var id = UUID()
+    var text: String
+    var bg: Int
+    var hasImage: Bool = false
+    var day: Int
+    var date: Date = Date()
+    var comments: [Comment] = []
+}
+
+/// Everything added after v1 lives here so older saves keep decoding.
+struct Extras: Codable, Hashable {
+    var stories: [Story] = []
+    var gems = 5
+    var streak = 1
+    var lastStreakDay = ""
+    var gifts = 0
+    var viralArmed = false
+    var boostUntil: Date? = nil
+    var statDelta: [String: Int] = [:]
+    var statNote: [String: String] = [:]
 }
 
 // MARK: - World
@@ -364,6 +395,11 @@ struct GameState: Codable, Identifiable {
     var icon = 0
     var lastPlayed = Date()
     var intro: Intro? = nil
+    var x: Extras? = nil
+    var ex: Extras {
+        get { x ?? Extras() }
+        set { x = newValue }
+    }
 
     static let blank = GameState(
         world: WorldDef.blank,

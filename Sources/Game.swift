@@ -9,6 +9,8 @@ final class Game: ObservableObject {
     @Published var aiNote = ""
     @Published var openChat: String? = nil
     @Published var pendingResult: Outcome? = nil
+    @Published var toast: String? = nil
+    @Published var undoSnap: GameState? = nil
 
     var prefetched: StoryEvent?
     private var prefetching = false
@@ -59,7 +61,7 @@ final class Game: ObservableObject {
     // MARK: AI availability
 
     var aiOK: Bool { AIConfig.enabled && Date() > aiDownUntil }
-    private func markDown() {
+    func markDown() {
         aiDownUntil = Date().addingTimeInterval(60)
         aiNote = "AI is offline right now. Using built-in content."
     }
@@ -106,7 +108,7 @@ final class Game: ObservableObject {
         return (e, max(0, Int(Game.regenSeconds - into)))
     }
 
-    private func spend(_ n: Int) -> Bool {
+    func spend(_ n: Int) -> Bool {
         tickEnergy()
         var st = s
         guard st.energy + st.bonus >= n else { return false }
@@ -139,25 +141,47 @@ final class Game: ObservableObject {
 
     static func xpNeed(_ level: Int) -> Int { 30 + 3 * level }
 
-    private func notify(_ st: inout GameState, _ kind: String, _ text: String, sub: String = "", handle: String = "", emoji: String = "🔔") {
+    func notify(_ st: inout GameState, _ kind: String, _ text: String, sub: String = "", handle: String = "", emoji: String = "🔔") {
         st.notifs.insert(Notif(kind: kind, text: text, sub: sub, handle: handle, emoji: emoji, day: st.day), at: 0)
         if st.notifs.count > 60 { st.notifs.removeLast(st.notifs.count - 60) }
     }
 
-    private func gainXP(_ st: inout GameState, _ n: Int) {
+    func gainXP(_ st: inout GameState, _ n: Int) {
         st.xp += n
         while st.xp >= Game.xpNeed(st.level) {
             st.xp -= Game.xpNeed(st.level)
             st.level += 1
             st.points += 3
             st.bonus += 1
-            notify(&st, "level", "You reached level \(st.level)", sub: "+3 skill points, +1 bonus energy", emoji: "⭐️")
+            st.ex.gems += 2
+            notify(&st, "level", "You reached level \(st.level)", sub: "+3 skill points, +1 bonus energy, +2 gems", emoji: "⭐️")
         }
     }
 
-    private func logIt(_ st: inout GameState, _ emoji: String, _ title: String, _ detail: String) {
-        st.log.insert(LogEntry(day: st.day, emoji: emoji, title: title, detail: detail), at: 0)
-        if st.log.count > 100 { st.log.removeLast(st.log.count - 100) }
+    func logIt(_ st: inout GameState, _ emoji: String, _ title: String, _ detail: String,
+               kind: String = "activity", ref: UUID? = nil, body: String? = nil,
+               delta: Double? = nil, handle: String? = nil) {
+        var e = LogEntry(day: st.day, emoji: emoji, title: title, detail: detail)
+        e.kind = kind
+        e.time = Date()
+        e.refID = ref
+        e.body = body
+        e.delta = delta
+        e.handle = handle
+        st.log.insert(e, at: 0)
+        if st.log.count > 200 { st.log.removeLast(st.log.count - 200) }
+    }
+
+    static func joinNames(_ n: [String]) -> String {
+        switch n.count {
+        case 0: return "Someone"
+        case 1: return n[0]
+        case 2: return "\(n[0]) and \(n[1])"
+        case 3: return "\(n[0]), \(n[1]) and \(n[2])"
+        default:
+            let rest = n.count - 3
+            return "\(n[0]), \(n[1]), \(n[2]) and \(rest == 1 ? "one other" : "\(rest) others")"
+        }
     }
 
     func markNotifsRead() {
@@ -171,7 +195,7 @@ final class Game: ObservableObject {
 
     // MARK: Aura
 
-    private func settleAura(_ st: inout GameState) -> (Bool, Bool) {
+    func settleAura(_ st: inout GameState) -> (Bool, Bool) {
         if st.aura <= 0 {
             st.followers = max(15, Int(Double(st.followers) * 0.7))
             st.aura = 15
@@ -232,6 +256,10 @@ final class Game: ObservableObject {
         st.quests = w.quests.map { var q = $0; q.done = false; return q }
         st.posts = fallbackPosts(st, 5)
         notify(&st, "event", "Welcome to \(w.title)", sub: w.goal, emoji: w.emoji)
+        if let f = first, let n = st.npcs.first(where: { $0.handle == f }) {
+            notify(&st, "follow", "\(n.name) is now following you", sub: n.bio, handle: n.handle, emoji: n.emoji)
+        }
+        st.ex.lastStreakDay = Game.dayKey(Date())
         store.saves.insert(st, at: 0)
         store.activeID = st.id
         prefetch()
@@ -303,7 +331,7 @@ final class Game: ObservableObject {
         return out
     }
 
-    private func makePost(_ npc: NPC, _ text: String, _ st: GameState) -> Post {
+    func makePost(_ npc: NPC, _ text: String, _ st: GameState) -> Post {
         let likes = max(8, Int(Double(npc.followers) * Double.random(in: 0.01...0.06)))
         let cmts = Int.random(in: 0...2)
         return Post(authorHandle: npc.handle, authorName: npc.name, emoji: npc.emoji, text: text,
@@ -312,7 +340,7 @@ final class Game: ObservableObject {
                     day: st.day, isYou: false, verified: npc.followers >= 40000 || npc.id == "newsdesk")
     }
 
-    private func makeComments(_ st: GameState, auraDelta: Int, count: Int, exclude: String = "") -> [Comment] {
+    func makeComments(_ st: GameState, auraDelta: Int, count: Int, exclude: String = "") -> [Comment] {
         let pool = st.npcs.filter { $0.id != "newsdesk" && $0.handle != exclude }.shuffled().prefix(count)
         return pool.map { n in
             let roll = Double.random(in: 0...1)
@@ -426,12 +454,15 @@ final class Game: ObservableObject {
     func publish(kind: PostKind, text: String, quest: UUID? = nil, free: Bool = false) -> Outcome? {
         let t = text.trimmed
         guard !t.isEmpty else { return nil }
+        let snap = s
         guard free || spend(kind.cost) else { return nil }
+        if !free { undoSnap = snap }
         var st = s
         let delta = Int.random(in: kind.aura)
         let base = Double(max(30, st.followers)) / 10.0
         var mult = kind.reach * st.persona.vibe.likeMult * Double.random(in: 0.7...1.3)
         mult *= 1 + Double(st.stats["humor"] ?? 30) / 300
+        mult *= takePower(&st)
         var likes = max(3, Int(base * mult))
         let viral = Double.random(in: 0...1) < (kind == .drama ? 0.3 : 0.07)
         if viral { likes *= 4 }
@@ -458,6 +489,8 @@ final class Game: ObservableObject {
         case .apology: stat = .mystery
         }
         st.stats[stat.rawValue] = clampI((st.stats[stat.rawValue] ?? 30) + 1, 0, 100)
+        st.ex.statDelta[stat.rawValue] = 1
+        st.ex.statNote[stat.rawValue] = "\"\(String(t.prefix(32)))\" gave your \(stat.label.lowercased()) a bump."
 
         var xp = 8 + (viral ? 10 : 0)
         if let qid = quest, let qi = st.quests.firstIndex(where: { $0.id == qid && !$0.done }) {
@@ -472,10 +505,20 @@ final class Game: ObservableObject {
             notify(&st, "follow", "\(st.npcs[i].name) followed you", sub: "@\(st.npcs[i].handle)", handle: st.npcs[i].handle, emoji: st.npcs[i].emoji)
         }
         if let c = comments.first {
-            notify(&st, "reply", "\(c.name) replied to your post", sub: c.text, handle: c.handle, emoji: c.emoji)
+            notify(&st, "reply", "\(Game.joinNames(comments.map { $0.name })) replied to you",
+                   sub: "\(c.handle): \(c.text)", handle: c.handle, emoji: c.emoji)
         }
         let (cancelled, icon) = settleAura(&st)
-        logIt(&st, kind.icon, "Posted a \(kind.label)", String(t.prefix(80)))
+        let netNow = st.followers - before
+        logIt(&st, kind.icon, st.persona.name, kind.label, kind: "post", ref: post.id, body: t, handle: st.persona.handle)
+        if netNow != 0 {
+            logIt(&st, "👥", "Followers", "post", kind: "outcome", ref: post.id,
+                  body: outcomeText(st, followers: netNow, aura: 0, story: false), delta: Double(netNow), handle: comments.first?.handle)
+        }
+        if delta != 0 {
+            logIt(&st, "🌟", "Aura", "post", kind: "outcome", ref: post.id,
+                  body: outcomeText(st, followers: 0, aura: delta, story: false), delta: Double(delta), handle: comments.last?.handle)
+        }
         let net = st.followers - before
         let auraNow = st.aura
         let sid = st.id
@@ -600,6 +643,7 @@ final class Game: ObservableObject {
         var st = s
         guard let e = st.currentEvent, st.result == nil, e.choices.indices.contains(i) else { return }
         let c = e.choices[i]
+        undoSnap = st
         let before = st.followers
         st.aura += c.aura
         st.lastAuraDelta = c.aura
@@ -684,6 +728,7 @@ final class Game: ObservableObject {
         var st = s
         guard let n = st.npcs.first(where: { $0.handle == handle }) else { return }
         st.threads[handle, default: []].append(DMMessage(fromYou: true, text: t))
+        logIt(&st, "💬", "Messaged \(n.name)", "dm", kind: "dm", body: t, handle: n.handle)
         s = st
         typing.insert(handle)
         let sid = st.id
@@ -744,6 +789,7 @@ final class Game: ObservableObject {
         st.milestones[i].done = true
         st.followers = Int(Double(st.followers) * 1.15)
         st.bonus += 1
+        st.ex.gems += 3
         notify(&st, "milestone", "Milestone reached", sub: st.milestones[i].text, emoji: "🏁")
         logIt(&st, "🏁", "Milestone", st.milestones[i].text)
         gainXP(&st, 40)

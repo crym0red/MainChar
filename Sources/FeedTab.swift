@@ -3,6 +3,7 @@ import SwiftUI
 struct GameShell: View {
     @EnvironmentObject var game: Game
     @EnvironmentObject var nav: Nav
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         TabView(selection: $nav.tab) {
@@ -17,6 +18,11 @@ struct GameShell: View {
         .tint(.white)
         .fullScreenCover(isPresented: Binding(get: { game.playing && game.s.intro?.done == false }, set: { _ in })) {
             IntroFlow()
+        }
+        .toastOverlay()
+        .onAppear { game.checkStreak() }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active { game.checkStreak() }
         }
     }
 }
@@ -35,6 +41,7 @@ struct FeedTab: View {
     @State private var compose: ComposeSeed? = nil
     @State private var showEvent = false
     @State private var showExplore = false
+    @State private var storyOpen: StoryOpen? = nil
     @State private var npcSheet: NPC? = nil
     @State private var replyTo: UUID? = nil
     @State private var confirmExit = false
@@ -83,6 +90,7 @@ struct FeedTab: View {
         .sheet(item: $compose) { seed in ComposeSheet(seed: seed) }
         .sheet(isPresented: $showEvent) { EventSheet() }
         .sheet(isPresented: $showExplore) { ExploreSheet() }
+        .fullScreenCover(item: $storyOpen) { o in StoriesFlow(openStory: o.story) }
         .sheet(item: $npcSheet) { n in NPCSheet(npc: n) }
         .sheet(item: Binding(get: { replyTo.map { IDBox(id: $0) } }, set: { replyTo = $0?.id })) { b in
             ReplySheet(postID: b.id)
@@ -164,7 +172,7 @@ struct FeedTab: View {
     private func stories(_ st: GameState) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .top, spacing: 14) {
-                Button { compose = ComposeSeed() } label: {
+                Button { storyOpen = StoryOpen() } label: {
                     VStack(spacing: 6) {
                         ZStack(alignment: .bottomTrailing) {
                             Avatar(emoji: st.persona.emoji, key: st.persona.handle, size: 72)
@@ -379,6 +387,11 @@ struct NPCSheet: View {
                 Text("Relationship").font(.system(size: 12)).foregroundColor(T.sub)
                 Bar(value: Double(live.affinity) / 100, color: T.lime)
             }.padding(.horizontal, 28)
+            if game.s.ex.gifts > 0 {
+                BigButton(title: "Send gift 💝 (\(game.s.ex.gifts) left)", color: T.card2) {
+                    game.sendGift(live.handle)
+                }.padding(.horizontal, 20)
+            }
             BigButton(title: "Message") {
                 game.startChat(live.handle)
                 nav.chat = live.handle
