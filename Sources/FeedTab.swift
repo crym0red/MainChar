@@ -94,11 +94,14 @@ struct FeedTab: View {
     @State private var storyNPC: IDBox? = nil
     @State private var goLive = false
     @State private var path: [UUID] = []
+    @State private var mode = 0
+    @State private var topic: String? = nil
     private let timer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
     private let olive = Color(red: 0.47, green: 0.38, blue: 0.08)
 
     var body: some View {
         let st = game.s
+        let list = filteredPosts(st)
         NavigationStack(path: $path) {
             ZStack(alignment: .bottom) {
                 VStack(spacing: 0) {
@@ -111,7 +114,12 @@ struct FeedTab: View {
                             if !game.aiNote.isEmpty {
                                 Text(game.aiNote).font(.jk(11)).foregroundColor(T.orange).padding(.vertical, 6)
                             }
-                            ForEach(st.posts.filter { !st.hidden.contains($0.id) }) { p in
+                            feedControls(st)
+                            if list.isEmpty {
+                                Text(mode == 1 ? "Nobody here yet. Follow people from their profile." : "Nothing matches that topic.")
+                                    .font(.jk(15)).foregroundColor(T.sub).padding(.vertical, 40)
+                            }
+                            ForEach(list) { p in
                                 PostRow(post: p, onReply: { replyTo = p.id }, onOpen: { path.append(p.id) })
                                 Divider().background(Color.white.opacity(0.1))
                             }
@@ -438,55 +446,168 @@ struct NPCSheet: View {
     @EnvironmentObject var nav: Nav
     @Environment(\.dismiss) private var dismiss
     let npc: NPC
+    @State private var tab = 0
 
     var body: some View {
-        let live = game.s.npcs.first { $0.handle == npc.handle } ?? npc
-        ScrollView { VStack(spacing: 12) {
-            Avatar(emoji: live.emoji, key: live.handle, size: 96, ring: true).padding(.top, 24)
-            HStack(spacing: 5) {
-                Text(live.name).font(.jk(22, .heavy))
-                if live.followers >= 40000 { VerifiedSeal(size: 18) }
+        let st = game.s
+        let live = st.npcs.first { $0.handle == npc.handle } ?? npc
+        let neon = HK.neon(live.handle)
+        let rel = Rel.info(live.affinity)
+        let posts = st.posts.filter { $0.authorHandle == live.handle }
+        let replies: [(Post, Comment)] = st.posts.flatMap { p in p.comments.filter { $0.handle == live.handle }.map { (p, $0) } }
+        let coins = (st.ex.market?.coins ?? []).filter { $0.creator == live.handle }
+        let rank = game.rankings(st).firstIndex { $0.handle == live.handle }.map { $0 + 1 } ?? 0
+        let following = game.isFollowing(live.handle)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                ZStack(alignment: .bottomLeading) {
+                    ZStack {
+                        LinearGradient(colors: [neon.opacity(0.65), Color(white: 0.05)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        Canvas { ctx, sz in
+                            var p = Path()
+                            var x: CGFloat = 0
+                            while x < sz.width { p.move(to: CGPoint(x: x, y: 0)); p.addLine(to: CGPoint(x: x, y: sz.height)); x += 24 }
+                            var y: CGFloat = 0
+                            while y < sz.height { p.move(to: CGPoint(x: 0, y: y)); p.addLine(to: CGPoint(x: sz.width, y: y)); y += 24 }
+                            ctx.stroke(p, with: .color(.white.opacity(0.07)), lineWidth: 0.6)
+                        }
+                    }
+                    .frame(height: 110)
+                    Avatar(emoji: live.emoji, key: live.handle, size: 92)
+                        .overlay(Circle().stroke(T.bg, lineWidth: 4).padding(-2))
+                        .padding(.leading, 16).offset(y: 46)
+                }
+                .padding(.bottom, 46)
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 5) {
+                            Text(live.name).font(.jk(24, .heavy))
+                            if live.followers >= 40000 { VerifiedSeal(size: 18) }
+                        }
+                        Text("@\(live.handle)").font(.jk(14)).foregroundColor(T.sub)
+                    }
+                    Spacer()
+                    Label(rel.0, systemImage: rel.1).font(.jk(12, .bold)).foregroundColor(rel.2)
+                        .padding(.horizontal, 10).padding(.vertical, 6).background(rel.2.opacity(0.15)).clipShape(Capsule())
+                }
+                .padding(.horizontal, 16)
+                Text(live.bio).font(.jk(15)).padding(.horizontal, 16)
+                HStack(spacing: 8) {
+                    Chip(text: live.trait.rawValue.capitalized)
+                    if live.followsYou { Chip(text: "Follows you", color: T.blue.opacity(0.8)) }
+                    if live.followsYou && following { Chip(text: "Mutual", color: T.lime.opacity(0.4)) }
+                    if rank > 0 && rank <= 10 { Chip(text: "Top \(rank)", color: T.gold.opacity(0.4)) }
+                }
+                .padding(.horizontal, 16)
+                HStack(spacing: 0) {
+                    statCell(short(live.followers), "Followers")
+                    statCell("\(stableNum(live.handle, 80, 900))", "Following")
+                    statCell("\(posts.count)", "Posts")
+                    statCell(rank > 0 ? "#\(rank)" : "-", "Rank")
+                }
+                .padding(.vertical, 12).background(T.card).clipShape(RoundedRectangle(cornerRadius: 16)).padding(.horizontal, 16)
+                HStack(spacing: 10) {
+                    Button { game.toggleFollow(live.handle) } label: {
+                        Text(following ? "Following" : "Follow").font(.jk(16, .bold))
+                            .foregroundColor(following ? .white : .black)
+                            .frame(maxWidth: .infinity).padding(.vertical, 13)
+                            .background(following ? Color.white.opacity(0.14) : Color.white).clipShape(Capsule())
+                    }
+                    Button {
+                        game.startChat(live.handle)
+                        nav.chat = live.handle
+                        nav.tab = 2
+                        dismiss()
+                    } label: {
+                        Text("Message").font(.jk(16, .bold)).foregroundColor(.white)
+                            .frame(maxWidth: .infinity).padding(.vertical, 13)
+                            .background(T.blue).clipShape(Capsule())
+                    }
+                    if st.ex.gifts > 0 {
+                        Button { game.sendGift(live.handle) } label: {
+                            Image(systemName: "gift.fill").font(.system(size: 18)).foregroundColor(T.gold)
+                                .frame(width: 48, height: 46).background(T.card2).clipShape(Capsule())
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                HStack(spacing: 22) {
+                    ForEach(Array(["Posts", "Replies", "Coins", "History"].enumerated()), id: \.offset) { i, t in
+                        Button { tab = i } label: {
+                            VStack(spacing: 6) {
+                                Text(t).font(.jk(16, .semibold)).foregroundColor(tab == i ? .white : T.sub)
+                                Rectangle().fill(tab == i ? neon : Color.clear).frame(height: 3).clipShape(Capsule())
+                            }
+                        }
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                Group {
+                    switch tab {
+                    case 0:
+                        if posts.isEmpty { empty("No posts yet.") }
+                        ForEach(posts.prefix(20)) { p in
+                            Button { game.openPostID = p.id; nav.tab = 0; dismiss() } label: {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(p.text).font(.jk(15)).foregroundColor(.white).multilineTextAlignment(.leading)
+                                    HStack(spacing: 14) {
+                                        Label("\(p.comments.count)", systemImage: "bubble.left")
+                                        Label(short(p.likes), systemImage: "heart")
+                                        if !p.tag.isEmpty { Chip(text: p.tag) }
+                                    }.font(.jk(12)).foregroundColor(T.sub)
+                                }
+                                .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                                .background(T.card).clipShape(RoundedRectangle(cornerRadius: 14))
+                            }.buttonStyle(.plain)
+                        }
+                    case 1:
+                        if replies.isEmpty { empty("No replies yet.") }
+                        ForEach(Array(replies.prefix(20).enumerated()), id: \.offset) { _, r in
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Replying to @\(r.0.authorHandle)").font(.jk(12)).foregroundColor(T.sub)
+                                Text(r.1.text).font(.jk(15))
+                            }
+                            .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(T.card).clipShape(RoundedRectangle(cornerRadius: 14))
+                        }
+                    case 2:
+                        if coins.isEmpty { empty("Hasn't launched a coin.") }
+                        ForEach(coins) { c in
+                            Button { nav.coin = c.id; nav.tab = 5; dismiss() } label: {
+                                HStack(spacing: 12) {
+                                    CoinTile(c: c, size: 42)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("$\(c.id)").font(.jk(16, .bold)).foregroundColor(.white)
+                                        Text(c.rugged ? "Rugged" : "\(Mk.fmtMC(Mk.mc(c))) MC").font(.jk(12)).foregroundColor(c.rugged ? T.red : T.sub)
+                                    }
+                                    Spacer()
+                                    Text(Mk.pct(Mk.change(c))).font(.jk(14, .bold)).foregroundColor(Mk.change(c) >= 0 ? T.lime : T.red)
+                                }
+                                .padding(12).background(T.card).clipShape(RoundedRectangle(cornerRadius: 14))
+                            }.buttonStyle(.plain)
+                        }
+                    default:
+                        MemoryBlock(handle: live.handle)
+                    }
+                }
+                .padding(.horizontal, 16)
             }
-            Text("@\(live.handle) · \(short(live.followers)) followers").font(.jk(13)).foregroundColor(T.sub)
-            Text(live.bio).font(.jk(14)).multilineTextAlignment(.center).padding(.horizontal, 24)
-            HStack(spacing: 8) {
-                Chip(text: live.trait.rawValue.capitalized)
-                if live.followsYou { Chip(text: "Follows you", color: T.blue.opacity(0.8)) }
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Relationship").font(.jk(12)).foregroundColor(T.sub)
-                Bar(value: Double(live.affinity) / 100, color: T.lime)
-            }.padding(.horizontal, 28)
-            MemoryBlock(handle: live.handle)
-            recent(live)
-            if game.s.ex.gifts > 0 {
-                BigButton(title: "Send gift (\(game.s.ex.gifts) left)", color: T.card2) {
-                    game.sendGift(live.handle)
-                }.padding(.horizontal, 20)
-            }
-            BigButton(title: "Message") {
-                game.startChat(live.handle)
-                nav.chat = live.handle
-                nav.tab = 2
-                dismiss()
-            }.padding(.horizontal, 20)
-        }.padding(.bottom, 30) }
+            .padding(.bottom, 40)
+        }
         .background(T.bg)
         .presentationDetents([.large])
     }
 
-    @ViewBuilder
-    private func recent(_ n: NPC) -> some View {
-        let mine = game.s.posts.filter { $0.authorHandle == n.handle }.prefix(4)
-        if !mine.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Recent posts").font(.jk(12, .bold)).foregroundColor(T.sub)
-                ForEach(Array(mine)) { p in
-                    Text(p.text).font(.jk(14)).frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12).background(T.card).clipShape(RoundedRectangle(cornerRadius: 12))
-                }
-            }.padding(.horizontal, 20)
-        }
+    private func statCell(_ v: String, _ l: String) -> some View {
+        VStack(spacing: 2) {
+            Text(v).font(.jk(18, .bold))
+            Text(l).font(.jk(11)).foregroundColor(T.sub)
+        }.frame(maxWidth: .infinity)
+    }
+
+    private func empty(_ t: String) -> some View {
+        Text(t).font(.jk(14)).foregroundColor(T.sub).frame(maxWidth: .infinity).padding(.vertical, 24)
     }
 }
 

@@ -99,6 +99,7 @@ extension Game {
         }
         st.ex.simNow = nil
         marketAdvance(&st, &items, steps: min(400, Int(away / 10)), quiet: false)
+        checkSeason(&st, &items, quiet: false)
 
         // slow drift in your popularity, scaled by how long you were gone
         let scale = min(1.0, hrs / 8)
@@ -202,6 +203,7 @@ extension Game {
             if q < 0.30 { simScrutiny(&st, &items, cast, quiet); return }
             if q < 0.42 { simOffer(&st, &items, cast, quiet); return }
         }
+        growWorld(&st, &items, quiet)
         if Double.random(in: 0...1) < 0.07 { simCoinLaunch(&st, &items, cast, quiet); return }
         let pre = Double.random(in: 0...1)
         if pre < 0.16 { simStory(&st, &items, cast, quiet); return }

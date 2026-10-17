@@ -9,6 +9,7 @@ struct GoalsTab: View {
     @State private var showLog = false
     @State private var showStore = false
     @State private var how = false
+    @State private var showRank = false
 
     var body: some View {
         let st = game.s
@@ -19,6 +20,7 @@ struct GoalsTab: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 22) {
                         mainGoal(st)
+                        rankCard(st)
                         milestones(st)
                         quests(st)
                         skills(st).id("skills")
@@ -31,6 +33,7 @@ struct GoalsTab: View {
         .background(T.bg)
         .sheet(item: $compose) { ComposeSheet(seed: $0).zoomed() }
         .sheet(isPresented: $customize) { CustomizeWorldSheet().zoomed() }
+        .sheet(isPresented: $showRank) { RankingsSheet().zoomed() }
         .fullScreenCover(isPresented: $showLog) { ActivityLogView().zoomed() }
         .fullScreenCover(isPresented: $showStore) { StoreView().zoomed() }
         .alert("How does this work?", isPresented: $how) {
@@ -132,6 +135,42 @@ struct GoalsTab: View {
                         .frame(maxWidth: .infinity).padding(.vertical, 20)
                         .background(Color.white.opacity(0.22)).clipShape(Capsule())
                     }
+                }
+            }
+        }
+    }
+
+    // MARK: Rankings
+
+    private func rankCard(_ st: GameState) -> some View {
+        let rows = game.rankings(st)
+        let me = game.myRank(st)
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                title("Scene rankings")
+                Button { showRank = true } label: { Text("View all").font(.jk(16, .semibold)).foregroundColor(T.blue) }
+            }
+            panel {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Label("Season \(st.ex.season ?? 1)", systemImage: "trophy.fill").font(.jk(16, .bold)).foregroundColor(T.gold)
+                        Spacer()
+                        Text("\(game.seasonDaysLeft(st)) days left").font(.jk(14)).foregroundColor(T.sub)
+                    }
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("#\(me)").font(.jk(40, .heavy))
+                        Text("of \(rows.count)").font(.jk(16)).foregroundColor(T.sub)
+                    }
+                    ForEach(Array(rows.prefix(3).enumerated()), id: \.element.id) { i, r in
+                        HStack(spacing: 10) {
+                            Text("\(i + 1)").font(.jk(15, .bold)).foregroundColor(T.sub).frame(width: 20)
+                            Avatar(emoji: "", key: r.handle, size: 30)
+                            Text(r.you ? "You" : r.name).font(.jk(15, .semibold)).lineLimit(1)
+                            Spacer()
+                            Text(short(r.followers)).font(.jk(14)).foregroundColor(T.sub)
+                        }
+                    }
+                    Text("Seasons last two weeks. Finish high for gems and a badge.").font(.jk(13)).foregroundColor(T.sub)
                 }
             }
         }
@@ -1022,4 +1061,49 @@ struct ProfileTab: View {
 struct ProfileScrollKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+
+struct RankingsSheet: View {
+    @EnvironmentObject var game: Game
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        let st = game.s
+        let rows = game.rankings(st)
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Scene rankings").font(.jk(24, .bold))
+                    Text("Season \(st.ex.season ?? 1) · \(game.seasonDaysLeft(st)) days left").font(.jk(13)).foregroundColor(T.sub)
+                }
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark").font(.system(size: 14, weight: .bold)).foregroundColor(.white)
+                        .frame(width: 36, height: 36).background(T.card2).clipShape(Circle())
+                }
+            }
+            .padding(16)
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(rows.prefix(60).enumerated()), id: \.element.id) { i, r in
+                        HStack(spacing: 12) {
+                            Text("\(i + 1)").font(.jk(16, .bold)).foregroundColor(i < 3 ? T.gold : T.sub).frame(width: 30)
+                            Avatar(emoji: "", key: r.handle, size: 40)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(r.you ? "You" : r.name).font(.jk(16, .semibold)).lineLimit(1)
+                                Text("@\(r.handle)").font(.jk(12)).foregroundColor(T.sub).lineLimit(1)
+                            }
+                            Spacer()
+                            Text(short(r.followers)).font(.jk(15, .bold))
+                        }
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        .background(r.you ? T.blue.opacity(0.18) : Color.clear)
+                        .modifier(OptionalProfileTap(handle: r.handle, on: !r.you))
+                    }
+                }
+            }
+        }
+        .background(T.bg)
+    }
 }

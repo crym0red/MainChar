@@ -224,6 +224,7 @@ extension Game {
         var st = s
         var items: [DigestItem] = []
         marketAdvance(&st, &items, steps: 5, quiet: true)
+        checkSeason(&st, &items, quiet: true)
         s = st
     }
 

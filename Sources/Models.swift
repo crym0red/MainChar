@@ -309,6 +309,9 @@ struct Extras: Codable, Hashable {
     var shield: Bool? = nil
     var squad: Bool? = nil
     var market: Market? = nil
+    var following: [String]? = nil
+    var season: Int? = nil
+    var seasonStart: Date? = nil
     var lvBadges: [LevelBadge]? = nil
     var keys: [String]? = nil
 }

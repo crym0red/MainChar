@@ -4,12 +4,22 @@ struct RootView: View {
     @StateObject private var game = Game()
     @StateObject private var nav = Nav()
     @Environment(\.scenePhase) private var phase
+    @State private var stage = 0
 
     var body: some View {
         ZStack {
             T.bg.ignoresSafeArea()
-            Group { if game.playing { GameShell() } else { HubView() } }.zoomed()
+            Group {
+                if game.playing { GameShell() }
+                else if stage == 0 { SplashView() }
+                else if stage == 1 { WelcomeView(onBrowse: { withAnimation { stage = 2 } }) }
+                else { HubView() }
+            }.zoomed()
         }
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { if stage == 0 { withAnimation(.easeInOut(duration: 0.4)) { stage = 1 } } }
+        }
+        .onChange(of: game.playing) { p in if p { stage = 2 } }
         .environmentObject(game)
         .environmentObject(nav)
         .preferredColorScheme(.dark)

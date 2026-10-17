@@ -53,8 +53,8 @@ enum CastGen {
         h.split(separator: "_").map { cap(String($0)) }.joined(separator: " ")
     }
 
-    static func pad(_ npcs: inout [NPC], world: WorldDef, avoid: [String] = []) {
-        if isScene(world) { padScene(&npcs, avoid: avoid) } else { padGeneric(&npcs, topics: Topics.forWorld(world), avoid: avoid) }
+    static func pad(_ npcs: inout [NPC], world: WorldDef, avoid: [String] = [], target tgt: Int = CastGen.target) {
+        if isScene(world) { padScene(&npcs, avoid: avoid, tgt: tgt) } else { padGeneric(&npcs, topics: Topics.forWorld(world), avoid: avoid, tgt: tgt) }
     }
 
     private static func pickTrait() -> Trait {
@@ -71,12 +71,12 @@ enum CastGen {
         return Int.random(in: 400_000...2_000_000)
     }
 
-    private static func padScene(_ npcs: inout [NPC], avoid: [String]) {
+    private static func padScene(_ npcs: inout [NPC], avoid: [String], tgt: Int) {
         let real = npcs.filter { $0.id != "newsdesk" }.count
-        guard real < target else { return }
+        guard real < tgt else { return }
         var used = Set(npcs.map { $0.handle.lowercased() } + avoid.map { $0.lowercased() })
         var made = 0, guardN = 0
-        while real + made < target && guardN < 800 {
+        while real + made < tgt && guardN < 800 {
             guardN += 1
             guard let a = sceneA.randomElement(), let b = sceneB.randomElement() else { continue }
             var h = "\(a)_\(b)"
@@ -93,9 +93,9 @@ enum CastGen {
         }
     }
 
-    private static func padGeneric(_ npcs: inout [NPC], topics: [String], avoid: [String] = []) {
+    private static func padGeneric(_ npcs: inout [NPC], topics: [String], avoid: [String] = [], tgt: Int) {
         let real = npcs.filter { $0.id != "newsdesk" }.count
-        guard real < target else { return }
+        guard real < tgt else { return }
         let fems = AvatarLoader.femNames.filter { $0 != "alex_m" }.sorted()
         let mals = AvatarLoader.malNames.filter { $0 != "alex_m" }.sorted()
         var used = Set(npcs.map { $0.handle.lowercased() } + avoid.map { $0.lowercased() })
@@ -108,7 +108,7 @@ enum CastGen {
         }
         var made = 0
         var guardN = 0
-        while real + made < target && guardN < 500 {
+        while real + made < tgt && guardN < 500 {
             guardN += 1
             let woman = Bool.random()
             guard let f = (woman ? fems : mals).randomElement(), let l = last.randomElement() else { continue }
