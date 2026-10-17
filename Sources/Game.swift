@@ -348,18 +348,44 @@ final class Game: ObservableObject {
         let cmts = Int.random(in: 0...2)
         return Post(authorHandle: npc.handle, authorName: npc.name, emoji: npc.emoji, text: text,
                     likes: likes, reposts: likes / 8,
-                    comments: makeComments(st, auraDelta: 1, count: cmts, exclude: npc.handle),
+                    comments: makeComments(st, auraDelta: 1, count: cmts, exclude: npc.handle, text: text),
                     day: st.day, isYou: false, verified: npc.followers >= 40000 || npc.id == "newsdesk")
     }
 
-    func makeComments(_ st: GameState, auraDelta: Int, count: Int, exclude: String = "") -> [Comment] {
-        let pool = st.npcs.filter { $0.id != "newsdesk" && $0.handle != exclude }.shuffled().prefix(count)
-        return pool.map { n in
+    func makeComments(_ st: GameState, auraDelta: Int, count: Int, exclude: String = "", text: String = "") -> [Comment] {
+        let pool = Array(st.npcs.filter { $0.id != "newsdesk" && $0.handle != exclude }.shuffled().prefix(count))
+        let topic = Topics.forWorld(st.world).first ?? "this"
+        let quote = Corpus.quote(from: text, fallback: topic)
+        let me = st.persona.handle
+        var out: [Comment] = []
+        var negOf: [String: Bool] = [:]
+        for n in pool {
             let roll = Double.random(in: 0...1)
-            let neg: Bool = n.trait == .hater ? roll < 0.7 : (auraDelta < 0 ? roll < 0.55 : roll < 0.1)
-            let line = (neg ? Lines.neg[n.trait] : Lines.pos[n.trait])?.randomElement() ?? "👀"
-            return Comment(name: n.name, handle: n.handle, emoji: n.emoji, text: line, verified: n.followers >= 40000)
+            var neg: Bool
+            switch n.trait {
+            case .hater: neg = roll < 0.82
+            case .wholesome: neg = auraDelta < 0 ? roll < 0.35 : roll < 0.06
+            case .chaos, .gossip: neg = auraDelta < 0 ? roll < 0.7 : roll < 0.3
+            default: neg = auraDelta < 0 ? roll < 0.62 : roll < 0.2
+            }
+            var body: String
+            if let target = out.randomElement(), Double.random(in: 0...1) < 0.6 {
+                let tn = negOf[target.handle] ?? false
+                let agree = tn == neg ? Double.random(in: 0...1) < 0.85 : Double.random(in: 0...1) < 0.12
+                let bucket = agree ? "rebut.agree" : "rebut.fight"
+                let l = Corpus.line(trait: n.trait, bucket: bucket, me: me, topic: topic, quote: quote)
+                    ?? (agree ? "exactly this" : "no, that's wrong")
+                body = "@\(target.handle) " + l
+                neg = agree ? tn : !tn
+            } else {
+                let bucket = neg ? "comment.neg" : "comment.pos"
+                body = Corpus.line(trait: n.trait, bucket: bucket, me: me, topic: topic, quote: quote)
+                    ?? ((neg ? Lines.neg[n.trait] : Lines.pos[n.trait])?.randomElement() ?? "👀")
+            }
+            negOf[n.handle] = neg
+            out.append(Comment(name: n.name, handle: n.handle, emoji: n.emoji, text: body, verified: n.followers >= 40000))
         }
+        return out
     }
 
     private var lastPostFetch = Date.distantPast
@@ -457,7 +483,10 @@ final class Game: ObservableObject {
             st.npcs[j].affinity = min(100, st.npcs[j].affinity + 2)
         }
         gainXP(&st, 3)
+        let sid = st.id
+        let target = st.npcs.first(where: { $0.handle == st.posts[i].authorHandle && $0.id != "newsdesk" })?.handle
         s = st
+        scheduleChain(sid: sid, host: .post(id), target: target, playerText: t)
     }
 
     // MARK: Posting
@@ -481,7 +510,7 @@ final class Game: ObservableObject {
         var gain = max(1, Int(Double(likes) * 0.06 * kind.followMult))
         if delta < 0 { gain = max(1, gain * 3 / 4) }
         let before = st.followers
-        let comments = makeComments(st, auraDelta: delta, count: Int.random(in: 2...3))
+        let comments = makeComments(st, auraDelta: delta, count: Int.random(in: 4...7), text: t)
         let post = Post(authorHandle: st.persona.handle, authorName: st.persona.name, emoji: st.persona.emoji,
                         text: t, likes: likes, reposts: likes / 7, comments: comments, day: st.day, isYou: true,
                         verified: st.followers >= 10000, viral: viral, tag: kind.label)
@@ -747,13 +776,14 @@ final class Game: ObservableObject {
         let hist = st.threads[handle] ?? []
         let (sys, usr) = AIPrompt.dm(st, npc: n, history: hist)
         let useAI = aiOK
+        let offline = offlineDM(n, text: t, st)
         Task {
             var reply: String? = nil
             if useAI {
                 do { reply = try await AI.reply(system: sys, user: usr) } catch { self.markDown() }
             }
             if reply == nil { try? await Task.sleep(nanoseconds: 1_300_000_000) }
-            let msg = reply ?? (Lines.dm[n.trait]?.randomElement() ?? "👀")
+            let msg = reply ?? offline
             self.deliver(sid, handle, msg)
         }
     }

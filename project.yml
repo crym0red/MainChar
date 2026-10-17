@@ -9,6 +9,7 @@ targets:
     platform: iOS
     sources:
       - Sources
+      - Resources
       - Assets.xcassets
       - path: Info.plist
         buildPhase: none

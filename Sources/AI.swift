@@ -393,7 +393,7 @@ enum AIPrompt {
     }
 
     static func replies(_ s: GameState, text: String, delta: Int) -> (String, String) {
-        let system = "You write the replies under a post in a fictional online world for a mobile game. Replies must sound like real people in that specific niche. Output ONLY valid minified JSON. No markdown."
+        let system = "You write the replies under a post in a fictional online world for a mobile game. Replies must sound like real people in that specific niche. Be blunt, emotional and opinionated: hype hard, or roast and nitpick specific words in the post. Several replies should argue with or back up each other by starting with @handle of another replier. Output ONLY valid minified JSON. No markdown."
         let mood = delta >= 0 ? "mostly positive, a couple of playful or skeptical" : "mixed to negative, some people roast it"
         let user = """
         \(worldBlock(s))

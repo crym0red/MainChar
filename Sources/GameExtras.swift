@@ -229,7 +229,7 @@ extension Game {
         var st = s
         let delta = Int.random(in: -2...3)
         let power = takePower(&st)
-        let comments = makeComments(st, auraDelta: delta, count: Int.random(in: 4...6))
+        let comments = makeComments(st, auraDelta: delta, count: Int.random(in: 6...10), text: t)
         let story = Story(id: id, text: t, bg: bg, hasImage: hasImage, day: st.day, comments: comments)
         st.ex.stories.insert(story, at: 0)
         if st.ex.stories.count > 30 { st.ex.stories.removeLast(st.ex.stories.count - 30) }
@@ -309,29 +309,10 @@ extension Game {
         guard let i = st.ex.stories.firstIndex(where: { $0.id == id }) else { return false }
         st.ex.stories[i].comments.append(Comment(name: st.persona.name, handle: st.persona.handle, emoji: st.persona.emoji, text: t))
         gainXP(&st, 2)
-        s = st
         let sid = st.id
-        Task {
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-            self.npcAnswer(sid, id, replyTo)
-        }
+        s = st
+        scheduleChain(sid: sid, host: .story(id), target: replyTo, playerText: t)
         return true
-    }
-
-    private func npcAnswer(_ sid: UUID, _ storyID: UUID, _ handle: String?) {
-        guard let k = saveIndex(sid) else { return }
-        var st = store.saves[k]
-        guard let i = st.ex.stories.firstIndex(where: { $0.id == storyID }) else { return }
-        let cast = st.npcs.filter { $0.id != "newsdesk" }
-        let pick = cast.first(where: { $0.handle == handle }) ?? cast.randomElement()
-        guard let n = pick else { return }
-        let line = Lines.pos[n.trait]?.randomElement() ?? "👀"
-        st.ex.stories[i].comments.append(Comment(name: n.name, handle: n.handle, emoji: n.emoji,
-                                                 text: "@\(st.persona.handle) \(line)", verified: n.followers >= 40000))
-        if let j = st.npcs.firstIndex(where: { $0.handle == n.handle }) {
-            st.npcs[j].affinity = min(100, st.npcs[j].affinity + 2)
-        }
-        store.saves[k] = st
     }
 
     func deleteStory(_ id: UUID) {
@@ -339,5 +320,101 @@ extension Game {
         st.ex.stories.removeAll { $0.id == id }
         s = st
         StoryImages.remove(id)
+    }
+
+    // MARK: Character-to-character chains (offline engine)
+
+    enum ChainHost {
+        case post(UUID)
+        case story(UUID)
+    }
+
+    func offlineDM(_ n: NPC, text: String, _ st: GameState) -> String {
+        let topic = Topics.forWorld(st.world).first ?? "this"
+        let quote = Corpus.quote(from: text, fallback: topic)
+        var warm = n.affinity >= 50
+        if n.affinity < 50 && n.affinity >= 30 { warm = Bool.random() }
+        if n.trait == .hater && n.affinity < 70 { warm = Double.random(in: 0...1) < 0.2 }
+        let bucket = warm ? "dm.warm" : "dm.cold"
+        return Corpus.line(trait: n.trait, bucket: bucket, me: st.persona.handle, topic: topic, quote: quote)
+            ?? (Lines.dm[n.trait]?.randomElement() ?? "👀")
+    }
+
+    /// Builds the replies a player's comment would trigger: the addressed character answers, then others pile on each other.
+    private func buildChain(_ st: GameState, target: String?, playerText: String) -> [Comment] {
+        let cast = st.npcs.filter { $0.id != "newsdesk" }
+        guard !cast.isEmpty else { return [] }
+        let topic = Topics.forWorld(st.world).first ?? "this"
+        let quote = Corpus.quote(from: playerText, fallback: topic)
+        let me = st.persona.handle
+        var mention: String? = target
+        if mention == nil, let w = playerText.split(separator: " ").first, w.hasPrefix("@") {
+            mention = String(w.dropFirst())
+        }
+        let first = cast.first(where: { $0.handle == mention }) ?? cast.randomElement()!
+        var neg: Bool
+        if first.affinity >= 55 { neg = Double.random(in: 0...1) < 0.2 }
+        else if first.affinity < 35 { neg = Double.random(in: 0...1) < 0.75 }
+        else { neg = Bool.random() }
+        if first.trait == .hater && first.affinity < 70 { neg = Double.random(in: 0...1) < 0.85 }
+
+        var out: [Comment] = []
+        var lastNeg: [String: Bool] = [:]
+        func add(_ n: NPC, _ body: String) {
+            out.append(Comment(name: n.name, handle: n.handle, emoji: n.emoji, text: body, verified: n.followers >= 40000))
+        }
+        let l0 = Corpus.line(trait: first.trait, bucket: neg ? "comment.neg" : "comment.pos",
+                             me: me, topic: topic, quote: quote)
+            ?? ((neg ? Lines.neg[first.trait] : Lines.pos[first.trait])?.randomElement() ?? "👀")
+        add(first, "@\(me) " + l0)
+        lastNeg[first.handle] = neg
+
+        let others = cast.filter { $0.handle != first.handle }.shuffled().prefix(Int.random(in: 1...3))
+        var prev = first
+        for n in others {
+            let pn = lastNeg[prev.handle] ?? false
+            let myNeg = n.trait == .hater ? Double.random(in: 0...1) < 0.7 : Double.random(in: 0...1) < 0.4
+            let agree = pn == myNeg ? Double.random(in: 0...1) < 0.85 : Double.random(in: 0...1) < 0.15
+            let l = Corpus.line(trait: n.trait, bucket: agree ? "rebut.agree" : "rebut.fight",
+                                me: me, topic: topic, quote: quote)
+                ?? (agree ? "exactly this" : "no, that's wrong")
+            add(n, "@\(prev.handle) " + l)
+            lastNeg[n.handle] = agree ? pn : !pn
+            prev = n
+        }
+        return out
+    }
+
+    func scheduleChain(sid: UUID, host: ChainHost, target: String?, playerText: String) {
+        guard let k = saveIndex(sid) else { return }
+        let comments = buildChain(store.saves[k], target: target, playerText: playerText)
+        guard !comments.isEmpty else { return }
+        Task {
+            for (i, c) in comments.enumerated() {
+                let secs = Double.random(in: 1.0...2.4)
+                try? await Task.sleep(nanoseconds: UInt64(secs * 1_000_000_000))
+                self.appendChain(sid, host, c, notifyPlayer: i == 0)
+            }
+        }
+    }
+
+    private func appendChain(_ sid: UUID, _ host: ChainHost, _ c: Comment, notifyPlayer: Bool) {
+        guard let k = saveIndex(sid) else { return }
+        var st = store.saves[k]
+        switch host {
+        case .post(let id):
+            guard let i = st.posts.firstIndex(where: { $0.id == id }) else { return }
+            st.posts[i].comments.append(c)
+        case .story(let id):
+            guard let i = st.ex.stories.firstIndex(where: { $0.id == id }) else { return }
+            st.ex.stories[i].comments.append(c)
+        }
+        if let j = st.npcs.firstIndex(where: { $0.handle == c.handle }) {
+            st.npcs[j].affinity = max(0, min(100, st.npcs[j].affinity + 1))
+        }
+        if notifyPlayer {
+            notify(&st, "reply", "\(c.name) replied to your comment", sub: "\(c.handle): \(c.text)", handle: c.handle, emoji: c.emoji)
+        }
+        store.saves[k] = st
     }
 }
