@@ -93,7 +93,7 @@ struct MarketView: View {
     private let timer = Timer.publish(every: 2.5, on: .main, in: .common).autoconnect()
     private let lav = Color(red: 0.67, green: 0.62, blue: 0.95)
     private let green = Color(red: 0.4, green: 0.95, blue: 0.5)
-    private let segs = ["Market", "Holdings", "Yours", "Watch", "Rugs"]
+    private let segs = ["Market", "Holdings", "Yours", "Watch"]
     private let sorts = ["Hot", "Cap", "New", "Risky"]
 
     var body: some View {
@@ -111,17 +111,16 @@ struct MarketView: View {
                     Spacer()
                     HStack(spacing: 5) {
                         Image(systemName: "diamond.fill").font(.system(size: 12)).foregroundColor(T.gold)
-                        Text("\(st.ex.gems)").font(.jk(15, .bold))
+                        Text("\(st.ex.gems)").font(.jk(15, .bold)).lineLimit(1).fixedSize()
                     }
-                    .padding(.horizontal, 14).frame(height: 44).background(Color.white.opacity(0.08)).clipShape(Capsule())
+                    .padding(.horizontal, 14).frame(height: 44).fixedSize().background(Color.white.opacity(0.08)).clipShape(Capsule())
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Market").font(.jk(38, .heavy))
-                    Text("\(m.coins.filter { !$0.rugged }.count) live · \(m.coins.filter { $0.rugged }.count) rugged").font(.jk(13)).foregroundColor(T.sub)
+                    Text("\(m.coins.filter { !$0.rugged }.count) coins live").font(.jk(13)).foregroundColor(T.sub)
                 }
                 portfolio(m, st, value: value, pnl: pnl)
                 trending(m)
-                lords(m, st)
                 segBar
                 if seg == 0 { sortBar }
                 search
@@ -182,9 +181,9 @@ struct MarketView: View {
             }
             .frame(height: 8)
             HStack(spacing: 10) {
-                statCell("Rug loot", "+\(Mk.fmtGems(m.lootEarned ?? 0))", green)
-                statCell("Lost to rugs", "-\(Mk.fmtGems(m.lootLost ?? 0))", T.red)
-                statCell("Pulled / hit", "\(m.rugsPulled) / \(m.rugsTaken)", .white)
+                statCell("Fees paid", "-\(Mk.fmtGems(m.feesPaid ?? 0))", T.red)
+                statCell("Positions", "\(held.count)", .white)
+                statCell("Launched", "\(m.launched)", lav)
             }
         }
         .padding(16)
@@ -227,37 +226,6 @@ struct MarketView: View {
                         }
                     }
                 }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func lords(_ m: Market, _ st: GameState) -> some View {
-        let top = (m.lords ?? [:]).sorted { $0.value > $1.value }.prefix(3)
-        if !top.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 6) {
-                    Text("Rug Lords").font(.jk(20, .bold))
-                    Text("gems taken from holders").font(.jk(12)).foregroundColor(T.sub)
-                }
-                VStack(spacing: 0) {
-                    ForEach(Array(top.enumerated()), id: \.offset) { i, e in
-                        let n = st.npcs.first { $0.handle == e.key }
-                        let isMe = e.key == st.persona.handle
-                        HStack(spacing: 12) {
-                            Text("\(i + 1)").font(.jk(15, .heavy)).foregroundColor([T.gold, Color(white: 0.8), T.orange][i]).frame(width: 18)
-                            Avatar(emoji: isMe ? st.persona.emoji : (n?.emoji ?? "🙂"), key: e.key, size: 34)
-                            Text(isMe ? "You" : (n?.name ?? e.key)).font(.jk(15, .semibold)).lineLimit(1)
-                            Spacer()
-                            Text("+\(Mk.fmtGems(e.value))").font(.jk(15, .bold)).foregroundColor(green)
-                            Image(systemName: "diamond.fill").font(.system(size: 10)).foregroundColor(T.gold)
-                        }
-                        .padding(.vertical, 9)
-                        .profileTap(e.key)
-                    }
-                }
-                .padding(.horizontal, 14).padding(.vertical, 4)
-                .background(Color.white.opacity(0.05)).clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             }
         }
     }
@@ -309,8 +277,7 @@ struct MarketView: View {
             switch seg {
             case 1: base = m.coins.filter { c in m.holds.contains(where: { $0.id == c.id }) }
             case 2: base = m.coins.filter { $0.mine }
-            case 3: base = m.coins.filter { (m.watch ?? []).contains($0.id) }
-            case 4: base = m.coins.filter { $0.rugged }.sorted { ($0.ruggedAt ?? .distantPast) > ($1.ruggedAt ?? .distantPast) }
+            case 3: base = m.coins.filter { (m.watch ?? []).contains($0.id) && !$0.rugged }
             default:
                 switch sort {
                 case 1: base = m.coins.sorted { Mk.mc($0) > Mk.mc($1) }
@@ -318,15 +285,15 @@ struct MarketView: View {
                 case 3: base = m.coins.sorted { $0.rugP > $1.rugP }
                 default: base = m.coins.sorted { Mk.change($0) > Mk.change($1) }
                 }
-                base = base.filter { !$0.rugged } + base.filter { $0.rugged }
+                base = base.filter { !$0.rugged }
             }
             if !q.isEmpty { base = base.filter { $0.id.lowercased().contains(q) || $0.name.lowercased().contains(q) } }
             return base
         }()
         if coins.isEmpty {
-            let titles = ["Nothing listed", "No positions", "No coins launched", "Nothing watched", "No rugs yet"]
-            let details = ["Try another search.", "Buy into a coin from the Market tab.", "Launch your own coin and see who buys in.", "Tap the heart on a coin to watch it.", "Nobody has rugged. Give it time."]
-            EmptyState(emoji: seg == 4 ? "🧯" : "💸", title: titles[seg], detail: details[seg])
+            let titles = ["Nothing listed", "No positions", "No coins launched", "Nothing watched"]
+            let details = ["Try another search.", "Buy into a coin from the Market tab.", "Launching costs 50 gems plus a seed. The market is volatile.", "Tap the heart on a coin to watch it."]
+            EmptyState(emoji: "💸", title: titles[seg], detail: details[seg])
         } else {
             VStack(spacing: 8) {
                 ForEach(Array(coins.enumerated()), id: \.element.id) { i, c in
@@ -354,13 +321,13 @@ struct MarketView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(c.id).font(.jk(19, .bold)).foregroundColor(.white).lineLimit(1)
-                    if c.rugged { tag("RUGGED", T.red, .white) }
+                    if c.rugged { tag("DELISTED", T.red, .white) }
                     else if c.mine { tag("YOURS", lav, .black) }
                     else { tag(Mk.risk(c).uppercased(), Mk.riskColor(c).opacity(0.22), Mk.riskColor(c)) }
                     if (m.watch ?? []).contains(c.id) { Image(systemName: "heart.fill").font(.system(size: 10)).foregroundColor(T.red) }
                 }
                 if c.rugged {
-                    Text("Deployer pocketed \(Mk.fmtGems(c.looted ?? c.poolV)) gems").font(.jk(13, .semibold)).foregroundColor(T.red).lineLimit(1)
+                    Text("Delisted. Nothing left to sell.").font(.jk(13, .semibold)).foregroundColor(T.red).lineLimit(1)
                 } else {
                     Text("\(Mk.fmtMC(Mk.mc(c))) MC · \(c.holders) holders").font(.jk(13)).foregroundColor(T.sub).lineLimit(1)
                 }
@@ -472,10 +439,12 @@ struct CoinDetail: View {
             .padding(.horizontal, 16)
             if c.rugged {
                 VStack(alignment: .leading, spacing: 6) {
-                    Label("Rugged. The liquidity is gone.", systemImage: "exclamationmark.triangle.fill")
+                    Label(c.crashed == true ? "Delisted. The market collapsed it." : "Rugged. The liquidity is gone.", systemImage: "exclamationmark.triangle.fill")
                         .font(.jk(15, .bold)).foregroundColor(T.red)
-                    Text("\(cname) pulled the pool and pocketed \(Mk.fmtGems(c.looted ?? c.poolV)) gems from every holder.")
-                        .font(.jk(14)).foregroundColor(.white.opacity(0.85))
+                    if c.crashed != true {
+                        Text("\(cname) pulled the pool and pocketed \(Mk.fmtGems(c.looted ?? c.poolV)) gems from every holder.")
+                            .font(.jk(14)).foregroundColor(.white.opacity(0.85))
+                    }
                     if let h = held { Text("Your position lost \(Mk.fmtGems(h.cost)) gems.").font(.jk(13, .semibold)).foregroundColor(T.red) }
                 }
                 .padding(14).frame(maxWidth: .infinity, alignment: .leading)
@@ -504,7 +473,7 @@ struct CoinDetail: View {
                 stat("Risk", Mk.risk(c), Mk.riskColor(c))
                 stat("Age", Mk.age(c))
                 stat("Peak", Mk.usdPrice(c.peak))
-                stat("Fee", "2%")
+                stat("Fee", "3%")
             }
             .padding(.horizontal, 16)
             HStack(spacing: 12) {
@@ -529,6 +498,7 @@ struct CoinDetail: View {
             .padding(12).background(Color.white.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 16))
             .padding(.horizontal, 16)
             .profileTap(c.creator)
+            if c.mine && !c.rugged { boosters(c, m).padding(.horizontal, 16) }
             Button { trade = true } label: {
                 HStack(spacing: 10) {
                     Image(systemName: held != nil ? "wallet.pass.fill" : "arrow.left.arrow.right")
@@ -543,11 +513,50 @@ struct CoinDetail: View {
         }
     }
 
+    private func boosters(_ c: Coin, _ m: Market) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("BOOSTERS").font(.jk(11, .heavy)).foregroundColor(T.sub)
+                Spacer()
+                if !c.fxOn("lock") {
+                    Label("Exposed to crashes", systemImage: "exclamationmark.triangle.fill").font(.jk(11, .bold)).foregroundColor(T.orange)
+                }
+            }
+            ForEach(Booster.allCases) { b in
+                let owned = m.inv?[b.rawValue] ?? 0
+                let left = Int((c.fx?[b.rawValue] ?? .distantPast).timeIntervalSinceNow / 60)
+                Button { game.useBooster(b, on: c.id) } label: {
+                    HStack(spacing: 12) {
+                        SymbolTile(emoji: b.emoji, size: 40, tint: T.gold)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(b.title).font(.jk(15, .bold)).foregroundColor(.white)
+                            Text(left > 0 ? "Active · \(left >= 60 ? "\(left / 60)h \(left % 60)m" : "\(left)m") left" : b.desc)
+                                .font(.jk(12)).foregroundColor(left > 0 ? T.lime : T.sub).multilineTextAlignment(.leading)
+                        }
+                        Spacer(minLength: 6)
+                        if owned > 0 {
+                            Text("Use · \(owned)").font(.jk(13, .bold)).foregroundColor(.black)
+                                .padding(.horizontal, 12).padding(.vertical, 7).background(lav).clipShape(Capsule())
+                        } else {
+                            HStack(spacing: 4) {
+                                GemIcon(size: 16)
+                                Text("\(b.price)").font(.jk(14, .bold)).foregroundColor(gemPurple)
+                            }
+                            .padding(.horizontal, 12).padding(.vertical, 7).background(Color.white.opacity(0.1)).clipShape(Capsule())
+                        }
+                    }
+                    .padding(12).background(Color.white.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
     private func bar(_ c: Coin) -> some View {
         HStack(spacing: 14) {
             Text("\(Mk.fmtMC(Mk.mc(c))) market cap").font(.jk(20, .semibold)).lineLimit(1).minimumScaleFactor(0.7)
             Button { trade = true } label: {
-                Text(c.rugged ? "Rugged" : "Buy").font(.jk(24, .bold)).foregroundColor(c.rugged ? .white : .black)
+                Text(c.rugged ? (c.crashed == true ? "Delisted" : "Rugged") : "Buy").font(.jk(24, .bold)).foregroundColor(c.rugged ? .white : .black)
                     .frame(maxWidth: .infinity).frame(height: 60)
                     .background(c.rugged ? T.red.opacity(0.7) : lav).clipShape(Capsule())
             }
@@ -818,14 +827,14 @@ struct TradeSheet: View {
             if !c.rugged {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("BUY").font(.jk(11, .heavy)).foregroundColor(T.sub)
-                    chips([1, 5, 10, 25, 50, 100], selected: buyAmt, label: { "\($0)" }) { buyAmt = $0 }
+                    chips([2, 5, 10, 25, 50, 100], selected: buyAmt, label: { "\($0)" }) { buyAmt = $0 }
                     Button { game.marketBuy(c.id, gems: buyAmt) } label: {
-                        Text("Buy with \(buyAmt) gems").font(.jk(18, .bold)).foregroundColor(.black)
+                        Text("Buy with \(buyAmt) gems · fee \(Mk.fmtGems(Mk.fee(Double(buyAmt))))").font(.jk(17, .bold)).foregroundColor(.black)
                             .frame(maxWidth: .infinity).padding(.vertical, 16)
                             .background(st.ex.gems >= buyAmt ? lav : Color.white.opacity(0.12)).clipShape(Capsule())
                     }
                     .disabled(st.ex.gems < buyAmt)
-                    Text("You have \(st.ex.gems) gems. 2% fee, big buys move the price. If \(c.mine ? "you rug" : "the deployer rugs"), the whole pool goes to \(c.mine ? "you" : "them").").font(.jk(12)).foregroundColor(T.sub)
+                    Text("You have \(st.ex.gems) gems. 3% fee (min 1 gem) on every buy and sell. Big buys move the price. If \(c.mine ? "you rug" : "the deployer rugs"), the whole pool goes to \(c.mine ? "you" : "them").").font(.jk(12)).foregroundColor(T.sub)
                 }
                 .padding(14).background(Color.white.opacity(0.07)).clipShape(RoundedRectangle(cornerRadius: 16))
             }
@@ -838,6 +847,7 @@ struct TradeSheet: View {
                             .frame(maxWidth: .infinity).padding(.vertical, 16)
                             .background(T.red.opacity(0.8)).clipShape(Capsule())
                     }
+                    Text("3% sell fee, min 1 gem. Slippage applies.").font(.jk(12)).foregroundColor(T.sub)
                 }
                 .padding(14).background(Color.white.opacity(0.07)).clipShape(RoundedRectangle(cornerRadius: 16))
             }
@@ -912,9 +922,9 @@ struct LaunchSheet: View {
                         }
                     }
                 }
-                Text("SEED LIQUIDITY (GEMS)").font(.jk(11, .heavy)).foregroundColor(T.sub)
+                Text("SEED LIQUIDITY (GEMS) · +50 LAUNCH FEE").font(.jk(11, .heavy)).foregroundColor(T.sub)
                 HStack(spacing: 8) {
-                    ForEach([5, 10, 25, 50], id: \.self) { v in
+                    ForEach([10, 25, 50, 100], id: \.self) { v in
                         Button { seed = v } label: {
                             Text("\(v)").font(.jk(15, .bold)).foregroundColor(.white)
                                 .frame(maxWidth: .infinity).padding(.vertical, 11)
@@ -922,10 +932,10 @@ struct LaunchSheet: View {
                         }
                     }
                 }
-                Text("Your seed goes into the pool and you start holding it. Other characters buy in when your hype is up, and their gems sit in the pool. Shill and chat to keep it moving. Pull the rug and the whole pool is yours, and the scene will remember.")
+                Text("Launching costs a 50 gem fee that is gone for good, plus your seed. The market is volatile: without a Crash Lock or Market Maker from the store, a crash can wipe your coin out. Your seed goes into the pool and you start holding it. Other characters buy in when your hype is up, and their gems sit in the pool. Shill and chat to keep it moving. Pull the rug and the whole pool is yours, and the scene will remember.")
                     .font(.jk(13)).foregroundColor(T.sub)
                 if let e = err { Text(e).font(.jk(14, .semibold)).foregroundColor(T.red) }
-                BigButton(title: "Launch $\(ticker.uppercased().filter { $0.isLetter || $0.isNumber }) for \(seed) gems", color: purple) {
+                BigButton(title: "Launch $\(ticker.uppercased().filter { $0.isLetter || $0.isNumber }) · \(seed + Mk.launchFee) gems", color: purple) {
                     if let e = game.marketLaunch(name: name, ticker: ticker, symbol: symbol, seed: seed) { err = e } else { dismiss() }
                 }
             }

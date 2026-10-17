@@ -221,26 +221,27 @@ struct FeedTab: View {
     private func header(_ st: GameState) -> some View {
         HStack(spacing: 10) {
             MCLogo(size: 30)
-            Text("Day \(st.day)").font(.jk(14, .semibold)).foregroundColor(T.sub)
+            Text("Day \(st.day)").font(.jk(14, .semibold)).foregroundColor(T.sub).lineLimit(1).fixedSize()
                 .padding(.horizontal, 10).padding(.vertical, 5).background(T.card2).clipShape(Capsule())
-            Spacer()
+            Spacer(minLength: 4)
             Button { showStore = true } label: {
-                HStack(spacing: 7) {
-                    GemIcon(size: 26)
-                    Text("\(st.ex.gems)").font(.jk(18, .semibold)).foregroundColor(gemPurple)
-                    Image(systemName: "plus").font(.system(size: 13, weight: .bold)).foregroundColor(.white)
-                        .frame(width: 24, height: 24).background(Color(red: 0.55, green: 0.30, blue: 0.90)).clipShape(Circle())
+                HStack(spacing: 6) {
+                    GemIcon(size: 24)
+                    Text("\(st.ex.gems)").font(.jk(17, .semibold)).foregroundColor(gemPurple).lineLimit(1).fixedSize()
+                    Image(systemName: "plus").font(.system(size: 12, weight: .bold)).foregroundColor(.white)
+                        .frame(width: 22, height: 22).background(Color(red: 0.55, green: 0.30, blue: 0.90)).clipShape(Circle())
                 }
-                .padding(.leading, 14).padding(.trailing, 8).frame(height: 50)
+                .padding(.leading, 12).padding(.trailing, 7).frame(height: 46)
+                .fixedSize(horizontal: true, vertical: false)
                 .background(T.card2).clipShape(Capsule())
             }
             Button { showStore = true } label: {
-                Image(systemName: "storefront.fill").font(.system(size: 22)).foregroundColor(.white.opacity(0.85))
-                    .frame(width: 50, height: 50).background(T.card2).clipShape(RoundedRectangle(cornerRadius: 14))
+                Image(systemName: "storefront.fill").font(.system(size: 20)).foregroundColor(.white.opacity(0.85))
+                    .frame(width: 46, height: 46).background(T.card2).clipShape(RoundedRectangle(cornerRadius: 14))
             }
             Button { confirmExit = true } label: {
                 Image(systemName: "rectangle.portrait.and.arrow.right").font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(T.red).frame(width: 50, height: 50).background(T.card2).clipShape(RoundedRectangle(cornerRadius: 14))
+                    .foregroundColor(T.red).frame(width: 46, height: 46).background(T.card2).clipShape(RoundedRectangle(cornerRadius: 14))
             }
         }
         .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 6)
@@ -836,11 +837,16 @@ struct EventSheet: View {
                 Chip(text: "\(r.followerDelta >= 0 ? "+" : "")\(short(r.followerDelta)) followers")
             }
             if !r.stats.isEmpty {
-                HStack { ForEach(r.stats) { c in Chip(text: "\(c.kind.label) \(c.up ? "↑" : "↓")") } }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 6)], alignment: .leading, spacing: 6) {
+                    ForEach(r.stats) { c in Chip(text: "\(c.kind.label) \(c.up ? "↑" : "↓")") }
+                }
             }
             if !r.npcs.isEmpty {
-                HStack(spacing: 6) {
-                    ForEach(r.npcs) { n in Chip(text: "\(n.up ? "↑" : "↓") @\(n.handle)") }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 6)], alignment: .leading, spacing: 6) {
+                    ForEach(r.npcs.prefix(8)) { n in Chip(text: "\(n.up ? "↑" : "↓") @\(n.handle)") }
+                }
+                if r.npcs.count > 8 {
+                    Text("+\(r.npcs.count - 8) more characters reacted").font(.jk(12)).foregroundColor(T.sub)
                 }
             }
         }.card()

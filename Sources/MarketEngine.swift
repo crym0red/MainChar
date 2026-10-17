@@ -25,6 +25,9 @@ struct Coin: Codable, Identifiable, Hashable {
     var start: Double = 0
     var pool: Double? = nil
     var looted: Double? = nil
+    var fx: [String: Date]? = nil
+    var crashed: Bool? = nil
+    func fxOn(_ k: String) -> Bool { (fx?[k] ?? .distantPast) > Date() }
     var poolV: Double { pool ?? liq }
 }
 
@@ -60,9 +63,62 @@ struct Market: Codable, Hashable {
     var lords: [String: Double]? = nil
     var lootEarned: Double? = nil
     var lootLost: Double? = nil
+    var inv: [String: Int]? = nil
+    var feesPaid: Double? = nil
+}
+
+enum Booster: String, CaseIterable, Identifiable {
+    case lock, whale, maker, hype, pump
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .lock: return "Crash Lock"
+        case .whale: return "Whale Shield"
+        case .maker: return "Market Maker"
+        case .hype: return "Hype Engine"
+        case .pump: return "Influencer Pump"
+        }
+    }
+    var desc: String {
+        switch self {
+        case .lock: return "Blocks market crashes on one of your coins for 6 hours."
+        case .whale: return "Blocks whale dumps on one of your coins for 6 hours."
+        case .maker: return "Cuts volatility by more than half and stops the slow bleed for 6 hours."
+        case .hype: return "Steady buying pressure and new holders for 2 hours."
+        case .pump: return "An instant spike of 35 to 70% and a rush of new holders."
+        }
+    }
+    var price: Int {
+        switch self {
+        case .lock: return 30
+        case .whale: return 25
+        case .maker: return 40
+        case .hype: return 20
+        case .pump: return 15
+        }
+    }
+    var hours: Int {
+        switch self {
+        case .lock, .whale, .maker: return 6
+        case .hype: return 2
+        case .pump: return 0
+        }
+    }
+    var emoji: String {
+        switch self {
+        case .lock: return "🔒"
+        case .whale: return "🛡"
+        case .maker: return "🏦"
+        case .hype: return "🔥"
+        case .pump: return "📣"
+        }
+    }
 }
 
 enum Mk {
+    static let launchFee = 50
+    static let feeRate = 0.03
+    static func fee(_ x: Double) -> Double { max(1, x * feeRate) }
     static let sceneA = ["Dylib", "Sideload", "Kernel", "Rootless", "Jelbrek", "Revoke", "Entitle", "Signer", "Tweak", "Patch", "Sandbox", "Cert", "Ghost", "Zero"]
     static let genA = ["Moon", "Froggo", "Chad", "Rizz", "Aura", "Clout", "Degen", "Ape", "Pump", "Turbo", "Cope", "Based"]
     static let tail = ["Coin", "Inu", "Cash", "Token", "Swap", "DAO", "Fi", "Moon", "Gold"]
@@ -112,7 +168,7 @@ enum Mk {
     }
 
     static func risk(_ c: Coin) -> String {
-        let s = c.rugP * 1000 + Double(HK.h(c.id) % 20) / 10
+        let s = min(c.rugP, 0.0005) * 5000 + Double(HK.h(c.id) % 20) / 10
         if c.mine { return "Yours" }
         return s < 1.5 ? "Low" : (s < 3.5 ? "Medium" : (s < 5.5 ? "High" : "Degen"))
     }
@@ -124,7 +180,7 @@ enum Mk {
     }
 }
 
-enum CoinEvent { case rug, pump(Double) }
+enum CoinEvent { case rug, crash, pump(Double) }
 
 // MARK: - Engine
 
@@ -143,23 +199,25 @@ extension Game {
         if have.contains(t) { t += String(Int.random(in: 2...9)) }
         var rugP: Double
         switch npc.trait {
-        case .chaos, .hater: rugP = 0.006
-        case .mogul: rugP = 0.004
-        case .hype: rugP = 0.003
-        case .gossip: rugP = 0.002
-        default: rugP = 0.0008
+        case .chaos, .hater: rugP = 0.0004
+        case .mogul: rugP = 0.00025
+        case .hype: rugP = 0.0002
+        case .gossip: rugP = 0.00012
+        default: rugP = 0.00004
         }
         rugP *= Double.random(in: 0.6...1.4)
         let start = Double.random(in: 0.0008...0.04)
         var c = Coin(id: t, name: a + " " + b, creator: npc.handle, symbol: Mk.symbols.randomElement() ?? "star.fill",
                      hue: Double.random(in: 0...1), price: start, hist: [start], born: Date(),
                      liq: Double.random(in: 25...320), rugP: rugP, holders: Int.random(in: 6...80), start: start)
-        c.vol = Double.random(in: 0.03...0.09)
+        c.vol = Double.random(in: 0.07...0.16)
         c.peak = start
         if backfill {
             for _ in 0..<45 { _ = stepCoin(&c, quiet: true) }
             c.born = Date().addingTimeInterval(-Double.random(in: 1800...40000))
             c.rugged = false
+            c.price = max(c.price, start * 0.25)
+            c.hist[c.hist.count - 1] = c.price
             c.pool = c.liq
         }
         c.pool = c.pool ?? c.liq
@@ -192,11 +250,21 @@ extension Game {
             if c.hist.count > 60 { c.hist.removeFirst() }
             return nil
         }
-        c.drift = c.drift * 0.97 - 0.0004
-        if Double.random(in: 0...1) < 0.012 { c.drift += Double.random(in: 0.03...0.11) }
-        if Double.random(in: 0...1) < 0.006 { c.drift -= Double.random(in: 0.04...0.10) }
-        let r = max(-0.35, min(0.35, c.drift + c.vol * Mk.gauss()))
+        let locked = c.mine && c.fxOn("lock")
+        let shielded = c.mine && c.fxOn("whale")
+        let steady = c.mine && c.fxOn("maker")
+        c.drift = c.drift * 0.96 - (c.mine ? 0.0006 : 0.0004)
+        if Double.random(in: 0...1) < 0.012 { c.drift += Double.random(in: 0.02...0.07) }
+        let crashP = c.mine ? (locked ? 0 : 0.005) : 0.005
+        if Double.random(in: 0...1) < crashP { c.drift -= Double.random(in: 0.03...0.09) }
+        if c.mine && c.fxOn("hype") { c.drift += 0.0003 }
+        let v = max(c.vol, c.mine ? 0.11 : 0.08) * (steady ? 0.45 : 1)
+        let r = max(-0.4, min(0.4, c.drift + v * Mk.gauss()))
         c.price = max(1e-7, c.price * exp(r))
+        if !shielded, Double.random(in: 0...1) < (c.mine ? 0.008 : 0.004) {
+            c.price = max(1e-7, c.price * Double.random(in: 0.72...0.9))
+            c.pool = max(2, c.poolV * 0.92)
+        }
         c.peak = max(c.peak, c.price)
         c.liq = max(5, c.liq * (1 + r * 0.3))
         c.pool = max(2, c.poolV + r * Double(max(1, c.holders)) * (c.mine ? 0.2 : 0.05))
@@ -205,7 +273,16 @@ extension Game {
         if c.hist.count > 60 { c.hist.removeFirst() }
         if quiet { return nil }
         let age = Date().timeIntervalSince(c.born) / 3600
-        if !c.mine, Double.random(in: 0...1) < c.rugP * (1 + min(age, 12) / 6) {
+        let base = c.start > 0 ? c.start : (c.hist.first ?? c.price)
+        if c.price < base * 0.04, age > 0.02 {
+            c.rugged = true
+            c.crashed = true
+            c.looted = 0
+            c.ruggedAt = Date()
+            c.hist.append(c.price)
+            return .crash
+        }
+        if !c.mine, Double.random(in: 0...1) < min(c.rugP, 0.0005) * (1 + min(age, 12) / 6) {
             c.looted = c.poolV
             c.price *= 0.015
             c.liq = 3
@@ -233,7 +310,7 @@ extension Game {
             }
         }
         // prune old dead coins and orphan holdings
-        let cutoff = Date().addingTimeInterval(-24 * 3600)
+        let cutoff = Date().addingTimeInterval(-15 * 60)
         let heldIDs = Set(m.holds.map { $0.id })
         m.coins.removeAll { c in c.rugged && (c.ruggedAt ?? .distantPast) < cutoff && !heldIDs.contains(c.id) }
         if m.coins.count > 16 { m.coins.removeAll { c in c.rugged && !c.mine && !heldIDs.contains(c.id) } }
@@ -292,6 +369,16 @@ extension Game {
             logEvent(&st, &items, quiet: quiet, emoji: "📈", title: "$\(c.id) pumped \(pct)%", detail: detail, post: p.id,
                      handles: creator.map { [$0.handle] } ?? [], weight: held != nil ? 55 : 35,
                      history: "$\(c.id) pumped \(pct)% and the whole feed noticed.")
+        case .crash:
+            var mm = st.ex.market ?? Market()
+            coinChatBurst(&mm, c, st, loot: 0)
+            st.ex.market = mm
+            if c.mine {
+                notify(&st, "event", "$\(c.id) was delisted", sub: "The market killed it. A Crash Lock or Market Maker would have helped.", handle: st.persona.handle, emoji: "📉")
+                st.aura = max(5, st.aura - 3)
+            } else if let h = held {
+                notify(&st, "event", "$\(c.id) collapsed", sub: "-\(Mk.fmtGems(h.cost)) gems. The market killed it.", handle: c.creator, emoji: "📉")
+            }
         case .rug:
             guard let author = news ?? cast.first else { return }
             let cn = creator?.name ?? "the deployer"
@@ -322,7 +409,6 @@ extension Game {
                 w = 90
                 notify(&st, "event", "You got rugged on $\(c.id)", sub: "-\(Mk.fmtGems(h.cost)) gems. \(cn) pocketed \(Mk.fmtGems(loot)) gems total", handle: c.creator, emoji: "📉")
                 mm.rugsTaken += 1
-                mm.realized -= h.cost
                 mm.lootLost = (mm.lootLost ?? 0) + h.cost
                 if h.cost >= 10 { st.aura = max(5, st.aura - 2) }
             }
@@ -392,9 +478,12 @@ extension Game {
         var st = s
         guard var m = st.ex.market, let i = m.coins.firstIndex(where: { $0.id == ticker }) else { return }
         guard !m.coins[i].rugged else { showToast("This coin is rugged"); return }
-        guard amt > 0, st.ex.gems >= amt else { showToast("Not enough gems"); return }
+        guard amt >= 2 else { showToast("Minimum buy is 2 gems"); return }
+        guard st.ex.gems >= amt else { showToast("Not enough gems"); return }
         st.ex.gems -= amt
-        let net = Double(amt) * 0.98
+        let fee = Mk.fee(Double(amt))
+        let net = Double(amt) - fee
+        m.feesPaid = (m.feesPaid ?? 0) + fee
         let qty = net / max(1e-9, m.coins[i].price)
         m.coins[i].price *= 1 + min(0.5, net / max(5, m.coins[i].liq) * 0.8)
         m.coins[i].liq += net * 0.5
@@ -406,6 +495,7 @@ extension Game {
         st.ex.market = m
         bump(&st, "trade")
         s = st
+        showToast("Bought. Fee \(Mk.fmtGems(fee)) gems")
     }
 
     func marketSell(_ ticker: String, frac: Double) {
@@ -415,8 +505,10 @@ extension Game {
         let f = max(0.01, min(1, frac))
         let sellQty = m.holds[h].qty * f
         var gross = sellQty * m.coins[i].price
-        if m.coins[i].rugged { gross = min(gross, m.coins[i].liq * f) }
-        let net = gross * 0.98
+        if m.coins[i].rugged { gross = min(gross, m.coins[i].liq * f) } else { gross = min(gross, m.coins[i].poolV * 0.85) }
+        let fee = min(gross, Mk.fee(gross))
+        let net = gross - fee
+        m.feesPaid = (m.feesPaid ?? 0) + fee
         if !m.coins[i].rugged { m.coins[i].price *= max(0.5, 1 - gross / max(5, m.coins[i].liq) * 0.8) }
         if !m.coins[i].rugged { m.coins[i].pool = max(1, m.coins[i].poolV - net) }
         let costPart = m.holds[h].cost * f
@@ -433,7 +525,7 @@ extension Game {
         if profit > 1 { gainXP(&st, min(60, Int(profit))) }
         bump(&st, "trade")
         s = st
-        showToast(profit >= 0 ? "Sold for +\(Mk.fmtGems(profit)) profit" : "Sold at \(Mk.fmtGems(profit)) loss")
+        showToast((profit >= 0 ? "Sold for +\(Mk.fmtGems(profit)) profit" : "Sold at \(Mk.fmtGems(profit)) loss") + ". Fee \(Mk.fmtGems(fee))")
     }
 
     func marketLaunch(name: String, ticker: String, symbol: String, seed: Int) -> String? {
@@ -444,15 +536,17 @@ extension Game {
         guard t.count >= 2, t.count <= 6 else { return "Ticker must be 2 to 6 characters" }
         guard !m.coins.contains(where: { $0.id == t }) else { return "That ticker is taken" }
         guard !name.trimmed.isEmpty else { return "Give it a name" }
-        guard st.ex.gems >= seed else { return "Not enough gems" }
-        st.ex.gems -= seed
+        guard seed >= 10 else { return "Seed at least 10 gems" }
+        guard st.ex.gems >= seed + Mk.launchFee else { return "Need \(seed + Mk.launchFee) gems: \(Mk.launchFee) launch fee plus \(seed) seed" }
+        st.ex.gems -= seed + Mk.launchFee
+        m.feesPaid = (m.feesPaid ?? 0) + Double(Mk.launchFee)
         var c = Coin(id: t, name: String(name.trimmed.prefix(24)), creator: st.persona.handle, symbol: symbol,
                      hue: Double(HK.h(t) % 360) / 360, price: 0.01, hist: [0.01], born: Date(),
                      liq: Double(seed) + 10, rugP: 0, holders: 1, start: 0.01)
         c.mine = true
-        c.vol = 0.06
+        c.vol = 0.12
         c.peak = 0.01
-        c.drift = 0.02
+        c.drift = 0.01
         c.pool = Double(seed)
         m.coins.append(c)
         m.holds.append(Holding(id: t, qty: Double(seed) * 0.98 / 0.01, cost: Double(seed)))
@@ -543,6 +637,46 @@ extension Game {
         notify(&st, "event", "You rugged $\(ticker)", sub: "+\(Mk.fmtGems(loot)) gems from \(holders) holders, the scene will remember", emoji: "💸")
         s = st
         showToast("Rugged. +\(Mk.fmtGems(loot)) gems")
+    }
+
+    func buyBooster(_ b: Booster) {
+        var st = s
+        guard st.ex.gems >= b.price else { showToast("Not enough gems"); return }
+        var m = st.ex.market ?? Market()
+        var inv = m.inv ?? [:]
+        inv[b.rawValue, default: 0] += 1
+        m.inv = inv
+        st.ex.gems -= b.price
+        st.ex.market = m
+        s = st
+        showToast("\(b.title) added")
+    }
+
+    func useBooster(_ b: Booster, on ticker: String) {
+        var st = s
+        guard var m = st.ex.market, let i = m.coins.firstIndex(where: { $0.id == ticker }), m.coins[i].mine, !m.coins[i].rugged else { return }
+        var inv = m.inv ?? [:]
+        if (inv[b.rawValue] ?? 0) > 0 {
+            inv[b.rawValue] = (inv[b.rawValue] ?? 1) - 1
+        } else {
+            guard st.ex.gems >= b.price else { showToast("Not enough gems"); return }
+            st.ex.gems -= b.price
+        }
+        m.inv = inv
+        var fx = m.coins[i].fx ?? [:]
+        if b == .pump {
+            m.coins[i].price *= Double.random(in: 1.35...1.7)
+            m.coins[i].holders += Int.random(in: 20...60)
+            m.coins[i].drift += 0.04
+        } else {
+            let base = max(Date(), fx[b.rawValue] ?? Date())
+            fx[b.rawValue] = base.addingTimeInterval(Double(b.hours) * 3600)
+            if b == .hype { m.coins[i].holders += Int.random(in: 8...25) }
+        }
+        m.coins[i].fx = fx
+        st.ex.market = m
+        s = st
+        showToast("\(b.title) active on $\(ticker)")
     }
 
     func marketToggleWatch(_ t: String) {
@@ -685,7 +819,7 @@ extension Game {
     func coinChatBurst(_ m: inout Market, _ c: Coin, _ st: GameState, loot: Double) {
         var log = m.chats?[c.id] ?? []
         let now = Date()
-        log.append(CoinMsg(handle: "system", name: "System", emoji: "🚨", text: "$\(c.id) rugged. The deployer pocketed \(Mk.fmtGems(loot)) gems.", at: now.addingTimeInterval(-8), sys: true))
+        log.append(CoinMsg(handle: "system", name: "System", emoji: "🚨", text: c.crashed == true ? "$\(c.id) collapsed and was delisted." : "$\(c.id) rugged. The deployer pocketed \(Mk.fmtGems(loot)) gems.", at: now.addingTimeInterval(-8), sys: true))
         for k in 0..<6 {
             let sp = coinSpeaker(c, st)
             log.append(CoinMsg(handle: sp.npc.handle, name: sp.npc.name, emoji: sp.npc.emoji, text: coinLine(c, sp.npc, dev: false, st),

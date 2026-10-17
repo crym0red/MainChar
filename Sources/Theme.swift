@@ -365,6 +365,7 @@ struct Chip: View {
         Text(text)
             .font(.jk(12, .semibold))
             .foregroundColor(fg)
+            .lineLimit(1).minimumScaleFactor(0.8)
             .padding(.horizontal, 10).padding(.vertical, 5)
             .background(color)
             .clipShape(Capsule())

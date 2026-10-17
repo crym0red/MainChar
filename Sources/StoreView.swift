@@ -43,6 +43,7 @@ struct StoreView: View {
     @EnvironmentObject var nav: Nav
     @Environment(\.dismiss) private var dismiss
     @State private var confirm: StoreItem? = nil
+    @State private var confirmB: Booster? = nil
     @State private var streakInfo = false
     @State private var gemInfo = false
 
@@ -59,7 +60,7 @@ struct StoreView: View {
                 Spacer()
                 HStack(spacing: 6) {
                     GemIcon(size: 30)
-                    Text("\(st.ex.gems)").font(.jk(22, .medium)).foregroundColor(gemPurple)
+                    Text("\(st.ex.gems)").font(.jk(22, .medium)).foregroundColor(gemPurple).lineLimit(1).fixedSize()
                     Button { gemInfo = true } label: {
                         Image(systemName: "plus").font(.system(size: 18, weight: .bold)).foregroundColor(.white)
                             .frame(width: 44, height: 40).background(gemPurple.opacity(0.9))
@@ -75,6 +76,7 @@ struct StoreView: View {
                     section("Boosts", [.gift, .wave, .xp, .spotlight], st)
                     section("Powerups", [.viral, .boost, .shield, .squad], st)
                     section("Wild West", [.slate, .stir], st)
+                    boosterSection(st)
                 }
                 .padding(.horizontal, 16).padding(.bottom, 40)
             }
@@ -89,6 +91,15 @@ struct StoreView: View {
             Button("Cancel", role: .cancel) { confirm = nil }
         } message: {
             Text(confirm?.desc ?? "")
+        }
+        .alert("Buy \(confirmB?.title ?? "")?", isPresented: Binding(get: { confirmB != nil }, set: { _ in })) {
+            Button("Buy for \(confirmB?.price ?? 0) gems") {
+                if let b = confirmB { game.buyBooster(b) }
+                confirmB = nil
+            }
+            Button("Cancel", role: .cancel) { confirmB = nil }
+        } message: {
+            Text(confirmB?.desc ?? "")
         }
         .alert("Earn gems", isPresented: $gemInfo) {
             Button("OK", role: .cancel) {}
@@ -128,6 +139,39 @@ struct StoreView: View {
                 Button { confirm = it } label: { row(it, st) }.buttonStyle(.plain)
             }
         }
+    }
+
+    private func boosterSection(_ st: GameState) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Market").font(.jk(24, .medium)).padding(.top, 14)
+            Text("The market is volatile. Boosters protect and push the coins you launch. Buy here, then apply them on your coin's page.")
+                .font(.jk(15)).foregroundColor(T.sub)
+            ForEach(Booster.allCases) { b in
+                Button { confirmB = b } label: { boosterRow(b, st) }.buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func boosterRow(_ b: Booster, _ st: GameState) -> some View {
+        let owned = st.ex.market?.inv?[b.rawValue] ?? 0
+        return HStack(spacing: 16) {
+            SymbolTile(emoji: b.emoji, size: 64, tint: T.gold).frame(width: 84)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(b.title).font(.jk(24, .medium)).foregroundColor(.white)
+                Text(b.desc).font(.jk(18)).foregroundColor(T.sub).multilineTextAlignment(.leading)
+                if owned > 0 { Text("You have \(owned)").font(.jk(14, .semibold)).foregroundColor(T.lime) }
+            }
+            Spacer(minLength: 6)
+            HStack(spacing: 6) {
+                GemIcon(size: 26)
+                Text("\(b.price)").font(.jk(24, .medium)).foregroundColor(gemPurple).lineLimit(1).fixedSize()
+            }
+            .opacity(st.ex.gems >= b.price ? 1 : 0.5)
+        }
+        .padding(.vertical, 18).padding(.horizontal, 14)
+        .background(T.card)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
     }
 
     private func status(_ it: StoreItem, _ st: GameState) -> String? {
