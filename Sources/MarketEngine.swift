@@ -49,6 +49,28 @@ enum Mk {
     static let symbols = ["bitcoinsign.circle.fill", "bolt.fill", "flame.fill", "pawprint.fill", "moon.fill", "lock.open.fill",
                           "terminal.fill", "cpu", "leaf.fill", "crown.fill", "ladybug.fill", "star.fill"]
 
+    static let supply = 1_000_000.0
+    static func mc(_ c: Coin) -> Double { c.price * supply }
+    static func fmtMC(_ v: Double) -> String {
+        if v >= 1_000_000 { return String(format: "$%.1fM", v / 1_000_000) }
+        if v >= 1_000 { return String(format: "$%.1fK", v / 1_000) }
+        return String(format: "$%.0f", v)
+    }
+    static func usdPrice(_ p: Double) -> String {
+        let d = p / 1000
+        return d >= 0.01 ? String(format: "$%.4f", d) : String(format: "$%.8f", d)
+    }
+    static func pct(_ ch: Double) -> String {
+        let v = ch * 100
+        let sign = v >= 0 ? "+" : "-"
+        let a = abs(v)
+        if a >= 100 {
+            let f = NumberFormatter(); f.numberStyle = .decimal; f.maximumFractionDigits = 0
+            return sign + (f.string(from: NSNumber(value: a)) ?? "\(Int(a))") + "%"
+        }
+        return sign + String(format: "%.2f", a) + "%"
+    }
+
     static func gauss() -> Double {
         let u = Double.random(in: 0.0001...1), v = Double.random(in: 0...1)
         return sqrt(-2 * log(u)) * cos(2 * Double.pi * v)
