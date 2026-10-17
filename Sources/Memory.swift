@@ -97,7 +97,7 @@ extension Game {
         st.ex.memories = m
     }
 
-    static func briefFor(_ st: GameState, _ handle: String) -> String {
+    nonisolated static func briefFor(_ st: GameState, _ handle: String) -> String {
         let ms = (st.ex.memories ?? []).filter { $0.handle == handle }.prefix(4)
         guard !ms.isEmpty else { return "" }
         var tot = 0

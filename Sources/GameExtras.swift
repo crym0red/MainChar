@@ -231,7 +231,7 @@ extension Game {
         let delta = Int.random(in: -2...3)
         let power = takePower(&st)
         let comments = makeComments(st, auraDelta: delta, count: Int.random(in: 6...10), text: t)
-        let story = Story(id: id, text: t, bg: bg, hasImage: hasImage, day: st.day, comments: comments)
+        let story = UserStory(id: id, text: t, bg: bg, hasImage: hasImage, day: st.day, comments: comments)
         st.ex.stories.insert(story, at: 0)
         if st.ex.stories.count > 30 { st.ex.stories.removeLast(st.ex.stories.count - 30) }
 

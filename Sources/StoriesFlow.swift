@@ -63,7 +63,7 @@ struct StoryBackground: View {
 }
 
 struct StoryThumb: View {
-    let story: Story
+    let story: UserStory
     var width: CGFloat = 54
     var height: CGFloat = 72
     var body: some View {
@@ -414,7 +414,7 @@ struct StoryViewer: View {
         }
     }
 
-    private func bottom(_ story: Story, _ st: GameState) -> some View {
+    private func bottom(_ story: UserStory, _ st: GameState) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             if let c = story.comments.first {
                 HStack(alignment: .top, spacing: 12) {
