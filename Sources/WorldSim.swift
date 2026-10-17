@@ -214,6 +214,7 @@ extension Game {
         if pre < 0.16 { simStory(&st, &items, cast, quiet); return }
         if pre < 0.27 { simGoLive(&st, &items, cast, quiet); return }
         if pre < 0.42, CastGen.isScene(st.world) { simScene(&st, &items, cast, quiet); return }
+        if Double.random(in: 0...1) < 0.10 { simCallout(&st, &items, cast, quiet); return }
         let r = Double.random(in: 0...1)
         if r < 0.24 { simPost(&st, &items, cast, quiet) }
         else if r < 0.48 { simBeef(&st, &items, cast, quiet) }

@@ -7,6 +7,7 @@ struct SamplePost: Identifiable {
     let text: String
     let meta: String
     var verified = true
+    var look = AvatarLook()
 
     static let all: [SamplePost] = [
         SamplePost(name: "Cert Daily", handle: "certdaily", text: "You just signed 40 apps in one night. Apple noticed. Is your certificate about to get revoked?", meta: "4:05 PM · 10/14/26 · 150k views"),
@@ -17,6 +18,26 @@ struct SamplePost: Identifiable {
         SamplePost(name: "Feud Watch", handle: "feudwatch", text: "You called them out on stream. They remember. Everyone remembers. How long can you hold the line?", meta: "6:20 PM · 10/13/26 · 204k views"),
         SamplePost(name: "patch_gremlin", handle: "patch_gremlin", text: "pushed to main on a friday. it compiles. we ship. whatever happens next is a future me problem", meta: "1:02 AM · 10/11/26 · 47k views", verified: false),
         SamplePost(name: "Rank Report", handle: "rankreport", text: "Season ends in two days. You are #7 and someone is closing in fast. Time to post something loud.", meta: "8:45 AM · 10/16/26 · 96k views")
+    ]
+}
+
+extension SamplePost {
+    static func styled(_ f: (inout AvatarLook) -> Void) -> AvatarLook {
+        var l = AvatarLook()
+        f(&l)
+        return l
+    }
+
+    /// Showcase avatars for the welcome wall, static so the marquee stays cheap.
+    static let looks: [String: AvatarLook] = [
+        "certdaily": styled { $0.hat = 18; $0.hatColor = 3; $0.specs = 3; $0.bg = 1; $0.pattern = 1; $0.skin = 3; $0.hairStyle = 0 },
+        "scenewire": styled { $0.hat = 2; $0.hatColor = 5; $0.beard = 1; $0.necklace = 2; $0.bg = 3; $0.frame = 1; $0.skin = 5; $0.paint = 16 },
+        "kernel_wizard": styled { $0.hat = 11; $0.hatColor = 2; $0.beard = 4; $0.beardColor = 8; $0.specs = 1; $0.bg = 6; $0.pattern = 4; $0.skin = 1 },
+        "dropalert": styled { $0.hat = 3; $0.necklace = 3; $0.specs = 2; $0.bg = 4; $0.frame = 1; $0.skin = 4; $0.outfit = 4 },
+        "ghost_ledger": styled { $0.mask = 7; $0.hat = 1; $0.hatColor = 8; $0.bg = 9; $0.pattern = 2; $0.skin = 2 },
+        "feudwatch": styled { $0.paint = 8; $0.hat = 12; $0.bg = 2; $0.frame = 5; $0.accent = 0; $0.hairStyle = 2; $0.skin = 0 },
+        "patch_gremlin": styled { $0.hairStyle = 15; $0.hair = 11; $0.paint = 6; $0.paintColor = 7; $0.ear = 2; $0.bg = 7; $0.frame = 6; $0.skin = 6; $0.outfit = 1 },
+        "rankreport": styled { $0.outfit = 6; $0.neck = 2; $0.hairStyle = 14; $0.brow = 1; $0.bg = 5; $0.frame = 1; $0.necklace = 5; $0.skin = 7; $0.specs = 1 }
     ]
 }
 
@@ -50,7 +71,7 @@ struct SampleCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                HackerAvatar(key: p.handle, size: 42)
+                PortraitAvatar(key: p.handle, size: 46, look: SamplePost.looks[p.handle] ?? AvatarLook())
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 5) {
                         Text(p.name).font(.jk(16, .bold)).lineLimit(1)
@@ -119,15 +140,22 @@ struct WelcomeView: View {
         let posts = SamplePost.all
         ZStack {
             Color(red: 0.07, green: 0.07, blue: 0.08).ignoresSafeArea()
-            VStack(spacing: 14) {
-                Spacer(minLength: 0)
-                MarqueeRow(items: posts, speed: 20)
-                MarqueeRow(items: Array(posts.reversed()), speed: 26, reverse: true)
-                Spacer(minLength: 0)
+            GeometryReader { geo in
+                let rows = Int(ceil((geo.size.height + 80) / 184)) + 1
+                VStack(spacing: 14) {
+                    ForEach(0..<rows, id: \.self) { i in
+                        let k = (i * 3) % posts.count
+                        let items = Array(posts[k...] + posts[..<k])
+                        MarqueeRow(items: items, speed: 16 + Double((i * 7) % 4) * 4, reverse: i % 2 == 1)
+                    }
+                }
+                .frame(width: geo.size.width, alignment: .top)
+                .offset(y: -40)
             }
-            .opacity(0.9)
-            .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.18),
-                                         .init(color: .black, location: 0.5), .init(color: .clear, location: 0.72)],
+            .ignoresSafeArea()
+            .opacity(0.92)
+            .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.42),
+                                         .init(color: .clear, location: 0.7)],
                                  startPoint: .top, endPoint: .bottom))
             VStack(spacing: 0) {
                 Spacer()

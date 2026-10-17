@@ -7,16 +7,33 @@ struct AvatarStudioView: View {
     @State private var look = AvatarLook()
     @State private var tab = 0
 
-    private let tabs = ["Skin", "Hair", "Face", "Outfit", "Hats", "Paint", "Glasses", "Extras", "Backdrop"]
-    private let hairStyles = [0, 1, 2, 3, 4, 5, 6, 9]
-    private let hairNames = ["Crop", "Long", "Buzz", "Afro", "Bun", "Swoop", "Waves", "Bald"]
+    private let tabs = ["Skin", "Face", "Hair", "Beard", "Outfit", "Hats", "Paint", "Eyewear", "Jewelry", "Mask", "Backdrop", "Frame", "Badge"]
+    private let shapeNames = ["Default", "Slim", "Round", "Wide", "Long"]
+    private let hairStyles = [0, 1, 2, 3, 4, 5, 6, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 9]
+    private let hairNames = ["Crop", "Long", "Buzz", "Afro", "Bun", "Swoop", "Waves", "Mohawk", "Ponytail", "Braids", "Curly", "Side part", "Spiky", "Mullet", "Pigtails", "Undercut", "Space buns", "Bald"]
     private let eyeNames = ["Round", "Wide", "Happy"]
+    private let browNames = ["Thin", "Thick", "Angry", "Raised", "None"]
+    private let noseNames = ["Line", "Button", "Wide", "Pointed"]
     private let mouthNames = ["Smile", "Flat", "Smirk", "Grin"]
-    private let outfitNames = ["Tee", "Hoodie", "Collar", "Turtle", "Jacket", "Jersey", "Suit", "Tank"]
-    private let hatNames = ["None", "Beanie", "Cap", "Crown", "Party", "Cowboy", "Band", "Halo", "Bunny", "Cat", "Top hat", "Wizard", "Horns"]
-    private let paintNames = ["None", "Stripes", "Stars", "Bolt", "Tiger", "Clown", "Cyber", "Hearts", "Skull", "Bandit"]
+    private let beardNames = ["None", "Stubble", "Mustache", "Goatee", "Full beard", "Soul patch", "Handlebar", "Chinstrap"]
+    private let outfitNames = ["Tee", "Hoodie", "Collar", "Turtle", "Jacket", "Jersey", "Suit", "Tank", "Overalls", "Hawaiian", "Armor", "Lab coat", "Varsity", "Kimono"]
+    private let neckNames = ["None", "Scarf", "Bow tie", "Bandana"]
+    private let hatNames = ["None", "Beanie", "Cap", "Crown", "Party", "Cowboy", "Band", "Halo", "Bunny", "Cat", "Top hat", "Wizard", "Horns", "Pirate", "Santa", "Chef", "Flowers", "Antenna", "Headset", "Bucket", "Viking", "Grad cap"]
+    private let paintNames = ["None", "Stripes", "Stars", "Bolt", "Tiger", "Clown", "Cyber", "Hearts", "Skull", "Bandit", "Galaxy", "Flames", "Tears", "Whiskers", "Rainbow", "Full skull", "Eye black", "Butterfly"]
     private let specNames = ["None", "Round", "Shades", "Visor"]
-    private let animNames = ["Still", "Aurora", "Stars", "Matrix", "Bubbles", "Pulse", "Glitch", "Embers", "Rainbow"]
+    private let earNames = ["None", "Stud", "Hoops", "Drops"]
+    private let pierceNames = ["None", "Nose", "Brow", "Lip", "Septum"]
+    private let maskNames = ["None", "Surgical", "Ninja", "Bandana", "Respirator", "Hero", "Luchador", "Ski mask"]
+    private let necklaceNames = ["None", "Chain", "Cuban", "Layered", "Pearls", "Choker", "Pendant choker", "Dog tags", "Cross", "Beads"]
+    private let metalNames = ["Gold", "Silver", "Rose", "Black", "Neon"]
+    private let animNames = ["Still", "Aurora", "Stars", "Matrix", "Bubbles", "Pulse", "Glitch", "Embers", "Rainbow", "Snow", "Confetti", "Storm", "Sakura", "Waves", "Radar", "Hearts", "Synthwave", "Fireflies"]
+    private let patternNames = ["None", "Grid", "Dots", "Stripes", "Diamonds"]
+    private let frameNames = ["None", "Gold", "Neon", "Fire", "Rainbow", "Pixel", "Double"]
+    private let stickerNames = ["None", "Star", "Fire", "Crown", "Gem", "Skull", "Bolt", "Heart", "Rainbow", "Ghost", "Music", "Rocket"]
+    private let accNames = ["None", "Bow", "Clips", "Scrunchie", "Flower"]
+    private let moleNames = ["None", "Cheek", "Lip", "Brow"]
+    private let scarNames = ["None", "Brow", "Cheek"]
+    private let blushNames = ["Soft", "None", "Strong"]
 
     private var key: String { game.s.persona.handle }
     private let cols = [GridItem(.adaptive(minimum: 72), spacing: 12)]
@@ -28,7 +45,8 @@ struct AvatarStudioView: View {
     private func variant(_ f: (inout AvatarLook) -> Void) -> AvatarLook {
         var l = look
         f(&l)
-        if tab != 8 { l.anim = 0 }
+        if tab != 10 { l.anim = 0 }
+        if tab != 11 { l.frame = 0 }
         return l
     }
 
@@ -60,6 +78,32 @@ struct AvatarStudioView: View {
         .buttonStyle(.plain)
     }
 
+    private func chips(_ names: [String], _ sel: Int?, _ pick: @escaping (Int) -> Void) -> some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 8)], spacing: 8) {
+            ForEach(0..<names.count, id: \.self) { i in
+                Button { pick(i) } label: {
+                    Text(names[i]).font(.jk(14, .semibold)).foregroundColor(sel == i ? Color.white : T.sub)
+                        .frame(maxWidth: .infinity).padding(.vertical, 9)
+                        .background(sel == i ? T.blue : T.card2).clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func flag(_ title: String, _ b: Binding<Bool?>) -> some View {
+        Toggle(title, isOn: Binding(get: { b.wrappedValue ?? false }, set: { b.wrappedValue = $0 }))
+            .font(.jk(16, .semibold))
+    }
+
+    private func palette(_ vals: [UInt32], _ sel: Int?, _ pick: @escaping (Int) -> Void) -> some View {
+        LazyVGrid(columns: cols, spacing: 14) {
+            ForEach(0..<vals.count, id: \.self) { i in
+                swatch(col(vals[i]), on: sel == i) { pick(i) }
+            }
+        }
+    }
+
     private func section(_ t: String) -> some View {
         Text(t).font(.jk(14, .bold)).foregroundColor(T.sub)
             .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
@@ -81,20 +125,42 @@ struct AvatarStudioView: View {
     private func randomize() {
         var l = AvatarLook()
         l.skin = Int.random(in: 0..<8)
+        l.faceShape = Int.random(in: 0..<5)
         l.hair = Int.random(in: 0..<13)
         l.hairStyle = hairStyles.randomElement()
+        l.streak = Int.random(in: 0..<4) == 0 ? Int.random(in: 0..<13) : nil
+        l.hairAcc = Int.random(in: 0..<5) == 0 ? Int.random(in: 1...4) : 0
         l.top = Int.random(in: 0..<12)
-        l.outfit = Int.random(in: 0..<8)
+        l.outfit = Int.random(in: 0..<14)
+        l.neck = Int.random(in: 0..<5) == 0 ? Int.random(in: 1...3) : 0
         l.eyes = Int.random(in: 0..<3)
+        l.eyeColor = Int.random(in: 0..<9)
+        l.brow = Int.random(in: 0..<5)
+        l.lashes = Bool.random()
+        l.nose = Int.random(in: 0..<4)
         l.mouth = Int.random(in: 0..<4)
+        l.lips = Int.random(in: 0..<3) == 0 ? Int.random(in: 0..<7) : nil
+        l.beard = Int.random(in: 0..<3) == 0 ? Int.random(in: 1...7) : 0
+        l.freckles = Int.random(in: 0..<4) == 0
+        l.mole = Int.random(in: 0..<5) == 0 ? Int.random(in: 1...3) : 0
+        l.scar = Int.random(in: 0..<8) == 0 ? Int.random(in: 1...2) : 0
+        l.blush = Int.random(in: 0..<3)
         l.specs = [0, 0, 1, 2, 3].randomElement()
-        l.hat = Bool.random() ? Int.random(in: 1...12) : 0
+        l.hat = Bool.random() ? Int.random(in: 1...21) : 0
         l.hatColor = Int.random(in: 0..<12)
-        l.paint = Int.random(in: 0...2) == 0 ? Int.random(in: 1...9) : 0
+        l.paint = Int.random(in: 0...2) == 0 ? Int.random(in: 1...17) : 0
         l.paintColor = Int.random(in: 0..<8)
-        l.chain = Int.random(in: 0..<4) == 0
+        l.necklace = Int.random(in: 0..<3) == 0 ? Int.random(in: 1...9) : 0
+        l.metal = Int.random(in: 0..<5)
+        l.ear = Int.random(in: 0..<4)
+        l.pierce = Int.random(in: 0..<6) == 0 ? Int.random(in: 1...4) : 0
+        l.mask = Int.random(in: 0..<10) == 0 ? Int.random(in: 1...7) : 0
+        l.accent = Int.random(in: 0..<8)
         l.bg = Int.random(in: 0..<10)
-        l.anim = Int.random(in: 0...8)
+        l.anim = Int.random(in: 0...17)
+        l.pattern = Int.random(in: 0..<3) == 0 ? Int.random(in: 1...4) : 0
+        l.frame = Int.random(in: 0..<3) == 0 ? Int.random(in: 1...6) : 0
+        l.sticker = Int.random(in: 0..<4) == 0 ? Int.random(in: 1...11) : 0
         look = l
     }
 
@@ -169,22 +235,68 @@ struct AvatarStudioView: View {
     @ViewBuilder private var content: some View {
         switch tab {
         case 0: skinTab
-        case 1: hairTab
-        case 2: faceTab
-        case 3: outfitTab
-        case 4: hatTab
-        case 5: paintTab
-        case 6: glassesTab
-        case 7: extrasTab
-        default: backdropTab
+        case 1: faceTab
+        case 2: hairTab
+        case 3: beardTab
+        case 4: outfitTab
+        case 5: hatTab
+        case 6: paintTab
+        case 7: glassesTab
+        case 8: jewelryTab
+        case 9: maskTab
+        case 10: backdropTab
+        case 11: frameTab
+        default: badgeTab
         }
     }
 
     private var skinTab: some View {
-        LazyVGrid(columns: cols, spacing: 14) {
-            ForEach(0..<PortraitAvatar.skins.count, id: \.self) { i in
-                swatch(col(PortraitAvatar.skins[i]), on: look.skin == i) { look.skin = i }
+        VStack(alignment: .leading, spacing: 10) {
+            section("Skin tone")
+            palette(PortraitAvatar.skins, look.skin) { look.skin = $0 }
+            section("Face shape")
+            LazyVGrid(columns: cols, spacing: 14) {
+                ForEach(0..<shapeNames.count, id: \.self) { i in
+                    tile(shapeNames[i], variant { $0.faceShape = i }, on: (look.faceShape ?? 0) == i) { look.faceShape = i }
+                }
             }
+            section("Blush")
+            chips(blushNames, look.blush ?? 0) { look.blush = $0 }
+            section("Marks")
+            flag("Freckles", $look.freckles)
+            Text("Mole").font(.jk(14, .bold)).foregroundColor(T.sub).padding(.top, 4)
+            chips(moleNames, look.mole ?? 0) { look.mole = $0 }
+            Text("Scar").font(.jk(14, .bold)).foregroundColor(T.sub).padding(.top, 4)
+            chips(scarNames, look.scar ?? 0) { look.scar = $0 }
+        }
+    }
+
+    private var faceTab: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            section("Eyes")
+            LazyVGrid(columns: cols, spacing: 14) {
+                ForEach(0..<eyeNames.count, id: \.self) { i in
+                    tile(eyeNames[i], variant { $0.eyes = i }, on: look.eyes == i) { look.eyes = i }
+                }
+            }
+            section("Eye colour")
+            palette(PortraitAvatar.eyeCols, look.eyeColor) { look.eyeColor = $0 }
+            flag("Lashes", $look.lashes)
+            section("Eyebrows")
+            chips(browNames, look.brow ?? 0) { look.brow = $0 }
+            section("Brow colour")
+            palette(PortraitAvatar.hairs, look.browColor) { look.browColor = $0 }
+            section("Nose")
+            chips(noseNames, (look.nose ?? 0) % 4) { look.nose = $0 }
+            section("Mouth")
+            LazyVGrid(columns: cols, spacing: 14) {
+                ForEach(0..<mouthNames.count, id: \.self) { i in
+                    tile(mouthNames[i], variant { $0.mouth = i }, on: look.mouth == i) { look.mouth = i }
+                }
+            }
+            section("Lip colour")
+            palette(PortraitAvatar.lipCols, look.lips) { look.lips = $0 }
+            Button { look.lips = nil } label: { Text("No lipstick").font(.jk(14, .semibold)).foregroundColor(T.sub) }
         }
     }
 
@@ -198,28 +310,28 @@ struct AvatarStudioView: View {
                 }
             }
             section("Colour")
-            LazyVGrid(columns: cols, spacing: 14) {
-                ForEach(0..<PortraitAvatar.hairs.count, id: \.self) { i in
-                    swatch(col(PortraitAvatar.hairs[i]), on: look.hair == i) { look.hair = i }
-                }
-            }
+            palette(PortraitAvatar.hairs, look.hair) { look.hair = $0 }
+            section("Highlight streak")
+            palette(PortraitAvatar.hairs, look.streak) { look.streak = $0 }
+            Button { look.streak = nil } label: { Text("No streak").font(.jk(14, .semibold)).foregroundColor(T.sub) }
+            section("Hair accessory")
+            chips(accNames, look.hairAcc ?? 0) { look.hairAcc = $0 }
+            section("Accessory colour")
+            palette(PortraitAvatar.paints, look.accent ?? 0) { look.accent = $0 }
         }
     }
 
-    private var faceTab: some View {
+    private var beardTab: some View {
         VStack(alignment: .leading, spacing: 10) {
-            section("Eyes")
+            section("Facial hair")
             LazyVGrid(columns: cols, spacing: 14) {
-                ForEach(0..<eyeNames.count, id: \.self) { i in
-                    tile(eyeNames[i], variant { $0.eyes = i }, on: look.eyes == i) { look.eyes = i }
+                ForEach(0..<beardNames.count, id: \.self) { i in
+                    tile(beardNames[i], variant { $0.beard = i }, on: (look.beard ?? 0) == i) { look.beard = i }
                 }
             }
-            section("Mouth")
-            LazyVGrid(columns: cols, spacing: 14) {
-                ForEach(0..<mouthNames.count, id: \.self) { i in
-                    tile(mouthNames[i], variant { $0.mouth = i }, on: look.mouth == i) { look.mouth = i }
-                }
-            }
+            section("Colour")
+            palette(PortraitAvatar.hairs, look.beardColor) { look.beardColor = $0 }
+            Button { look.beardColor = nil } label: { Text("Match hair").font(.jk(14, .semibold)).foregroundColor(T.sub) }
         }
     }
 
@@ -232,12 +344,14 @@ struct AvatarStudioView: View {
                 }
             }
             section("Colour")
-            LazyVGrid(columns: cols, spacing: 14) {
-                ForEach(0..<PortraitAvatar.tops.count, id: \.self) { i in
-                    swatch(col(PortraitAvatar.tops[i]), on: look.top == i) { look.top = i }
-                }
-            }
-            Toggle("Gold chain", isOn: $look.chain).font(.jk(16, .semibold)).padding(.top, 6)
+            palette(PortraitAvatar.tops, look.top) { look.top = $0 }
+            section("Neckwear")
+            chips(neckNames, look.neck ?? 0) { look.neck = $0 }
+            palette(PortraitAvatar.paints, look.accent ?? 0) { look.accent = $0 }
+            section("Necklace")
+            necklaceGrid
+            section("Metal")
+            palette(PortraitAvatar.metals, look.metal ?? 0) { look.metal = $0 }
         }
     }
 
@@ -250,11 +364,7 @@ struct AvatarStudioView: View {
                 }
             }
             section("Hat colour")
-            LazyVGrid(columns: cols, spacing: 14) {
-                ForEach(0..<PortraitAvatar.tops.count, id: \.self) { i in
-                    swatch(col(PortraitAvatar.tops[i]), on: look.hatColor == i) { look.hatColor = i }
-                }
-            }
+            palette(PortraitAvatar.tops, look.hatColor) { look.hatColor = $0 }
         }
     }
 
@@ -267,11 +377,7 @@ struct AvatarStudioView: View {
                 }
             }
             section("Paint colour")
-            LazyVGrid(columns: cols, spacing: 14) {
-                ForEach(0..<PortraitAvatar.paints.count, id: \.self) { i in
-                    swatch(col(PortraitAvatar.paints[i]), on: look.paintColor == i) { look.paintColor = i }
-                }
-            }
+            palette(PortraitAvatar.paints, look.paintColor) { look.paintColor = $0 }
         }
     }
 
@@ -287,12 +393,39 @@ struct AvatarStudioView: View {
         }
     }
 
-    private var extrasTab: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            section("Accessories")
-            tri("Earring", $look.earring)
+    private var jewelryTab: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            section("Earrings")
+            chips(earNames, look.ear) { look.ear = $0 }
+            section("Piercings")
+            chips(pierceNames, look.pierce ?? 0) { look.pierce = $0 }
+            section("Necklaces & chokers")
+            necklaceGrid
+            section("Metal")
+            palette(PortraitAvatar.metals, look.metal ?? 0) { look.metal = $0 }
+            section("Gem / bead colour")
+            palette(PortraitAvatar.paints, look.accent ?? 0) { look.accent = $0 }
+            section("Other")
             tri("Headphones", $look.phones)
-            Toggle("Gold chain", isOn: $look.chain).font(.jk(16, .semibold))
+        }
+    }
+
+    private var necklaceGrid: some View {
+        LazyVGrid(columns: cols, spacing: 14) {
+            ForEach(0..<necklaceNames.count, id: \.self) { i in
+                tile(necklaceNames[i], variant { $0.necklace = i; $0.chain = false }, on: (look.necklace ?? (look.chain ? 1 : 0)) == i) { look.necklace = i; look.chain = false }
+            }
+        }
+    }
+
+    private var maskTab: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            section("Masks")
+            LazyVGrid(columns: cols, spacing: 14) {
+                ForEach(0..<maskNames.count, id: \.self) { i in
+                    tile(maskNames[i], variant { $0.mask = i }, on: (look.mask ?? 0) == i) { look.mask = i }
+                }
+            }
         }
     }
 
@@ -308,6 +441,32 @@ struct AvatarStudioView: View {
             LazyVGrid(columns: cols, spacing: 14) {
                 ForEach(0..<PortraitAvatar.bgs.count, id: \.self) { i in
                     gradSwatch(col(PortraitAvatar.bgs[i].0), col(PortraitAvatar.bgs[i].1), on: look.bg == i) { look.bg = i }
+                }
+            }
+            section("Pattern overlay")
+            chips(patternNames, look.pattern ?? 0) { look.pattern = $0 }
+        }
+    }
+
+    private var frameTab: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            section("Frame")
+            LazyVGrid(columns: cols, spacing: 14) {
+                ForEach(0..<frameNames.count, id: \.self) { i in
+                    tile(frameNames[i], variant { $0.frame = i }, on: (look.frame ?? 0) == i) { look.frame = i }
+                }
+            }
+            section("Frame colour")
+            palette(PortraitAvatar.paints, look.accent ?? 0) { look.accent = $0 }
+        }
+    }
+
+    private var badgeTab: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            section("Corner badge")
+            LazyVGrid(columns: cols, spacing: 14) {
+                ForEach(0..<stickerNames.count, id: \.self) { i in
+                    tile(stickerNames[i], variant { $0.sticker = i }, on: (look.sticker ?? 0) == i) { look.sticker = i }
                 }
             }
         }

@@ -19,6 +19,32 @@ struct AvatarLook: Codable, Equatable {
     var phones: Bool? = nil
     var bg: Int? = nil
     var anim: Int = 0
+    // extended customisation (optional so older saves still decode)
+    var faceShape: Int? = nil
+    var brow: Int? = nil
+    var browColor: Int? = nil
+    var eyeColor: Int? = nil
+    var lashes: Bool? = nil
+    var nose: Int? = nil
+    var lips: Int? = nil
+    var beard: Int? = nil
+    var beardColor: Int? = nil
+    var freckles: Bool? = nil
+    var mole: Int? = nil
+    var scar: Int? = nil
+    var blush: Int? = nil
+    var streak: Int? = nil
+    var hairAcc: Int? = nil
+    var accent: Int? = nil
+    var ear: Int? = nil
+    var pierce: Int? = nil
+    var mask: Int? = nil
+    var neck: Int? = nil
+    var frame: Int? = nil
+    var pattern: Int? = nil
+    var sticker: Int? = nil
+    var necklace: Int? = nil
+    var metal: Int? = nil
 }
 
 enum AvatarLooks {
@@ -75,7 +101,7 @@ struct PortraitAvatar: View {
     var body: some View {
         let lk = look ?? AvatarLooks.look(for: key) ?? AvatarLook()
         return Group {
-            if lk.anim > 0 {
+            if lk.anim > 0 || [2, 3, 4].contains(lk.frame ?? 0) {
                 TimelineView(.animation(minimumInterval: 1.0 / 24.0)) { tl in
                     portrait(lk, t: tl.date.timeIntervalSinceReferenceDate)
                 }
@@ -102,15 +128,23 @@ struct PortraitAvatar: View {
         let specKind = lk.specs ?? (((h3 >> 19) % 100 < 30) ? 1 : 0)
         let ring = lk.earring ?? ((h >> 21) % 100 < 22)
         let phones = lk.phones ?? ((h2 >> 23) % 100 < 14)
-        let wide = 0.36 + Double((h >> 25) % 5) * 0.012
+        let fs = (lk.faceShape ?? 0) % 5
+        let wide = 0.36 + Double((h >> 25) % 5) * 0.012 + [0.0, -0.035, 0.03, 0.055, 0.0][fs]
+        let hH = [0.46, 0.50, 0.44, 0.44, 0.49][fs]
+        let blushA = [0.14, 0.0, 0.32][(lk.blush ?? 0) % 3]
+        let accentCol = col(Self.paints[(lk.accent ?? 0) % Self.paints.count])
+        let browCol = lk.browColor.map { col(Self.hairs[$0 % Self.hairs.count]) } ?? col(hairV)
+        let beardCol = lk.beardColor.map { col(Self.hairs[$0 % Self.hairs.count]) } ?? col(hairV)
         let skin = col(skinV), hair = col(hairV), top = col(topV)
         return Canvas { ctx, sz in
             let w = sz.width, ht = sz.height
             func R(_ x: Double, _ y: Double, _ ww: Double, _ hh: Double) -> CGRect { CGRect(x: w * x, y: ht * y, width: w * ww, height: ht * hh) }
             // background
             Self.drawBG(ctx, sz, col(bg.0), col(bg.1), shade(bg.0, 2.4), lk.anim, t)
+            Self.drawPattern(ctx, sz, lk.pattern ?? 0, shade(bg.0, 3.0))
             let cx = 0.5
-            let headW = wide + 0.02, headH = 0.46, headX = cx - headW / 2, headY = 0.2
+            let headW = wide + 0.02, headH = hH, headX = cx - headW / 2, headY = 0.2
+            let g = PGeo(w: w, ht: ht, cx: cx, headX: headX, headY: headY, headW: headW, headH: headH, ey: headY + 0.25)
             // hair behind
             switch style {
             case 1, 6: // long
@@ -119,7 +153,7 @@ struct PortraitAvatar: View {
                 ctx.fill(Path(ellipseIn: R(cx - 0.29, headY - 0.14, 0.58, 0.58)), with: .color(hair))
             case 4: // bun
                 ctx.fill(Path(ellipseIn: R(cx - 0.09, headY - 0.17, 0.18, 0.18)), with: .color(hair))
-            default: break
+            default: Self.hairBehindExtra(ctx, g, style, hair)
             }
             // shoulders
             ctx.fill(Path(ellipseIn: R(0.06, 0.74, 0.88, 0.62)), with: .color(top))
@@ -135,7 +169,15 @@ struct PortraitAvatar: View {
                 var l = Path(); l.move(to: CGPoint(x: w * 0.40, y: ht * 0.74)); l.addLine(to: CGPoint(x: w * 0.5, y: ht * 0.92)); l.addLine(to: CGPoint(x: w * 0.60, y: ht * 0.74)); l.closeSubpath()
                 ctx.fill(l, with: .color(.white.opacity(0.9)))
             case 3:
-                ctx.stroke(Path(ellipseIn: R(cx - 0.11, 0.70, 0.22, 0.11)), with: .color(shade(topV, 0.7)), lineWidth: max(1, w * 0.025))
+                // turtleneck: a knitted roll that wraps the whole neck
+                ctx.fill(Path(roundedRect: R(cx - 0.092, 0.585, 0.184, 0.19), cornerRadius: w * 0.045), with: .color(shade(topV, 0.9)))
+                var folds = Path()
+                for k in 0..<3 {
+                    let y = 0.62 + Double(k) * 0.045
+                    folds.move(to: CGPoint(x: w * (cx - 0.085), y: ht * y))
+                    folds.addQuadCurve(to: CGPoint(x: w * (cx + 0.085), y: ht * y), control: CGPoint(x: w * cx, y: ht * (y + 0.02)))
+                }
+                ctx.stroke(folds, with: .color(shade(topV, 0.62)), lineWidth: max(1, w * 0.011))
             case 4: // open jacket over white tee
                 var v = Path(); v.move(to: CGPoint(x: w * 0.42, y: ht * 0.74)); v.addLine(to: CGPoint(x: w * 0.5, y: ht * 0.86)); v.addLine(to: CGPoint(x: w * 0.58, y: ht * 0.74)); v.closeSubpath()
                 ctx.fill(v, with: .color(.white.opacity(0.92)))
@@ -153,21 +195,23 @@ struct PortraitAvatar: View {
             case 7: // tank top
                 ctx.fill(Path(ellipseIn: R(cx - 0.20, 0.72, 0.40, 0.30)), with: .color(shade(skinV, 0.95)))
                 ctx.fill(Path(ellipseIn: R(cx - 0.12, 0.72, 0.24, 0.12)), with: .color(shade(skinV, 0.86)))
+            case 8, 9, 10, 11, 12, 13:
+                Self.outfitExtra(ctx, g, outfit, topV, skinV)
             default:
                 var s = Path(); s.move(to: CGPoint(x: w * 0.45, y: ht * 0.8)); s.addLine(to: CGPoint(x: w * 0.45, y: ht * 0.95))
                 s.move(to: CGPoint(x: w * 0.55, y: ht * 0.8)); s.addLine(to: CGPoint(x: w * 0.55, y: ht * 0.95))
                 ctx.stroke(s, with: .color(.white.opacity(0.7)), lineWidth: max(0.8, w * 0.012))
             }
-            if lk.chain {
-                var c = Path(); c.addEllipse(in: R(cx - 0.12, 0.72, 0.24, 0.17))
-                ctx.stroke(c, with: .color(Color(red: 1, green: 0.82, blue: 0.25)), lineWidth: max(1, w * 0.014))
-                ctx.fill(Path(ellipseIn: R(cx - 0.028, 0.865, 0.056, 0.056)), with: .color(Color(red: 1, green: 0.82, blue: 0.25)))
-            }
+            Self.necklace(ctx, g, lk.necklace ?? (lk.chain ? 1 : 0), lk.metal ?? 0, accentCol)
+            Self.neckwear(ctx, g, lk.neck ?? 0, accentCol)
             // ears
             ctx.fill(Path(ellipseIn: R(headX - 0.025, headY + 0.20, 0.05, 0.09)), with: .color(skin))
             ctx.fill(Path(ellipseIn: R(headX + headW - 0.025, headY + 0.20, 0.05, 0.09)), with: .color(skin))
             // head
             ctx.fill(Path(ellipseIn: R(headX, headY, headW, headH)), with: .color(skin))
+            let ey = headY + 0.25
+            let pc = col(Self.paints[lk.paintColor % Self.paints.count])
+            Self.drawPaint(ctx, g, lk.paint, pc, skinV)
             // hair front
             switch style {
             case 0: // short crop
@@ -203,27 +247,11 @@ struct PortraitAvatar: View {
                 p.closeSubpath()
                 ctx.fill(p, with: .color(shade(topV, 0.95)))
                 ctx.fill(Path(roundedRect: R(cx - 0.02, headY + 0.145, headW / 2 + 0.12, 0.04), cornerRadius: w * 0.02), with: .color(shade(topV, 0.7)))
-            default: break // bald
+            default: Self.hairFrontExtra(ctx, g, style, hair)
             }
-            let ey = headY + 0.25
-            // face paint that sits under the eyes
-            let pc = col(Self.paints[lk.paintColor % Self.paints.count])
-            let plw = max(1, w * 0.016)
-            switch lk.paint {
-            case 5: // clown patches
-                ctx.fill(Path(ellipseIn: R(cx - 0.16, ey - 0.04, 0.13, 0.11)), with: .color(.white.opacity(0.92)))
-                ctx.fill(Path(ellipseIn: R(cx + 0.03, ey - 0.04, 0.13, 0.11)), with: .color(.white.opacity(0.92)))
-            case 8: // half skull
-                var half = ctx
-                half.clip(to: Path(CGRect(x: w * cx, y: ht * headY, width: w * headW / 2 + w * 0.01, height: ht * headH)))
-                half.fill(Path(ellipseIn: R(headX, headY, headW, headH)), with: .color(.white.opacity(0.93)))
-                ctx.fill(Path(ellipseIn: R(cx + 0.045, ey - 0.03, 0.08, 0.08)), with: .color(.black.opacity(0.85)))
-            case 9: // bandit mask
-                ctx.fill(Path(roundedRect: R(cx - 0.20, ey - 0.035, 0.40, 0.09), cornerRadius: w * 0.04), with: .color(pc.opacity(0.9)))
-            default: break
-            }
+            Self.hairExtras(ctx, g, lk, style)
             // eyes
-            let eyeColor = Color(white: 0.08)
+            let eyeColor = col(Self.eyeCols[(lk.eyeColor ?? 0) % Self.eyeCols.count])
             func eye(_ x: Double) {
                 switch eyeKind {
                 case 0: ctx.fill(Path(ellipseIn: R(x - 0.018, ey, 0.036, 0.045)), with: .color(eyeColor))
@@ -235,15 +263,21 @@ struct PortraitAvatar: View {
                     p.addQuadCurve(to: CGPoint(x: w * (x + 0.028), y: ht * (ey + 0.03)), control: CGPoint(x: w * x, y: ht * (ey - 0.02)))
                     ctx.stroke(p, with: .color(eyeColor), lineWidth: max(1, w * 0.018))
                 }
-                var b = Path(); b.move(to: CGPoint(x: w * (x - 0.035), y: ht * (ey - 0.03))); b.addLine(to: CGPoint(x: w * (x + 0.035), y: ht * (ey - 0.035)))
-                ctx.stroke(b, with: .color(hair.opacity(style == 7 || style == 8 ? 0.7 : 1)), lineWidth: max(0.8, w * 0.014))
+                Self.brow(ctx, g, x, (lk.brow ?? 0) % 5, browCol)
+                if lk.lashes == true { Self.lashes(ctx, g, x) }
             }
             eye(cx - 0.085); eye(cx + 0.085)
             // cheeks + nose
-            ctx.fill(Path(ellipseIn: R(cx - 0.17, ey + 0.07, 0.07, 0.04)), with: .color(Color.pink.opacity(0.14)))
-            ctx.fill(Path(ellipseIn: R(cx + 0.10, ey + 0.07, 0.07, 0.04)), with: .color(Color.pink.opacity(0.14)))
+            ctx.fill(Path(ellipseIn: R(cx - 0.17, ey + 0.07, 0.07, 0.04)), with: .color(Color.pink.opacity(blushA)))
+            ctx.fill(Path(ellipseIn: R(cx + 0.10, ey + 0.07, 0.07, 0.04)), with: .color(Color.pink.opacity(blushA)))
             var nose = Path(); nose.move(to: CGPoint(x: w * cx, y: ht * (ey + 0.03))); nose.addQuadCurve(to: CGPoint(x: w * (cx + 0.015), y: ht * (ey + 0.10)), control: CGPoint(x: w * (cx - 0.012), y: ht * (ey + 0.085)))
-            ctx.stroke(nose, with: .color(shade(skinV, 0.7)), lineWidth: max(0.8, w * 0.012))
+            if (lk.nose ?? 0) % 4 == 0 {
+                ctx.stroke(nose, with: .color(shade(skinV, 0.7)), lineWidth: max(0.8, w * 0.012))
+            } else {
+                Self.noseDraw(ctx, g, (lk.nose ?? 0) % 4, shade(skinV, 0.7))
+            }
+            Self.facialHair(ctx, g, lk.beard ?? 0, beardCol)
+            if let lp = lk.lips { Self.lips(ctx, g, lp) }
             // mouth
             let my = ey + 0.14
             var m = Path()
@@ -256,67 +290,8 @@ struct PortraitAvatar: View {
                 ctx.fill(Path(CGRect(x: w * (cx - 0.035), y: ht * (my - 0.005), width: w * 0.07, height: ht * 0.016)), with: .color(.white))
             }
             ctx.stroke(m, with: .color(Color(red: 0.45, green: 0.15, blue: 0.15)), lineWidth: max(1, w * 0.018))
-            // face paint on top of the face
-            switch lk.paint {
-            case 1: // stripes
-                for sx in [-0.085, 0.085] {
-                    for k in 0..<2 {
-                        let x0 = cx + sx - 0.025 + Double(k) * 0.03
-                        var p = Path(); p.move(to: CGPoint(x: w * x0, y: ht * (ey + 0.06))); p.addLine(to: CGPoint(x: w * (x0 + 0.012), y: ht * (ey + 0.115)))
-                        ctx.stroke(p, with: .color(pc), lineWidth: plw * 1.5)
-                    }
-                }
-            case 2: // stars
-                ctx.draw(Text("★").font(.system(size: w * 0.11)).foregroundColor(pc), at: CGPoint(x: w * (cx - 0.15), y: ht * (ey + 0.085)))
-                ctx.draw(Text("★").font(.system(size: w * 0.06)).foregroundColor(pc.opacity(0.85)), at: CGPoint(x: w * (cx + 0.15), y: ht * (ey + 0.10)))
-            case 3: // lightning over the right eye
-                var bolt = Path()
-                bolt.move(to: CGPoint(x: w * (cx + 0.15), y: ht * (ey - 0.12)))
-                bolt.addLine(to: CGPoint(x: w * (cx + 0.07), y: ht * (ey + 0.02)))
-                bolt.addLine(to: CGPoint(x: w * (cx + 0.11), y: ht * (ey + 0.02)))
-                bolt.addLine(to: CGPoint(x: w * (cx + 0.05), y: ht * (ey + 0.13)))
-                bolt.addLine(to: CGPoint(x: w * (cx + 0.15), y: ht * (ey - 0.01)))
-                bolt.addLine(to: CGPoint(x: w * (cx + 0.11), y: ht * (ey - 0.01)))
-                bolt.closeSubpath()
-                ctx.fill(bolt, with: .color(pc))
-            case 4: // tiger
-                for k in 0..<3 {
-                    let yy = ey + 0.06 + Double(k) * 0.03
-                    var l = Path(); l.move(to: CGPoint(x: w * (cx - 0.19), y: ht * yy)); l.addLine(to: CGPoint(x: w * (cx - 0.11), y: ht * (yy + 0.012)))
-                    l.move(to: CGPoint(x: w * (cx + 0.19), y: ht * yy)); l.addLine(to: CGPoint(x: w * (cx + 0.11), y: ht * (yy + 0.012)))
-                    ctx.stroke(l, with: .color(pc), lineWidth: plw * 1.3)
-                }
-                for k in 0..<3 {
-                    let xx = cx - 0.06 + Double(k) * 0.06
-                    var f = Path(); f.move(to: CGPoint(x: w * xx, y: ht * (headY + 0.03))); f.addLine(to: CGPoint(x: w * xx, y: ht * (headY + 0.10 - (k == 1 ? 0.0 : 0.03))))
-                    ctx.stroke(f, with: .color(pc), lineWidth: plw * 1.6)
-                }
-            case 5: // clown nose + smile
-                ctx.fill(Path(ellipseIn: R(cx - 0.04, ey + 0.065, 0.08, 0.08)), with: .color(Color(red: 0.95, green: 0.15, blue: 0.2)))
-            case 6: // cyber lines
-                var c = Path()
-                c.move(to: CGPoint(x: w * (cx + 0.19), y: ht * (ey - 0.02)))
-                c.addLine(to: CGPoint(x: w * (cx + 0.15), y: ht * (ey + 0.04)))
-                c.addLine(to: CGPoint(x: w * (cx + 0.15), y: ht * (ey + 0.10)))
-                c.addLine(to: CGPoint(x: w * (cx + 0.09), y: ht * (ey + 0.16)))
-                ctx.stroke(c, with: .color(pc.opacity(0.35)), lineWidth: plw * 3.5)
-                ctx.stroke(c, with: .color(pc), lineWidth: plw)
-                ctx.fill(Path(ellipseIn: R(cx + 0.082, ey + 0.152, 0.016, 0.016)), with: .color(pc))
-                ctx.fill(Path(ellipseIn: R(cx + 0.182, ey - 0.028, 0.016, 0.016)), with: .color(pc))
-            case 7: // hearts
-                ctx.draw(Text("♥").font(.system(size: w * 0.08)).foregroundColor(pc), at: CGPoint(x: w * (cx - 0.15), y: ht * (ey + 0.085)))
-                ctx.draw(Text("♥").font(.system(size: w * 0.08)).foregroundColor(pc), at: CGPoint(x: w * (cx + 0.15), y: ht * (ey + 0.085)))
-            case 8: // skull teeth + nose
-                var tt = Path()
-                for k in 0..<4 {
-                    let xx = cx + 0.005 + Double(k) * 0.016
-                    tt.move(to: CGPoint(x: w * xx, y: ht * (my - 0.012))); tt.addLine(to: CGPoint(x: w * xx, y: ht * (my + 0.03)))
-                }
-                ctx.stroke(tt, with: .color(.black.opacity(0.8)), lineWidth: max(0.8, w * 0.008))
-                var nz = Path(); nz.move(to: CGPoint(x: w * (cx + 0.01), y: ht * (ey + 0.06))); nz.addLine(to: CGPoint(x: w * (cx + 0.04), y: ht * (ey + 0.105))); nz.addLine(to: CGPoint(x: w * (cx + 0.005), y: ht * (ey + 0.105))); nz.closeSubpath()
-                ctx.fill(nz, with: .color(.black.opacity(0.75)))
-            default: break
-            }
+            Self.faceDetails(ctx, g, lk, skinV)
+            Self.drawMask(ctx, g, lk.mask ?? 0, accentCol, skin)
             // hats
             let hcV = Self.tops[lk.hatColor % Self.tops.count]
             let hcol = col(hcV), hdark = shade(hcV, 0.7)
@@ -389,6 +364,7 @@ struct PortraitAvatar: View {
                 ctx.fill(l, with: .color(Color(red: 0.85, green: 0.12, blue: 0.15))); ctx.fill(r, with: .color(Color(red: 0.85, green: 0.12, blue: 0.15)))
             default: break
             }
+            Self.hatExtra(ctx, g, lk.hat, hcol, hdark)
             // accessories
             if specKind == 1 {
                 let lw = max(1, w * 0.014)
@@ -409,13 +385,15 @@ struct PortraitAvatar: View {
                 ctx.fill(vis, with: .linearGradient(Gradient(colors: [Color.cyan.opacity(0.85), Color(red: 0.7, green: 0.3, blue: 1).opacity(0.85)]), startPoint: CGPoint(x: w * (cx - 0.2), y: ht * ey), endPoint: CGPoint(x: w * (cx + 0.2), y: ht * ey)))
                 ctx.stroke(vis, with: .color(.white.opacity(0.5)), lineWidth: max(0.8, w * 0.01))
             }
-            if ring { ctx.fill(Path(ellipseIn: R(headX - 0.012, headY + 0.29, 0.03, 0.03)), with: .color(Color(red: 1, green: 0.84, blue: 0.3))) }
+            Self.jewelry(ctx, g, lk, ring)
             if phones {
                 var band = Path(); band.addArc(center: CGPoint(x: w * cx, y: ht * (headY + 0.22)), radius: w * (headW / 2 + 0.03), startAngle: .degrees(185), endAngle: .degrees(355), clockwise: false)
                 ctx.stroke(band, with: .color(Color(white: 0.12)), lineWidth: max(1.5, w * 0.03))
                 ctx.fill(Path(roundedRect: R(headX - 0.055, headY + 0.17, 0.065, 0.14), cornerRadius: w * 0.03), with: .color(Color(white: 0.12)))
                 ctx.fill(Path(roundedRect: R(headX + headW - 0.01, headY + 0.17, 0.065, 0.14), cornerRadius: w * 0.03), with: .color(Color(white: 0.12)))
             }
+            Self.drawFrame(ctx, sz, lk.frame ?? 0, accentCol, t)
+            Self.sticker(ctx, sz, lk.sticker ?? 0)
         }
     }
 
@@ -495,7 +473,7 @@ struct PortraitAvatar: View {
                 let r = w * (0.008 + 0.014 * f)
                 ctx.fill(Path(ellipseIn: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)), with: .color(Color(red: 1, green: 0.55 + 0.4 * f, blue: 0.1).opacity(1 - k)))
             }
-        default: break
+        default: drawBG2(ctx, sz, accent, anim, t)
         }
     }
 }

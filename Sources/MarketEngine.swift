@@ -571,7 +571,8 @@ extension Game {
         let heat = Spicy.heat
         let hue = Double(HK.h(c.id) % 360) / 360
         let t = c.id
-        func jab() -> String { "@\(dh) " + (Spicy.jab[heat].randomElement() ?? "unreal") }
+        let rc = Roast.ctx(st, handle: dh, name: dn, rugs: prior + (mine ? 1 : 0), loot: loot, holders: c.holders, trust: score, coin: c.id)
+        func jab() -> String { "@\(dh) " + Roast.line(rc, heat: heat, rug: true) }
 
         // 1. breaking
         var text = "BREAKING: $\(t) rugged. \(dn) pulled the liquidity, walked off with \(Mk.fmtGems(loot)) gems from \(c.holders) holders and the price is down 98%."
@@ -582,7 +583,7 @@ extension Game {
         brk.likes = max(brk.likes * 4, 200)
         brk.viral = true
         brk.comments = []
-        brk.queue = rugQueue(Array(cast.shuffled().prefix(4)), [
+        brk.queue = rugQueue(Array(cast.shuffled().prefix(6)), [
             "\(dn) did this on purpose. the wallet history says everything.",
             "the trust score was \(score) and everyone aped anyway.",
             "so sorry to everyone who lost money on $\(t). please be careful out there.",
@@ -590,7 +591,7 @@ extension Game {
             "i was in. i am now a different person.",
             prior > 0 ? "\(prior) prior rug\(prior == 1 ? "" : "s") on this deployer and nobody checked." : "first time for \(dn) and somehow it still hurts.",
             "allegedly \(dn) moved supply before the dump. receipts incoming.",
-            jab()
+            jab(), jab(), jab(), jab(), jab()
         ])
 
         var out: [Post] = []
@@ -612,7 +613,7 @@ extension Game {
             stampPost(&p, st)
             p.likes = max(p.likes * 3, 120)
             p.comments = []
-            p.queue = rugQueue(Array(cast.shuffled().prefix(3)), ["this is damning.", "the 27 minute line gets me. everyone saw this coming.", jab(), "pinning this to my profile so nobody forgets", "someone get this to the newsdesk"])
+            p.queue = rugQueue(Array(cast.shuffled().prefix(4)), ["this is damning.", "the 27 minute line gets me. everyone saw this coming.", jab(), "pinning this to my profile so nobody forgets", jab(), "someone get this to the newsdesk", jab(), jab()])
             out.append(p)
         }
 
@@ -652,6 +653,17 @@ extension Game {
             p.comments = []
             p.queue = rugQueue(Array(cast.shuffled().prefix(4)), ["+1. boycotting your next launch.", "count me in.", "we are not forgetting this", "your next coin is dead on arrival @\(dh)", "organize the chat. everyone shows up."])
             out.append(p)
+        }
+
+        // 5b. everybody gets a turn: dedicated roast posts on the deployer
+        var roasters: [NPC] = []
+        for n in haters + victims + others.shuffled() where !roasters.contains(where: { $0.handle == n.handle }) {
+            roasters.append(n)
+        }
+        roasters = Array(roasters.prefix(mine || big ? 4 : 2))
+        let rcQuote = Quote(handle: news.handle, name: news.name, text: String(text.prefix(140)))
+        for (i, r) in roasters.enumerated() {
+            out.append(roastPost(st, by: r, rc, rug: true, tag: i == 0 ? "Ratio" : "Roast", quote: i == 0 ? rcQuote : nil))
         }
 
         // 6. the argument
