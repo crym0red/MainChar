@@ -10,16 +10,14 @@ struct GameShell: View {
             ZStack {
                 T.bg.ignoresSafeArea()
                 switch nav.tab {
-                case 0: FeedTab()
-                case 1: GoalsTab()
-                case 2: MessagesTab()
-                case 3: NotifsTab()
+                case 0: SurvivalHub()
+                case 1: ArmoryView()
                 case 5: MarketView()
                 default: ProfileTab()
                 }
             }
             .frame(maxHeight: .infinity)
-            AppTabBar()
+            SurvivalBar()
         }
         .tint(.white)
         .fullScreenCover(isPresented: Binding(get: { game.playing && game.s.intro?.done == false }, set: { _ in })) {
