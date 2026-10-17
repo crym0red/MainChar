@@ -149,7 +149,7 @@ struct FeedTab: View {
         .onChange(of: game.pendingResult) { r in
             if let id = r?.postID { path = [id] }
         }
-        .sheet(item: $compose) { seed in ComposeSheet(seed: seed).zoomed() }
+        .sheet(item: $compose) { seed in ComposeSheet(seed: seed).zoomed().presentationDetents([.medium, .large]).presentationDragIndicator(.visible) }
         .fullScreenCover(isPresented: $showStore) { StoreView().zoomed() }
         .sheet(isPresented: $showEvent) { EventSheet().zoomed() }
         .sheet(isPresented: $showExplore) { ExploreSheet().zoomed() }
@@ -686,6 +686,20 @@ struct NPCSheet: View {
 
 // MARK: - Compose
 
+struct ComposeExtras {
+    var tone = 0
+    var poll: [String]? = nil
+    var pollQ = ""
+    var media: Media? = nil
+    var reach: Double { [1.0, 1.25, 1.6][max(0, min(2, tone))] * (poll != nil ? 1.15 : 1) * (media != nil ? 1.1 : 1) }
+    var auraShift: Int {
+        if tone == 1 { return Int.random(in: -3...2) }
+        if tone == 2 { return Int.random(in: -6...4) }
+        return 0
+    }
+    var viral: Double { tone == 2 ? 0.08 : (tone == 1 ? 0.03 : 0) }
+}
+
 struct ComposeSheet: View {
     @EnvironmentObject var game: Game
     @Environment(\.dismiss) private var dismiss
@@ -693,64 +707,282 @@ struct ComposeSheet: View {
     @State private var kind: PostKind = .meme
     @State private var text = ""
     @State private var outcome: Outcome? = nil
+    @State private var tone = 0
+    @State private var panel = 0          // 0 none, 1 poll, 2 snippet, 3 mention, 4 topic, 5 emoji
+    @State private var pollQ = ""
+    @State private var pollOpts = ["", ""]
+    @State private var pollOn = false
+    @State private var snipTitle = "note.txt"
+    @State private var snipBody = ""
+    @State private var snipOn = false
+    @FocusState private var focus: Bool
     @EnvironmentObject private var nav: Nav
+
+    private let tones = ["Safe", "Edgy", "Unhinged"]
+    private let toneNote = ["Steady reach.", "More reach. Aura can swing.", "Max reach, max chaos. Aura can crater."]
+    private let emojis = ["😂", "💀", "🔥", "😭", "🫡", "👀", "🤝", "💅", "🧠", "🚀", "🫠", "🥲", "😤", "🙏", "✨", "🤡", "🗿", "💸", "🤌", "🫶"]
 
     private var kinds: [PostKind] {
         PostKind.allCases.filter { $0 != .apology || game.s.aura < 30 }
     }
 
+    private var topics: [String] {
+        let t = Topics.forWorld(game.s.world)
+        return Array(t.prefix(12))
+    }
+
+    private var cast: [NPC] {
+        Array(game.s.npcs.filter { $0.id != "newsdesk" }.sorted { $0.affinity > $1.affinity }.prefix(14))
+    }
+
+    private var cleanOpts: [String] { pollOpts.map { $0.trimmed }.filter { !$0.isEmpty } }
+
+    private var extras: ComposeExtras {
+        var x = ComposeExtras()
+        x.tone = tone
+        if pollOn, cleanOpts.count >= 2 { x.poll = cleanOpts; x.pollQ = pollQ.trimmed }
+        if snipOn, !snipBody.trimmed.isEmpty {
+            x.media = Media(kind: "code", title: snipTitle.trimmed.isEmpty ? "note.txt" : snipTitle.trimmed,
+                            lines: Array(snipBody.components(separatedBy: "\n").prefix(14)),
+                            hue: Double(HK.h(snipTitle) % 360) / 360)
+        }
+        return x
+    }
+
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    if let o = outcome {
-                        VStack(spacing: 8) {
-                            SymbolTile(emoji: o.emoji, size: 72)
-                            Text(o.title).font(.jk(22, .heavy))
-                            Text(o.detail).font(.jk(14)).foregroundColor(T.sub).multilineTextAlignment(.center)
-                            BigButton(title: "Done") { dismiss() }.padding(.top, 8)
-                        }.frame(maxWidth: .infinity).padding(.top, 30)
-                    } else {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack {
-                                ForEach(kinds) { k in
-                                    Button { kind = k } label: {
-                                        Text("\(k.icon) \(k.label)")
-                                            .font(.jk(14, .semibold)).foregroundColor(.white)
-                                            .padding(.horizontal, 12).padding(.vertical, 8)
-                                            .background(kind == k ? T.blue : T.card).clipShape(Capsule())
-                                    }
-                                }
-                            }
-                        }
-                        Text(kind.blurb).font(.jk(13)).foregroundColor(T.sub)
-                        TextEditor(text: $text)
-                            .scrollContentBackground(.hidden)
-                            .frame(minHeight: 140)
-                            .padding(8).background(T.card).clipShape(RoundedRectangle(cornerRadius: 12))
-                            .onChange(of: text) { v in if v.count > 240 { text = String(v.prefix(240)) } }
-                        HStack {
-                            Button { text = kind.suggestion() } label: { Label("Suggest", systemImage: "sparkles") }
-                            Spacer()
-                            Text("\(240 - text.count)").font(.jk(12)).foregroundColor(T.sub)
-                        }
-                        BigButton(title: "Post", enabled: !text.trimmed.isEmpty) {
-                            if let o = game.publish(kind: kind, text: text, quest: seed.quest) {
-                                game.pendingResult = o
-                                nav.tab = 0
-                                dismiss()
-                            }
+        VStack(spacing: 0) {
+            if let o = outcome {
+                VStack(spacing: 8) {
+                    SymbolTile(emoji: o.emoji, size: 72)
+                    Text(o.title).font(.jk(22, .heavy))
+                    Text(o.detail).font(.jk(14)).foregroundColor(T.sub).multilineTextAlignment(.center)
+                    BigButton(title: "Done") { dismiss() }.padding(.top, 8)
+                }.frame(maxWidth: .infinity).padding(.top, 30).padding(.horizontal, 16)
+                Spacer()
+            } else {
+                topRow
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        editor
+                        toolRow
+                        panelView
+                        attachments
+                        kindRow
+                        toneRow
+                    }
+                    .padding(.horizontal, 16).padding(.bottom, 24)
+                }
+            }
+        }
+        .background(T.bg.ignoresSafeArea())
+        .onAppear { if text.isEmpty { text = seed.text } }
+    }
+
+    // MARK: Pieces
+
+    private var topRow: some View {
+        HStack(spacing: 10) {
+            Button { dismiss() } label: {
+                Image(systemName: "xmark").font(.system(size: 14, weight: .bold)).foregroundColor(.white)
+                    .frame(width: 34, height: 34).background(T.card2).clipShape(Circle())
+            }
+            Text(seed.quest == nil ? "New post" : "Side quest").font(.jk(18, .bold))
+            Spacer()
+            HStack(spacing: 4) {
+                Image(systemName: "bolt.fill").font(.system(size: 11)).foregroundColor(T.gold)
+                Text("\(kind.cost)").font(.jk(13, .bold))
+            }
+            .padding(.horizontal, 10).frame(height: 30).background(T.card2).clipShape(Capsule())
+            Button { post() } label: {
+                Text("Post").font(.jk(16, .bold)).foregroundColor(.white)
+                    .padding(.horizontal, 22).frame(height: 36)
+                    .background(canPost ? T.blue : T.card2).clipShape(Capsule())
+            }
+            .disabled(!canPost)
+        }
+        .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 10)
+    }
+
+    private var canPost: Bool { !text.trimmed.isEmpty }
+
+    private func post() {
+        guard canPost else { return }
+        if let o = game.publish(kind: kind, text: text, quest: seed.quest, extras: extras) {
+            game.pendingResult = o
+            nav.tab = 0
+            dismiss()
+        }
+    }
+
+    private var editor: some View {
+        ZStack(alignment: .topLeading) {
+            TextEditor(text: $text)
+                .scrollContentBackground(.hidden)
+                .focused($focus)
+                .frame(minHeight: 96, maxHeight: 150)
+                .padding(8)
+                .onChange(of: text) { v in if v.count > 240 { text = String(v.prefix(240)) } }
+            if text.isEmpty {
+                Text("What's the move?").font(.jk(16)).foregroundColor(T.sub).padding(.horizontal, 14).padding(.vertical, 16)
+                    .allowsHitTesting(false)
+            }
+            VStack { Spacer(); HStack { Spacer(); Text("\(240 - text.count)").font(.jk(12)).foregroundColor(T.sub).padding(10) } }
+        }
+        .frame(height: 112)
+        .background(T.card).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private func toolButton(_ icon: String, _ id: Int, on: Bool = false, _ action: (() -> Void)? = nil) -> some View {
+        Button {
+            if let a = action { a() } else { withAnimation(.easeOut(duration: 0.15)) { panel = panel == id ? 0 : id } }
+        } label: {
+            Image(systemName: icon).font(.system(size: 18, weight: .semibold))
+                .foregroundColor(panel == id || on ? T.blue : .white)
+                .frame(maxWidth: .infinity).frame(height: 42)
+                .background(panel == id || on ? T.blue.opacity(0.18) : T.card)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+    }
+
+    private var toolRow: some View {
+        HStack(spacing: 8) {
+            toolButton("chart.bar.fill", 1, on: pollOn)
+            toolButton("chevron.left.forwardslash.chevron.right", 2, on: snipOn)
+            toolButton("at", 3)
+            toolButton("number", 4)
+            toolButton("face.smiling", 5)
+            toolButton("sparkles", 9) { text = kind.suggestion() }
+        }
+    }
+
+    @ViewBuilder private var panelView: some View {
+        switch panel {
+        case 1:
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Attach poll", isOn: $pollOn).font(.jk(15, .semibold)).tint(T.blue)
+                TextField("Question (optional)", text: $pollQ).field()
+                ForEach(pollOpts.indices, id: \.self) { i in
+                    HStack {
+                        TextField("Option \(i + 1)", text: $pollOpts[i]).field()
+                        if pollOpts.count > 2 {
+                            Button { pollOpts.remove(at: i) } label: { Image(systemName: "minus.circle.fill").foregroundColor(T.sub) }
                         }
                     }
                 }
-                .padding(16)
+                if pollOpts.count < 4 {
+                    Button { pollOpts.append("") } label: { Label("Add option", systemImage: "plus.circle.fill").font(.jk(14, .semibold)) }
+                }
             }
-            .background(T.bg)
-            .navigationTitle(seed.quest == nil ? "New post" : "Side quest")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
-            .onAppear { if text.isEmpty { text = seed.text } }
+            .padding(12).background(T.card).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        case 2:
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Attach snippet", isOn: $snipOn).font(.jk(15, .semibold)).tint(T.blue)
+                TextField("File name", text: $snipTitle).field()
+                TextEditor(text: $snipBody).scrollContentBackground(.hidden)
+                    .font(.system(size: 13, design: .monospaced))
+                    .frame(height: 100).padding(6).background(Color.black.opacity(0.35)).clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .padding(12).background(T.card).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        case 3:
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(cast) { n in
+                        Button { insert("@\(n.handle) ") } label: {
+                            VStack(spacing: 4) {
+                                Avatar(emoji: n.emoji, key: n.handle, size: 46)
+                                Text(n.name.components(separatedBy: " ").first ?? n.name).font(.jk(12, .semibold)).foregroundColor(.white).lineLimit(1)
+                            }.frame(width: 60)
+                        }
+                    }
+                }
+                .padding(12)
+            }
+            .background(T.card).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        case 4:
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 90), spacing: 8)], alignment: .leading, spacing: 8) {
+                ForEach(topics, id: \.self) { t in
+                    Button { insert("#\(t.replacingOccurrences(of: " ", with: "")) ") } label: {
+                        Text("#\(t)").font(.jk(13, .semibold)).foregroundColor(.white).lineLimit(1)
+                            .padding(.horizontal, 10).padding(.vertical, 7).background(T.card2).clipShape(Capsule())
+                    }
+                }
+            }
+            .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+            .background(T.card).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        case 5:
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 10), spacing: 8) {
+                ForEach(emojis, id: \.self) { e in
+                    Button { insert(e) } label: { Text(e).font(.system(size: 24)) }
+                }
+            }
+            .padding(12).background(T.card).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        default:
+            EmptyView()
         }
+    }
+
+    private func insert(_ s: String) {
+        if text.count + s.count <= 240 { text += s }
+    }
+
+    @ViewBuilder private var attachments: some View {
+        if (pollOn && cleanOpts.count >= 2) || (snipOn && !snipBody.trimmed.isEmpty) {
+            HStack(spacing: 8) {
+                if pollOn && cleanOpts.count >= 2 {
+                    attach("Poll · \(cleanOpts.count) options", "chart.bar.fill") { pollOn = false }
+                }
+                if snipOn && !snipBody.trimmed.isEmpty {
+                    attach(snipTitle.trimmed.isEmpty ? "note.txt" : snipTitle.trimmed, "doc.text.fill") { snipOn = false }
+                }
+                Spacer()
+            }
+        }
+    }
+
+    private func attach(_ t: String, _ icon: String, _ remove: @escaping () -> Void) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).font(.system(size: 12))
+            Text(t).font(.jk(13, .semibold)).lineLimit(1)
+            Button(action: remove) { Image(systemName: "xmark.circle.fill").foregroundColor(T.sub) }
+        }
+        .foregroundColor(.white).padding(.horizontal, 10).padding(.vertical, 7).background(T.card2).clipShape(Capsule())
+    }
+
+    private var kindRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 8)], alignment: .leading, spacing: 8) {
+                ForEach(kinds) { k in
+                    Button { kind = k } label: {
+                        Text("\(k.icon) \(k.label)").font(.jk(14, .semibold)).foregroundColor(.white).lineLimit(1)
+                            .frame(maxWidth: .infinity).padding(.vertical, 9)
+                            .background(kind == k ? T.blue : T.card).clipShape(Capsule())
+                    }
+                }
+            }
+            Text(kind.blurb).font(.jk(12)).foregroundColor(T.sub)
+        }
+    }
+
+    private var toneRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                ForEach(Array(tones.enumerated()), id: \.offset) { i, n in
+                    Button { tone = i } label: {
+                        Text(n).font(.jk(14, .semibold)).foregroundColor(tone == i ? .white : T.sub)
+                            .frame(maxWidth: .infinity).padding(.vertical, 9)
+                            .background(tone == i ? (i == 2 ? T.red : (i == 1 ? T.orange : T.blue)) : Color.clear).clipShape(Capsule())
+                    }
+                }
+            }
+            .padding(3).background(T.card).clipShape(Capsule())
+            Text(toneNote[tone]).font(.jk(12)).foregroundColor(T.sub)
+        }
+    }
+}
+
+private extension View {
+    func field() -> some View {
+        self.font(.jk(15)).padding(10).background(Color.black.opacity(0.3)).clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
 

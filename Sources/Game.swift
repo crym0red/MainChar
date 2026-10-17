@@ -510,7 +510,7 @@ final class Game: ObservableObject {
     // MARK: Posting
 
     @discardableResult
-    func publish(kind: PostKind, text: String, quest: UUID? = nil, free: Bool = false) -> Outcome? {
+    func publish(kind: PostKind, text: String, quest: UUID? = nil, free: Bool = false, extras: ComposeExtras? = nil) -> Outcome? {
         let t = text.trimmed
         guard !t.isEmpty else { return nil }
         let snap = s
@@ -520,13 +520,14 @@ final class Game: ObservableObject {
         var delta = Int.random(in: kind.aura)
         var squadBoost = false
         if st.ex.squad == true { delta = max(delta, 3) + 2; st.ex.squad = false; squadBoost = true }
+        if let x = extras, !squadBoost { delta += x.auraShift }
         if delta < 0, st.ex.shield == true { delta = 0; st.ex.shield = false; showToast("Cert Shield absorbed the hit") }
         let base = Double(max(30, st.followers)) / 10.0
-        var mult = kind.reach * st.persona.vibe.likeMult * Double.random(in: 0.7...1.3)
+        var mult = kind.reach * (extras?.reach ?? 1) * st.persona.vibe.likeMult * Double.random(in: 0.7...1.3)
         mult *= 1 + Double(st.stats["humor"] ?? 30) / 300
         mult *= takePower(&st)
         var likes = max(3, Int(base * mult))
-        let viral = Double.random(in: 0...1) < (kind == .drama ? 0.3 : 0.07) + viralBoost(st, t)
+        let viral = Double.random(in: 0...1) < (kind == .drama ? 0.3 : 0.07) + viralBoost(st, t) + (extras?.viral ?? 0)
         if viral { likes *= 4 }
         if squadBoost { likes *= 2 }
         var gain = max(1, Int(Double(likes) * 0.06 * kind.followMult))
@@ -534,9 +535,13 @@ final class Game: ObservableObject {
         let before = st.followers
         let mad = ContentPrefs.isHostile(t) && !squadBoost
         let comments = makeComments(st, auraDelta: mad ? min(delta, -3) : delta, count: Int.random(in: mad ? 6...9 : 4...7), text: t, angry: mad)
-        let post = Post(authorHandle: st.persona.handle, authorName: st.persona.name, emoji: st.persona.emoji,
+        var post = Post(authorHandle: st.persona.handle, authorName: st.persona.name, emoji: st.persona.emoji,
                         text: t, likes: likes, reposts: likes / 7, comments: comments, day: st.day, isYou: true,
                         verified: st.followers >= 10000, viral: viral, tag: kind.label)
+        if let x = extras {
+            if let o = x.poll { post.poll = Poll(q: x.pollQ.isEmpty ? "Vote" : x.pollQ, opts: o, votes: o.map { _ in Int.random(in: 0...4) }) }
+            if let m = x.media { post.media = m }
+        }
         st.posts.insert(post, at: 0)
         st.followers += gain
         st.aura += delta

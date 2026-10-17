@@ -32,7 +32,7 @@ struct GoalsTab: View {
             }
         }
         .background(T.bg)
-        .sheet(item: $compose) { ComposeSheet(seed: $0).zoomed() }
+        .sheet(item: $compose) { ComposeSheet(seed: $0).zoomed().presentationDetents([.medium, .large]).presentationDragIndicator(.visible) }
         .sheet(isPresented: $customize) { CustomizeWorldSheet().zoomed() }
         .sheet(isPresented: $showRank) { RankingsSheet().zoomed() }
         .fullScreenCover(isPresented: $showLog) { ActivityLogView().zoomed() }
