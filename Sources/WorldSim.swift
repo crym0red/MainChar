@@ -100,6 +100,7 @@ extension Game {
         st.ex.simNow = nil
         marketAdvance(&st, &items, steps: min(400, Int(away / 10)), quiet: false)
         checkSeason(&st, &items, quiet: false)
+        engagementTick(&st, &items, quiet: false)
 
         // slow drift in your popularity, scaled by how long you were gone
         let scale = min(1.0, hrs / 8)
@@ -194,7 +195,8 @@ extension Game {
     // MARK: One simulation step
 
     private func simTick(_ st: inout GameState, _ items: inout [DigestItem], quiet: Bool) {
-        let cast = st.npcs.filter { $0.id != "newsdesk" }
+        let away = st.ex.gone ?? [:]
+        let cast = st.npcs.filter { $0.id != "newsdesk" && away[$0.handle] == nil }
         guard cast.count >= 2 else { return }
         if let sp = st.ex.spotlight, sp > 0 {
             st.ex.spotlight = sp - 1
@@ -204,6 +206,7 @@ extension Game {
             if q < 0.42 { simOffer(&st, &items, cast, quiet); return }
         }
         growWorld(&st, &items, quiet)
+        if Double.random(in: 0...1) < 0.05 { simDMArc(&st, &items, cast, quiet); return }
         if Double.random(in: 0...1) < 0.07 { simCoinLaunch(&st, &items, cast, quiet); return }
         let pre = Double.random(in: 0...1)
         if pre < 0.16 { simStory(&st, &items, cast, quiet); return }

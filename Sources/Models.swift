@@ -91,12 +91,71 @@ struct Post: Identifiable, Codable, Hashable {
     var liked: Bool = false
     var tag: String = ""
     var ts: Date? = nil
+    var poll: Poll? = nil
+    var media: Media? = nil
+    var quote: Quote? = nil
+    var reacts: [String: Int]? = nil
+    var myReact: String? = nil
+}
+
+struct Poll: Codable, Hashable {
+    var q: String
+    var opts: [String]
+    var votes: [Int]
+    var mine: Int? = nil
+}
+
+struct Media: Codable, Hashable {
+    var kind: String
+    var title: String
+    var lines: [String]
+    var hue: Double
+}
+
+struct Quote: Codable, Hashable {
+    var handle: String
+    var name: String
+    var text: String
+}
+
+struct Chain: Codable, Hashable, Identifiable {
+    var id = UUID()
+    var handle: String
+    var choice: String
+    var due: Date
+}
+
+struct Community: Codable, Hashable {
+    var id: String
+    var title: String
+    var detail: String
+    var symbol: String
+    var ends: Date
+    var kind: String
+    var goal: Int
+    var progress: Int
+    var gems: Int
+    var done: Bool = false
+}
+
+struct Challenge: Codable, Hashable, Identifiable {
+    var id: String
+    var text: String
+    var kind: String
+    var goal: Int
+    var progress: Int
+    var gems: Int
+    var xp: Int
+    var weekly: Bool
+    var claimed: Bool = false
 }
 
 struct DMMessage: Identifiable, Codable, Hashable {
     var id = UUID()
     var fromYou: Bool
     var text: String
+    var choices: [String]? = nil
+    var arc: String? = nil
 }
 
 struct Persona: Codable, Hashable {
@@ -309,6 +368,14 @@ struct Extras: Codable, Hashable {
     var shield: Bool? = nil
     var squad: Bool? = nil
     var market: Market? = nil
+    var chains: [Chain]? = nil
+    var community: Community? = nil
+    var challenges: [Challenge]? = nil
+    var challengeDay: String? = nil
+    var challengeWeek: String? = nil
+    var theme: Int? = nil
+    var title: String? = nil
+    var gone: [String: Date]? = nil
     var following: [String]? = nil
     var season: Int? = nil
     var seasonStart: Date? = nil

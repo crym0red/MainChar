@@ -225,6 +225,7 @@ extension Game {
         var items: [DigestItem] = []
         marketAdvance(&st, &items, steps: 5, quiet: true)
         checkSeason(&st, &items, quiet: true)
+        engagementTick(&st, &items, quiet: true)
         s = st
     }
 
@@ -370,6 +371,7 @@ extension Game {
             m.holds[h].qty += qty; m.holds[h].cost += Double(amt)
         } else { m.holds.append(Holding(id: ticker, qty: qty, cost: Double(amt))) }
         st.ex.market = m
+        bump(&st, "trade")
         s = st
     }
 
@@ -395,6 +397,7 @@ extension Game {
         st.ex.gems += whole
         st.ex.market = m
         if profit > 1 { gainXP(&st, min(60, Int(profit))) }
+        bump(&st, "trade")
         s = st
         showToast(profit >= 0 ? "Sold for +\(Mk.fmtGems(profit)) profit" : "Sold at \(Mk.fmtGems(profit)) loss")
     }

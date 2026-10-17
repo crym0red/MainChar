@@ -285,6 +285,7 @@ extension Game {
         st.ex.statDelta["charm"] = 1
         st.ex.statNote["charm"] = "Your story kept the cast talking."
         gainXP(&st, 5)
+        bump(&st, "story")
 
         let first = comments.first
         notify(&st, "story", "\(Game.joinNames(comments.map { $0.handle })) replied to your private story",

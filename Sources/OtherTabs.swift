@@ -21,6 +21,7 @@ struct GoalsTab: View {
                     VStack(alignment: .leading, spacing: 22) {
                         mainGoal(st)
                         rankCard(st)
+                        ChallengesCard()
                         milestones(st)
                         quests(st)
                         skills(st).id("skills")
@@ -563,6 +564,17 @@ struct ChatView: View {
                                 if !m.fromYou { Spacer(minLength: 50) }
                             }.id(m.id)
                         }
+                        if let l = msgs.last, !l.fromYou, let chs = l.choices {
+                            VStack(alignment: .trailing, spacing: 8) {
+                                ForEach(Array(chs.enumerated()), id: \.offset) { i, c in
+                                    Button { game.answerArc(handle, i) } label: {
+                                        Text(c).font(.jk(14, .semibold)).foregroundColor(.white)
+                                            .padding(.horizontal, 14).padding(.vertical, 9)
+                                            .overlay(Capsule().stroke(T.blue, lineWidth: 1.5))
+                                    }
+                                }
+                            }.frame(maxWidth: .infinity, alignment: .trailing)
+                        }
                         if game.typing.contains(handle) {
                             HStack {
                                 Text("typing…").font(.jk(13)).foregroundColor(T.sub)
@@ -604,6 +616,18 @@ struct NotifsTab: View {
     @EnvironmentObject var game: Game
     @EnvironmentObject var nav: Nav
     @State private var openStory: StoryOpen? = nil
+    @State private var filter = 0
+
+    private func matches(_ n: Notif) -> Bool {
+        let money = n.text.contains("$") || n.sub.contains("$") || n.sub.lowercased().contains("gem") || n.text.lowercased().contains("gem")
+        switch filter {
+        case 1: return ["follow", "reply", "story"].contains(n.kind)
+        case 2: return n.kind == "event" && !money
+        case 3: return money
+        case 4: return ["level", "milestone"].contains(n.kind)
+        default: return true
+        }
+    }
 
     var body: some View {
         let st = game.s
@@ -611,6 +635,17 @@ struct NotifsTab: View {
             Text("Notifications").font(.jk(30, .semibold))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 14)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Array(["All", "People", "Drama", "Money", "Progress"].enumerated()), id: \.offset) { i, t in
+                        Button { filter = i } label: {
+                            Text(t).font(.jk(15, .semibold)).foregroundColor(filter == i ? .black : .white)
+                                .padding(.horizontal, 16).padding(.vertical, 8)
+                                .background(filter == i ? Color.white : T.card2).clipShape(Capsule())
+                        }
+                    }
+                }.padding(.horizontal, 16).padding(.bottom, 12)
+            }
             Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
             ScrollView {
                 if st.notifs.isEmpty {
@@ -618,7 +653,7 @@ struct NotifsTab: View {
                         .padding(.top, 80)
                 } else {
                     LazyVStack(spacing: 0) {
-                        ForEach(st.notifs) { n in
+                        ForEach(st.notifs.filter(matches)) { n in
                             row(n, st)
                             Rectangle().fill(Color.white.opacity(0.1)).frame(height: 1)
                         }
@@ -690,6 +725,20 @@ struct NotifsTab: View {
                     }
                     .padding(.top, 4)
                 }
+                if n.kind == "follow" && !n.handle.isEmpty && !(st.ex.following ?? []).contains(n.handle) {
+                    Button { game.toggleFollow(n.handle) } label: {
+                        Text("Follow back").font(.jk(20, .medium)).foregroundColor(.black)
+                            .padding(.horizontal, 30).padding(.vertical, 12)
+                            .background(Color.white).clipShape(Capsule())
+                    }
+                }
+                if let t = Mk.tickers(n.text + " " + n.sub).first, (st.ex.market?.coins ?? []).contains(where: { $0.id == t }) {
+                    Button { nav.coin = t; nav.tab = 5 } label: {
+                        Label("Open $\(t)", systemImage: "chart.line.uptrend.xyaxis").font(.jk(18, .semibold)).foregroundColor(.white)
+                            .padding(.horizontal, 24).padding(.vertical, 12)
+                            .background(Color(red: 0.45, green: 0.30, blue: 0.95)).clipShape(Capsule())
+                    }
+                }
             }
             Spacer(minLength: 8)
             if let s = story {
@@ -719,6 +768,7 @@ struct ProfileTab: View {
     @State private var seg = 0
     @State private var edit = false
     @State private var customize = false
+    @State private var styleSheet = false
     @State private var settings = false
     @State private var showLog = false
     @State private var showStore = false
@@ -772,6 +822,7 @@ struct ProfileTab: View {
                         if st.followers >= 10000 { VerifiedSeal(size: 28) }
                     }
                     Text("@\(p.handle)").font(.jk(22)).foregroundColor(T.sub)
+                    if let ti = st.ex.title { Chip(text: ti, color: T.gold.opacity(0.3)) }
                     if !p.bio.isEmpty { Text(p.bio).font(.jk(23)).padding(.top, 4) }
                     (Text(short(st.followers)).fontWeight(.semibold).foregroundColor(.white)
                         + Text(" Followers").foregroundColor(T.sub))
@@ -781,6 +832,7 @@ struct ProfileTab: View {
 
                 VStack(spacing: 12) {
                     wideButton("globe.europe.africa.fill", "Customize World") { customize = true }
+                    wideButton("paintpalette.fill", "Profile Style") { styleSheet = true }
                     wideButton("book.closed.fill", "Activity Log") { showLog = true }
                 }
                 .padding(.horizontal, 16).padding(.top, 18)
@@ -795,6 +847,7 @@ struct ProfileTab: View {
                 .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 40)
             }
         }
+        .sheet(isPresented: $styleSheet) { ProfileStyleSheet().zoomed() }
         .coordinateSpace(name: "profile")
         .onPreferenceChange(ProfileScrollKey.self) { scrolled = $0 < -120 }
         .ignoresSafeArea(edges: .top)

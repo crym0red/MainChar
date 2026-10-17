@@ -354,10 +354,12 @@ final class Game: ObservableObject {
     func makePost(_ npc: NPC, _ text: String, _ st: GameState) -> Post {
         let likes = max(8, Int(Double(npc.followers) * Double.random(in: 0.01...0.06)))
         let cmts = Int.random(in: 0...2)
-        return Post(authorHandle: npc.handle, authorName: npc.name, emoji: npc.emoji, text: text,
-                    likes: likes, reposts: likes / 8,
-                    comments: makeComments(st, auraDelta: 1, count: cmts, exclude: npc.handle, text: text),
-                    day: st.day, isYou: false, verified: npc.followers >= 40000 || npc.id == "newsdesk")
+        var p = Post(authorHandle: npc.handle, authorName: npc.name, emoji: npc.emoji, text: text,
+                     likes: likes, reposts: likes / 8,
+                     comments: makeComments(st, auraDelta: 1, count: cmts, exclude: npc.handle, text: text),
+                     day: st.day, isYou: false, verified: npc.followers >= 40000 || npc.id == "newsdesk")
+        if npc.id != "newsdesk" { decorate(&p, author: npc, st: st) }
+        return p
     }
 
     func makeComments(_ st: GameState, auraDelta: Int, count: Int, exclude: String = "", text: String = "", angry: Bool = false) -> [Comment] {
@@ -537,6 +539,7 @@ final class Game: ObservableObject {
         st.aura += delta
         st.lastAuraDelta = delta
         st.totalPosts += 1
+        bump(&st, "post")
         if viral { st.viralCount += 1 }
         rememberPost(&st, post: post, comments: comments, delta: delta, kind: kind, text: t)
         if viral { goViral(&st, post) }
@@ -745,6 +748,7 @@ final class Game: ObservableObject {
         if st.recent.count > 6 { st.recent.removeFirst(st.recent.count - 6) }
         st.eventsDone += 1
         gainXP(&st, 15 + max(0, c.aura))
+        scheduleChain(&st, npc: nc.first?.handle, choice: fill(c.text, st))
         st.result = rec
         s = st
         checkBadges()

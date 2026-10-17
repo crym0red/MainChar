@@ -137,6 +137,7 @@ extension Game {
         st.lastAuraDelta = aura
         st.ex.gems += gems
         gainXP(&st, 10)
+        bump(&st, "live")
         var items: [DigestItem] = []
         logEvent(&st, &items, quiet: true, emoji: "🔴", title: "You went live: \(topic)",
                  detail: "Peak \(peak) viewers, +\(gain) followers, \(gems) gems.", weight: 20,

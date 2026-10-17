@@ -88,6 +88,7 @@ struct FeedTab: View {
     @State private var storyOpen: StoryOpen? = nil
     @State private var npcSheet: NPC? = nil
     @State private var replyTo: UUID? = nil
+    @State private var quoteID: UUID? = nil
     @State private var confirmExit = false
     @State private var showStore = false
     @State private var liveOpen: LiveOpen? = nil
@@ -120,7 +121,7 @@ struct FeedTab: View {
                                     .font(.jk(15)).foregroundColor(T.sub).padding(.vertical, 40)
                             }
                             ForEach(list) { p in
-                                PostRow(post: p, onReply: { replyTo = p.id }, onOpen: { path.append(p.id) })
+                                PostRow(post: p, onReply: { replyTo = p.id }, onOpen: { path.append(p.id) }, onQuote: { quoteID = p.id })
                                 Divider().background(Color.white.opacity(0.1))
                             }
                             Color.clear.frame(height: 150)
@@ -163,6 +164,9 @@ struct FeedTab: View {
         .sheet(item: Binding(get: { replyTo.map { IDBox(id: $0) } }, set: { replyTo = $0?.id })) { b in
             ReplySheet(postID: b.id).zoomed()
         }
+        .sheet(item: Binding(get: { quoteID.map { IDBox(id: $0) } }, set: { quoteID = $0?.id })) { b in
+            QuoteSheet(postID: b.id).zoomed()
+        }
         .alert("Leave this world?", isPresented: $confirmExit) {
             Button("Leave") { game.exitToHub() }
             Button("Stay", role: .cancel) {}
@@ -193,6 +197,7 @@ struct FeedTab: View {
                 }
                 Spacer()
             }
+            if let c = st.ex.community, c.ends > Date() || c.done { CommunityBanner(c: c) }
             if !trends.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -366,6 +371,7 @@ struct PostRow: View {
     let post: Post
     var onReply: () -> Void
     var onOpen: () -> Void
+    var onQuote: () -> Void = {}
 
     var body: some View {
         let st = game.s
@@ -395,6 +401,7 @@ struct PostRow: View {
                     if !post.tag.isEmpty {
                         Chip(text: post.tag, color: post.tag == "Breaking" ? T.red.opacity(0.85) : T.card2)
                     }
+                    if post.isYou, let ti = st.ex.title { Chip(text: ti, color: T.gold.opacity(0.3)) }
                     Text(post.text).font(.jk(20)).foregroundColor(.white)
                         .fixedSize(horizontal: false, vertical: true)
                     if let t = Mk.tickers(post.text).first, (game.s.ex.market?.coins ?? []).contains(where: { $0.id == t }) {
@@ -404,16 +411,25 @@ struct PostRow: View {
                                 .background(Color(red: 0.45, green: 0.30, blue: 0.95)).clipShape(Capsule())
                         }
                     }
+                    PostExtras(post: post, onOpen: onOpen)
                 }
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onOpen)
                 HStack(spacing: 22) {
                     Button(action: onReply) { Label("\(post.comments.count)", systemImage: "bubble.left") }
-                    Label("\(short(post.reposts))", systemImage: "arrow.2.squarepath")
-                    Button { game.like(post.id) } label: {
+                    Menu {
+                        Button { game.repost(post.id) } label: { Label("Repost", systemImage: "arrow.2.squarepath") }
+                        Button(action: onQuote) { Label("Quote", systemImage: "quote.bubble") }
+                    } label: { Label("\(short(post.reposts))", systemImage: "arrow.2.squarepath") }
+                    Menu {
+                        ForEach(Array(Game.reactionList.enumerated()), id: \.offset) { _, rk in
+                        let sym = rk.0, key = rk.1
+                            Button { game.react(post.id, key) } label: { Label(key.capitalized, systemImage: sym) }
+                        }
+                    } label: {
                         Label(short(post.likes), systemImage: post.liked ? "heart.fill" : "heart")
                             .foregroundColor(post.liked ? T.red : T.sub)
-                    }
+                    } primaryAction: { game.like(post.id) }
                     Spacer()
                     Image(systemName: saved ? "star.fill" : "star").foregroundColor(saved ? T.gold : T.sub)
                         .onTapGesture { game.toggleSave(post.id) }
@@ -753,13 +769,26 @@ struct EventSheet: View {
                         }.card()
                         ForEach(Array(e.choices.enumerated()), id: \.offset) { i, c in
                             Button { game.choose(i) } label: {
-                                HStack {
+                                VStack(alignment: .leading, spacing: 10) {
                                     Text(game.fill(c.text, st)).font(.jk(15, .semibold))
                                         .foregroundColor(.white).multilineTextAlignment(.leading)
-                                    Spacer()
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 6) {
+                                            preview("Aura \(c.aura >= 0 ? "+" : "")\(c.aura)", c.aura >= 0 ? T.lime : T.red)
+                                            preview("Followers \(c.fol >= 0 ? "+" : "")\(Int(c.fol))%", c.fol >= 0 ? T.lime : T.red)
+                                            ForEach(Array(c.stats.enumerated()), id: \.offset) { _, d in
+                                                preview("\(d.kind.label) \(d.v >= 0 ? "↑" : "↓")", d.v >= 0 ? T.blue : T.orange)
+                                            }
+                                            ForEach(Array(c.npc.enumerated()), id: \.offset) { _, d in
+                                                preview("\(d.trait.rawValue.capitalized)s \(d.d >= 0 ? "↑" : "↓")", d.d >= 0 ? T.gold : T.red)
+                                            }
+                                            if c.aura < 0 { preview("Risky", T.red) }
+                                        }
+                                    }
                                 }
-                                .padding(16)
-                                .background(T.card2)
+                                .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                                .background(LinearGradient(colors: [T.card2, Color.black.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                .overlay(RoundedRectangle(cornerRadius: 14).stroke(T.blue.opacity(0.35), lineWidth: 1))
                                 .clipShape(RoundedRectangle(cornerRadius: 14))
                             }
                         }
@@ -769,11 +798,16 @@ struct EventSheet: View {
                 }
                 .padding(16)
             }
-            .background(T.bg)
+            .background(LinearGradient(colors: [Color(red: 0.03, green: 0.06, blue: 0.12), T.bg], startPoint: .top, endPoint: .bottom))
             .navigationTitle("Event").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
             .onAppear { game.ensureEvent() }
         }
+    }
+
+    private func preview(_ t: String, _ c: Color) -> some View {
+        Text(t).font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(c)
+            .padding(.horizontal, 8).padding(.vertical, 4).background(c.opacity(0.15)).clipShape(Capsule())
     }
 
     @ViewBuilder

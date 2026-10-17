@@ -45,6 +45,7 @@ extension Game {
         }
         st.ex.following = f
         st.following = f.count
+        if f.contains(h) { bump(&st, "follow") }
         s = st
     }
 

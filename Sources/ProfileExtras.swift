@@ -41,12 +41,15 @@ private func loadPicked(_ item: PhotosPickerItem?) async -> UIImage? {
 }
 
 struct ProfileBanner: View {
+    @EnvironmentObject var game: Game
     var body: some View {
         if let img = ProfileImages.load("banner") {
             GeometryReader { g in
                 Image(uiImage: img).resizable().scaledToFill()
                     .frame(width: g.size.width, height: g.size.height).clipped()
             }
+        } else if let t = game.s.ex.theme, t > 0 {
+            LinearGradient(colors: [Themes.color(t), T.bg], startPoint: .topLeading, endPoint: .bottomTrailing)
         } else {
             T.blue
         }
