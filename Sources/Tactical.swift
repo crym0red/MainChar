@@ -173,6 +173,7 @@ enum TMap {
     static let packPos: [CGPoint] = [CGPoint(x: 870, y: 540), CGPoint(x: 1200, y: 600), CGPoint(x: 440, y: 1040)]
 
     static let solid: [CGRect] = layout.walls + props.map { $0.r }
+    static let solidKind: [PropKind?] = layout.walls.map { _ -> PropKind? in nil } + props.map { Optional($0.k) }
     static let siteA = CGRect(x: 170, y: 170, width: 230, height: 170)
     static let siteB = CGRect(x: 690, y: 830, width: 240, height: 170)
     static let atkSpawn: [CGPoint] = [CGPoint(x: 90, y: 1130), CGPoint(x: 160, y: 1130), CGPoint(x: 230, y: 1130), CGPoint(x: 90, y: 1060), CGPoint(x: 160, y: 1060)]
@@ -450,6 +451,9 @@ final class TacticalEngine {
     var actHeld = false
     var wantNade = false
     var wantSmoke = false
+    var fp = true
+    var lookDelta: CGFloat = 0
+    var hitT: CGFloat = 0
     var wantReload = false
     var fast = false
     var paused = false
@@ -503,6 +507,7 @@ final class TacticalEngine {
         defuseProg = 0
         bullets = []; nades = []; booms = []; pops = []
         smokeClouds = []; pings = []
+        lookDelta = 0
         packs = TMap.packPos.map { Pack(pos: $0, taken: false) }
         var ai = 0, di = 0
         var defBots = 0
@@ -552,6 +557,7 @@ final class TacticalEngine {
     private func update(_ dt: CGFloat) {
         time += dt
         bannerT = max(0, bannerT - dt)
+        hitT = max(0, hitT - dt)
         shake = max(0, shake - dt * 30)
         for i in feed.indices { feed[i].life -= dt }
         feed.removeAll { $0.life <= 0 }
@@ -672,10 +678,16 @@ final class TacticalEngine {
         let p = me
         guard p.alive else { return }
         let sp: CGFloat = 170
-        p.pos.x += move.dx * sp * dt
-        p.pos.y += move.dy * sp * dt
+        var mv = move
+        if fp {
+            p.aim += lookDelta
+            lookDelta = 0
+            let fx = cos(p.aim), fy = sin(p.aim)
+            mv = CGVector(dx: fx * (-move.dy) - fy * move.dx, dy: fy * (-move.dy) + fx * move.dx)
+        } else if let a = aimIn { p.aim = a }
+        p.pos.x += mv.dx * sp * dt
+        p.pos.y += mv.dy * sp * dt
         TMap.push(&p.pos, 14)
-        if let a = aimIn { p.aim = a }
         p.fireCd -= dt
         if wantReload { wantReload = false; startReload(p) }
         if p.reloadT > 0 {
@@ -729,6 +741,7 @@ final class TacticalEngine {
         guard victim.alive else { return }
         victim.hp -= amt
         victim.hurt = 0.25
+        if owner == 0 && victim.team != me.team { hitT = 0.2 }
         if victim.isPlayer { shake = max(shake, 8) }
         if let o = players.first(where: { $0.id == owner }), o.team != victim.team {
             if !victim.isPlayer && victim.targetID < 0 && victim.hunt <= 0 { victim.lastSeen = o.pos; victim.hunt = 4 }
@@ -917,6 +930,7 @@ final class TacticalEngine {
     // MARK: drawing
 
     func draw(_ ctx: inout GraphicsContext, _ size: CGSize) {
+        if fp { drawFP(&ctx, size); return }
         let focus: TPlayer = me.alive ? me : (players.first { $0.team == me.team && $0.alive } ?? me)
         let camX = min(max(0, focus.pos.x - size.width / 2), max(0, TMap.W - size.width))
         let camY = min(max(0, focus.pos.y - size.height / 2), max(0, TMap.H - size.height))
@@ -1044,6 +1058,283 @@ final class TacticalEngine {
         }
         if !me.alive {
             ctx.draw(Text("SPECTATING " + focus.name.uppercased()).font(.system(size: 12, weight: .heavy)).foregroundColor(.white.opacity(0.7)), at: CGPoint(x: size.width / 2, y: size.height - 90))
+        }
+    }
+
+    // MARK: first-person raycast view
+
+    private struct FPBill {
+        var perp: CGFloat
+        var sx: CGFloat
+        var kind: Int
+        var p: TPlayer?
+        var r: CGFloat
+        var a: CGFloat
+    }
+
+    private func fpColor(_ k: PropKind?) -> (CGFloat, CGFloat, CGFloat) {
+        guard let kk = k else { return (0.62, 0.66, 0.72) }
+        switch kk {
+        case .bed: return (0.32, 0.4, 0.62)
+        case .couch: return (0.55, 0.26, 0.3)
+        case .table: return (0.62, 0.44, 0.26)
+        case .counter: return (0.78, 0.8, 0.82)
+        case .crate: return (0.52, 0.38, 0.22)
+        case .car: return (0.2, 0.38, 0.62)
+        case .shelf: return (0.3, 0.22, 0.15)
+        case .barrel: return (0.5, 0.2, 0.14)
+        case .sandbag: return (0.76, 0.68, 0.44)
+        case .tv: return (0.1, 0.12, 0.16)
+        case .plant: return (0.16, 0.45, 0.22)
+        }
+    }
+
+    private func fpHeight(_ k: PropKind?) -> CGFloat {
+        guard let kk = k else { return 1 }
+        switch kk {
+        case .bed: return 0.35
+        case .couch: return 0.45
+        case .table: return 0.4
+        case .counter: return 0.5
+        case .crate: return 0.55
+        case .car: return 0.6
+        case .shelf: return 0.95
+        case .barrel: return 0.5
+        case .sandbag: return 0.3
+        case .tv: return 0.5
+        case .plant: return 0.6
+        }
+    }
+
+    private func rayRect(_ ox: CGFloat, _ oy: CGFloat, _ dx: CGFloat, _ dy: CGFloat, _ r: CGRect) -> (CGFloat, Int)? {
+        var t0: CGFloat = 0
+        var t1: CGFloat = 5000
+        var side = 0
+        if abs(dx) < 1e-7 {
+            if ox < r.minX || ox > r.maxX { return nil }
+        } else {
+            var ta = (r.minX - ox) / dx
+            var tb = (r.maxX - ox) / dx
+            if ta > tb { let tmp = ta; ta = tb; tb = tmp }
+            if ta > t0 { t0 = ta; side = 0 }
+            t1 = min(t1, tb)
+            if t0 > t1 { return nil }
+        }
+        if abs(dy) < 1e-7 {
+            if oy < r.minY || oy > r.maxY { return nil }
+        } else {
+            var ta = (r.minY - oy) / dy
+            var tb = (r.maxY - oy) / dy
+            if ta > tb { let tmp = ta; ta = tb; tb = tmp }
+            if ta > t0 { t0 = ta; side = 1 }
+            t1 = min(t1, tb)
+            if t0 > t1 { return nil }
+        }
+        if t0 <= 0.001 { return nil }
+        return (t0, side)
+    }
+
+    func drawFP(_ ctx: inout GraphicsContext, _ size: CGSize) {
+        let focus: TPlayer = me.alive ? me : (players.first { $0.team == me.team && $0.alive } ?? me)
+        let pos = focus.pos
+        let ang = focus.aim
+        let W = size.width
+        let H = size.height
+        let hz = H / 2
+        let fov: CGFloat = 1.15
+        let tanH = tan(fov / 2)
+        // ceiling + floor
+        ctx.fill(Path(CGRect(x: 0, y: 0, width: W, height: hz)), with: .color(Color(red: 0.07, green: 0.08, blue: 0.11)))
+        var mat = 1
+        for rm in TMap.rooms where rm.r.contains(pos) { mat = rm.mat }
+        let fcs: [(CGFloat, CGFloat, CGFloat)] = [(0.45, 0.31, 0.19), (0.34, 0.36, 0.38), (0.27, 0.24, 0.33), (0.5, 0.54, 0.56), (0.28, 0.19, 0.13), (0.4, 0.4, 0.42)]
+        let fc = fcs[mat]
+        for b in 0..<6 {
+            let k = 0.35 + 0.1 * CGFloat(b)
+            ctx.fill(Path(CGRect(x: 0, y: hz + CGFloat(b) * hz / 6, width: W, height: hz / 6 + 1)), with: .color(Color(red: fc.0 * k, green: fc.1 * k, blue: fc.2 * k)))
+        }
+        let n = max(60, Int(W / 4))
+        let cw = W / CGFloat(n)
+        var z = [CGFloat](repeating: 9999, count: n)
+        var near: [Int] = []
+        for (k, r) in TMap.solid.enumerated() {
+            let cx = min(max(pos.x, r.minX), r.maxX)
+            let cy = min(max(pos.y, r.minY), r.maxY)
+            if tDist(pos, CGPoint(x: cx, y: cy)) < 1300 { near.append(k) }
+        }
+        for i in 0..<n {
+            let sxn = (CGFloat(i) + 0.5) / CGFloat(n) * 2 - 1
+            let off = atan(sxn * tanH)
+            let a = ang + off
+            let dx = cos(a)
+            let dy = sin(a)
+            var hits: [(CGFloat, Int, Int)] = []
+            for k in near {
+                if let h = rayRect(pos.x, pos.y, dx, dy, TMap.solid[k]) { hits.append((h.0, k, h.1)) }
+            }
+            hits.sort { $0.0 > $1.0 }
+            let co = cos(off)
+            for h in hits {
+                let perp = max(8, h.0 * co)
+                let wallPx = H * 0.6 / perp * 100
+                let kind = TMap.solidKind[h.1]
+                let ratio = fpHeight(kind)
+                let bottom = hz + wallPx / 2
+                let top = bottom - wallPx * ratio
+                var sh = max(0.22, min(1, 1.25 - perp / 950))
+                if h.2 == 1 { sh *= 0.78 }
+                let c = fpColor(kind)
+                let col = Color(red: Double(c.0 * sh), green: Double(c.1 * sh), blue: Double(c.2 * sh))
+                ctx.fill(Path(CGRect(x: CGFloat(i) * cw, y: top, width: cw + 0.6, height: bottom - top)), with: .color(col))
+                if ratio < 1 {
+                    let hi = Color(red: Double(min(1, c.0 * sh * 1.3)), green: Double(min(1, c.1 * sh * 1.3)), blue: Double(min(1, c.2 * sh * 1.3)))
+                    ctx.fill(Path(CGRect(x: CGFloat(i) * cw, y: top, width: cw + 0.6, height: max(2, wallPx * 0.05))), with: .color(hi))
+                }
+            }
+            if let nearest = hits.last { z[i] = nearest.0 * co }
+        }
+        // billboards
+        var bills: [FPBill] = []
+        for p in players where p.alive && p.id != focus.id {
+            if !see(pos, p.pos) { continue }
+            let dx = p.pos.x - pos.x
+            let dy = p.pos.y - pos.y
+            let d = hypot(dx, dy)
+            let diff = tAngDiff(atan2(dy, dx), ang)
+            if abs(diff) > 1.1 { continue }
+            let perp = d * cos(diff)
+            if perp < 12 { continue }
+            bills.append(FPBill(perp: perp, sx: W / 2 + tan(diff) / tanH * W / 2, kind: 0, p: p, r: 0, a: 1))
+        }
+        var inSmoke: CGFloat = 0
+        for s in smokeClouds {
+            let dx = s.pos.x - pos.x
+            let dy = s.pos.y - pos.y
+            let d = hypot(dx, dy)
+            let fade = min(1, s.life / 1.5)
+            if d < s.r * 0.8 { inSmoke = max(inSmoke, fade); continue }
+            let diff = tAngDiff(atan2(dy, dx), ang)
+            if abs(diff) > 1.3 { continue }
+            let perp = d * cos(diff)
+            if perp < 12 { continue }
+            bills.append(FPBill(perp: perp, sx: W / 2 + tan(diff) / tanH * W / 2, kind: 1, p: nil, r: s.r, a: fade))
+        }
+        if planted && TMap.los(pos, bombPos) {
+            let dx = bombPos.x - pos.x
+            let dy = bombPos.y - pos.y
+            let diff = tAngDiff(atan2(dy, dx), ang)
+            let perp = hypot(dx, dy) * cos(diff)
+            if abs(diff) < 1.1 && perp > 12 {
+                bills.append(FPBill(perp: perp, sx: W / 2 + tan(diff) / tanH * W / 2, kind: 2, p: nil, r: 0, a: 1))
+            }
+        }
+        for k in packs where !k.taken && TMap.los(pos, k.pos) {
+            let dx = k.pos.x - pos.x
+            let dy = k.pos.y - pos.y
+            let diff = tAngDiff(atan2(dy, dx), ang)
+            let perp = hypot(dx, dy) * cos(diff)
+            if abs(diff) < 1.1 && perp > 12 {
+                bills.append(FPBill(perp: perp, sx: W / 2 + tan(diff) / tanH * W / 2, kind: 3, p: nil, r: 0, a: 1))
+            }
+        }
+        bills.sort { $0.perp > $1.perp }
+        for s in bills {
+            let u = H * 0.6 / s.perp
+            let floorY = hz + 50 * u
+            let half: CGFloat = (s.kind == 1 ? s.r : 14) * u
+            let c0 = max(0, Int((s.sx - half) / cw))
+            let c1 = min(n - 1, Int((s.sx + half) / cw))
+            if c0 > c1 { continue }
+            var clip = Path()
+            for c in c0...c1 where z[c] > s.perp {
+                clip.addRect(CGRect(x: CGFloat(c) * cw, y: 0, width: cw + 0.6, height: H))
+            }
+            if clip.isEmpty { continue }
+            ctx.drawLayer { l in
+                l.clip(to: clip)
+                if s.kind == 0, let p = s.p {
+                    let ally = p.team == me.team
+                    let col: Color = ally ? Color(red: 0.25, green: 0.6, blue: 1) : Color(red: 1, green: 0.25, blue: 0.3)
+                    l.fill(Path(ellipseIn: CGRect(x: s.sx - 14 * u, y: floorY - 4 * u, width: 28 * u, height: 8 * u)), with: .color(.black.opacity(0.35)))
+                    l.fill(Path(roundedRect: CGRect(x: s.sx - 12 * u, y: floorY - 52 * u, width: 24 * u, height: 52 * u), cornerRadius: 6 * u), with: .color(col.opacity(0.85)))
+                    let head = CGRect(x: s.sx - 10 * u, y: floorY - 72 * u, width: 20 * u, height: 20 * u)
+                    if let img = sprites[p.handle] {
+                        let im = l.resolve(Image(uiImage: img))
+                        l.drawLayer { l2 in
+                            l2.clip(to: Path(ellipseIn: head))
+                            l2.draw(im, in: head)
+                        }
+                    } else {
+                        l.fill(Path(ellipseIn: head), with: .color(Color(red: 0.9, green: 0.75, blue: 0.62)))
+                    }
+                    l.stroke(Path(ellipseIn: head), with: .color(col), lineWidth: max(1, 2 * u))
+                    if p.flash > 0 {
+                        l.fill(Path(ellipseIn: CGRect(x: s.sx + 6 * u, y: floorY - 42 * u, width: 16 * u, height: 16 * u)), with: .color(.yellow.opacity(0.9)))
+                    }
+                    if s.perp < 750 {
+                        l.draw(Text(p.name).font(.system(size: 11, weight: .bold)).foregroundColor(col), at: CGPoint(x: s.sx, y: floorY - 90 * u))
+                        let bx = s.sx - 18
+                        let by = floorY - 82 * u
+                        l.fill(Path(CGRect(x: bx, y: by, width: 36, height: 4)), with: .color(.black.opacity(0.6)))
+                        l.fill(Path(CGRect(x: bx, y: by, width: 36 * max(0, p.hp / 100), height: 4)), with: .color(col))
+                    }
+                } else if s.kind == 1 {
+                    let rr = s.r * u
+                    l.fill(Path(ellipseIn: CGRect(x: s.sx - rr, y: floorY - 50 * u - rr, width: rr * 2, height: rr * 2)), with: .color(Color(white: 0.72).opacity(0.93 * Double(s.a))))
+                } else if s.kind == 2 {
+                    let pulse = 0.6 + 0.4 * sin(time * 8)
+                    l.fill(Path(ellipseIn: CGRect(x: s.sx - 9 * u, y: floorY - 14 * u, width: 18 * u, height: 14 * u)), with: .color(Color.red.opacity(Double(pulse))))
+                    l.draw(Text("BOMB").font(.system(size: 11, weight: .heavy)).foregroundColor(.white), at: CGPoint(x: s.sx, y: floorY - 26 * u))
+                } else {
+                    l.fill(Path(ellipseIn: CGRect(x: s.sx - 10 * u, y: floorY - 22 * u, width: 20 * u, height: 20 * u)), with: .color(Color(red: 0.2, green: 0.8, blue: 0.4)))
+                    l.fill(Path(CGRect(x: s.sx - 2 * u, y: floorY - 20 * u, width: 4 * u, height: 16 * u)), with: .color(.white))
+                    l.fill(Path(CGRect(x: s.sx - 8 * u, y: floorY - 14 * u, width: 16 * u, height: 4 * u)), with: .color(.white))
+                }
+            }
+        }
+        if inSmoke > 0 {
+            ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(white: 0.72).opacity(0.92 * Double(inSmoke))))
+        }
+        // crosshair
+        let cx = W / 2
+        var ch = Path()
+        ch.move(to: CGPoint(x: cx - 14, y: hz)); ch.addLine(to: CGPoint(x: cx - 5, y: hz))
+        ch.move(to: CGPoint(x: cx + 5, y: hz)); ch.addLine(to: CGPoint(x: cx + 14, y: hz))
+        ch.move(to: CGPoint(x: cx, y: hz - 14)); ch.addLine(to: CGPoint(x: cx, y: hz - 5))
+        ch.move(to: CGPoint(x: cx, y: hz + 5)); ch.addLine(to: CGPoint(x: cx, y: hz + 14))
+        ctx.stroke(ch, with: .color(.white.opacity(0.85)), lineWidth: 2)
+        if hitT > 0 {
+            var hm = Path()
+            hm.move(to: CGPoint(x: cx - 9, y: hz - 9)); hm.addLine(to: CGPoint(x: cx + 9, y: hz + 9))
+            hm.move(to: CGPoint(x: cx + 9, y: hz - 9)); hm.addLine(to: CGPoint(x: cx - 9, y: hz + 9))
+            ctx.stroke(hm, with: .color(.red), lineWidth: 3)
+        }
+        // viewmodel
+        if me.alive {
+            let rec: CGFloat = me.flash > 0 ? 10 : 0
+            ctx.drawLayer { l in
+                l.translateBy(x: W / 2 + 120, y: H)
+                l.rotate(by: .degrees(-12))
+                l.fill(Path(roundedRect: CGRect(x: -16, y: -120 + rec, width: 32, height: 150), cornerRadius: 6), with: .color(Color(white: 0.2)))
+                l.stroke(Path(roundedRect: CGRect(x: -16, y: -120 + rec, width: 32, height: 150), cornerRadius: 6), with: .color(.white.opacity(0.25)), lineWidth: 1.5)
+                l.fill(Path(CGRect(x: -3, y: -130 + rec, width: 6, height: 14)), with: .color(Color(white: 0.5)))
+                if me.flash > 0 {
+                    l.fill(Path(ellipseIn: CGRect(x: -20, y: -150, width: 40, height: 40)), with: .color(.yellow.opacity(0.85)))
+                }
+            }
+        }
+        drawMinimap(&ctx)
+        let mx = 12 + pos.x * 0.085
+        let my = 110 + pos.y * 0.085
+        var dir = Path()
+        dir.move(to: CGPoint(x: mx, y: my))
+        dir.addLine(to: CGPoint(x: mx + cos(ang) * 12, y: my + sin(ang) * 12))
+        ctx.stroke(dir, with: .color(.white), lineWidth: 1.5)
+        if me.hurt > 0 {
+            ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color.red.opacity(Double(me.hurt) * 0.45)))
+        }
+        if !me.alive {
+            ctx.draw(Text("SPECTATING " + focus.name.uppercased()).font(.system(size: 12, weight: .heavy)).foregroundColor(.white.opacity(0.7)), at: CGPoint(x: size.width / 2, y: size.height - 70))
         }
     }
 
@@ -1222,6 +1513,8 @@ struct TacticalPlay: View {
     @State private var rStart: CGPoint? = nil
     @State private var rKnob: CGPoint = .zero
     @State private var collected = false
+    @State private var fp = true
+    @State private var lastLook: CGFloat = 0
 
     var body: some View {
         ZStack {
@@ -1242,6 +1535,7 @@ struct TacticalPlay: View {
         .onDisappear { OrientationLock.set(landscape: false) }
         .onAppear {
             OrientationLock.set(landscape: true)
+            engine.fp = fp
             let st = game.s
             let cast = st.npcs.filter { $0.id != "newsdesk" }
             let owned = (st.ex.surv ?? SurvData()).guns
@@ -1274,20 +1568,41 @@ struct TacticalPlay: View {
                     Color.clear.contentShape(Rectangle())
                         .gesture(DragGesture(minimumDistance: 0)
                             .onChanged { v in
+                                if fp {
+                                    engine.lookDelta += (v.translation.width - lastLook) * 0.008
+                                    lastLook = v.translation.width
+                                    return
+                                }
                                 rStart = v.startLocation
                                 rKnob = v.location
                                 let dx = v.location.x - v.startLocation.x, dy = v.location.y - v.startLocation.y
                                 if hypot(dx, dy) > 8 { engine.aimIn = atan2(dy, dx) }
                                 engine.firing = true
                             }
-                            .onEnded { _ in rStart = nil; engine.firing = false })
+                            .onEnded { _ in rStart = nil; lastLook = 0; if !fp { engine.firing = false } })
                 }
                 if let s = lStart { stick(s, lKnob, Color.white) }
                 if let s = rStart { stick(s, rKnob, Color.red) }
+                if fp {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            fireButton.padding(.trailing, 36).padding(.bottom, 56)
+                        }
+                    }
+                }
             }
             .frame(width: g.size.width, height: g.size.height)
         }
         .ignoresSafeArea()
+    }
+
+    private var fireButton: some View {
+        Circle().fill(Color.red.opacity(0.45)).frame(width: 78, height: 78)
+            .overlay(Circle().stroke(Color.red.opacity(0.7), lineWidth: 3))
+            .overlay(Text("FIRE").font(.jk(13, .heavy)).foregroundColor(.white))
+            .gesture(DragGesture(minimumDistance: 0).onChanged { _ in engine.firing = true }.onEnded { _ in engine.firing = false })
     }
 
     private func stick(_ base: CGPoint, _ knob: CGPoint, _ c: Color) -> some View {
@@ -1398,6 +1713,10 @@ struct TacticalPlay: View {
                                 .padding(.horizontal, 14).frame(height: 44).background(Color.yellow).clipShape(Capsule())
                                 .gesture(DragGesture(minimumDistance: 0).onChanged { _ in e.actHeld = true }.onEnded { _ in e.actHeld = false })
                         }
+                    }
+                    Button { fp.toggle(); e.fp = fp } label: {
+                        Text(fp ? "3D" : "Map").font(.jk(12, .bold)).foregroundColor(.white)
+                            .padding(.horizontal, 12).frame(height: 38).background(Color.black.opacity(0.55)).clipShape(Capsule())
                     }
                     Button { e.paused = true } label: {
                         Image(systemName: "pause.fill").font(.system(size: 13, weight: .bold)).foregroundColor(.white)
