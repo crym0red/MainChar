@@ -3,6 +3,7 @@ import SwiftUI
 struct LobbyView: View {
     @EnvironmentObject var game: Game
     @EnvironmentObject var nav: Nav
+    @State private var showLocker = false
     @State private var bg: TacScene? = nil
     @State private var diff = 1
     @State private var sheet: Int? = nil
@@ -55,6 +56,9 @@ struct LobbyView: View {
                 ensureBg()
             }
         }
+        .background(Color.clear.fullScreenCover(isPresented: $showLocker) {
+            BRLockerView().environmentObject(game)
+        })
         .background(Color.clear.fullScreenCover(isPresented: $nav.brPlay) {
             BattleRoyalePlay().environmentObject(game).environmentObject(nav).preferredColorScheme(.dark)
         })
@@ -196,6 +200,13 @@ struct LobbyView: View {
                     } label: {
                         Text(n).font(.jk(12, .heavy)).foregroundColor(on ? .black : .white.opacity(0.8))
                             .frame(maxWidth: .infinity).frame(height: 32).background(on ? lime : Color.black.opacity(0.7))
+                    }
+                    .buttonStyle(.plain)
+                }
+                if nav.lobbyMode == 1 {
+                    Button { showLocker = true } label: {
+                        Image(systemName: "lock.open.fill").font(.system(size: 13, weight: .bold)).foregroundColor(.white)
+                            .frame(width: 44, height: 32).background(Color.black.opacity(0.7))
                     }
                     .buttonStyle(.plain)
                 }

@@ -2,7 +2,7 @@ import SwiftUI
 
 private struct BRBill {
     let d: CGFloat
-    let kind: Int   // 0 actor, 1 loot, 2 tree
+    let kind: Int   // 0 actor, 1 loot, 2 tree, 3 station, 4 vehicle, 5 throw, 6 smoke, 7 blast
     let idx: Int
 }
 
@@ -14,7 +14,8 @@ extension BREngine {
         let m = me
         let W = size.width, H = size.height
         let focal = (W / 2) / tan(curFov / 2)
-        let hz = H * 0.5 + sin(bobT) * 4 * bobAmp * bobScale + (pitch + recoilP + camDip) * focal
+        let shk: CGFloat = shake > 0.1 ? CGFloat(sin(time * 61)) * shake : 0
+        let hz = H * 0.5 + sin(bobT) * 4 * bobAmp * bobScale + (pitch + recoilP + camDip) * focal + shk
         let eye = eyeNow
 
         let zb = drawBase(&ctx, size, hz, focal)
@@ -23,7 +24,7 @@ extension BREngine {
 
         // billboards
         var list: [BRBill] = []
-        for (i, a) in actors.enumerated() where a.alive && !a.isMe {
+        for (i, a) in actors.enumerated() where a.alive && !a.isMe && !a.air {
             let d = hypot(a.p.x - m.p.x, a.p.y - m.p.y)
             if d < 1100 { list.append(BRBill(d: d, kind: 0, idx: i)) }
         }
@@ -35,12 +36,37 @@ extension BREngine {
             let d = hypot(t.x - m.p.x, t.y - m.p.y)
             if d < 950 { list.append(BRBill(d: d, kind: 2, idx: i)) }
         }
+        for (i, st) in stations.enumerated() {
+            let d = hypot(st.p.x - m.p.x, st.p.y - m.p.y)
+            if d < 1400 { list.append(BRBill(d: d, kind: 3, idx: i)) }
+        }
+        for (i, v) in vehicles.enumerated() where v.hp > 0 && i != inVeh {
+            let d = hypot(v.p.x - m.p.x, v.p.y - m.p.y)
+            if d < 1100 { list.append(BRBill(d: d, kind: 4, idx: i)) }
+        }
+        for (i, t) in throwsA.enumerated() {
+            let d = hypot(t.x - m.p.x, t.y - m.p.y)
+            if d < 900 { list.append(BRBill(d: d, kind: 5, idx: i)) }
+        }
+        for (i, sm) in smokes.enumerated() {
+            let d = hypot(sm.p.x - m.p.x, sm.p.y - m.p.y)
+            if d < 900 { list.append(BRBill(d: d, kind: 6, idx: i)) }
+        }
+        for (i, bl) in blasts.enumerated() {
+            let d = hypot(bl.p.x - m.p.x, bl.p.y - m.p.y)
+            if d < 900 { list.append(BRBill(d: d, kind: 7, idx: i)) }
+        }
         list.sort { $0.d > $1.d }
         for bb in list {
             let p: CGPoint
             switch bb.kind {
             case 0: p = actors[bb.idx].p
             case 1: p = loot[bb.idx].p
+            case 3: p = stations[bb.idx].p
+            case 4: p = vehicles[bb.idx].p
+            case 5: p = CGPoint(x: throwsA[bb.idx].x, y: throwsA[bb.idx].y)
+            case 6: p = smokes[bb.idx].p
+            case 7: p = blasts[bb.idx].p
             default: p = world.trees[bb.idx]
             }
             let dx = p.x - m.p.x, dy = p.y - m.p.y
@@ -51,7 +77,7 @@ extension BREngine {
             let sx = W / 2 + tan(rel) * focal
             let f = focal / perp
             let feet = hz + eye * f
-            let halfW: CGFloat = (bb.kind == 2 ? 30 : 14) * f
+            let halfW: CGFloat = (bb.kind == 2 ? 30 : (bb.kind == 6 || bb.kind == 7 ? 60 : (bb.kind == 4 ? 35 : 14))) * f
             var seen = false
             for o in [-0.8, 0, 0.8] {
                 let col = Int((sx + CGFloat(o) * halfW) / cw)
@@ -85,10 +111,12 @@ extension BREngine {
                 let sz = 15 * f
                 let c: Color
                 switch l.kind {
-                case 0: c = brc(1, 0.78, 0.15)
+                case 0: c = l.rar == 0 ? brc(1, 0.78, 0.15) : (l.rar == 1 ? brc(0.3, 0.62, 1) : (l.rar == 2 ? brc(0.72, 0.42, 1) : brc(1, 0.55, 0.1)))
                 case 1: c = brc(0.7, 0.7, 0.72)
                 case 2: c = brc(0.25, 0.55, 1)
                 case 3: c = brc(1, 0.25, 0.25)
+                case 5: c = brc(0.6, 0.95, 1)
+                case 6: c = brc(1, 0.55, 0.2)
                 default: c = brc(0.3, 0.9, 0.4)
                 }
                 let cy = feet - 14 * f - sin(time * 3 + CGFloat(bb.idx)) * 2 * f
@@ -101,21 +129,31 @@ extension BREngine {
                 ctx.fill(dia, with: .color(c))
                 ctx.stroke(dia, with: .color(.white), lineWidth: 1.5)
                 if bb.d < 200 {
-                    let label = l.kind == 0 ? BRGuns.def(l.gun).name : (l.kind == 1 ? "AMMO" : (l.kind == 2 ? "ARMOR" : (l.kind == 3 ? "MED KIT" : "$\(l.amt)")))
+                    let label = l.kind == 0 ? (l.rar > 0 ? BRMeta.rarNames[l.rar] + " " : "") + BRGuns.def(l.gun).name : (l.kind == 1 ? "AMMO" : (l.kind == 2 ? "ARMOR" : (l.kind == 3 ? "MED KIT" : (l.kind == 5 ? ["", "OPTIC", "EXT MAG", "SUPPRESSOR"][l.att] : (l.kind == 6 ? ["FRAG", "SMOKE", "FLASH"][l.att] : "$\(l.amt)")))))
                     ctx.draw(Text(label).font(.system(size: 10, weight: .heavy)).foregroundColor(.white), at: CGPoint(x: sx, y: cy - sz - 8))
                 }
-            } else {
+            } else if bb.kind == 0 {
                 drawActor(&ctx, actors[bb.idx], sx: sx, feet: feet, f: f, fog: fog)
+            } else {
+                drawExtraBill(&ctx, kind: bb.kind, idx: bb.idx, d: bb.d, sx: sx, feet: feet, f: f, fog: fog, rel: rel)
             }
         }
 
-        drawADS(&ctx, size)
-        drawViewGun(&ctx, size)
+        drawNums(&ctx, size, hz, focal, eye)
+        drawPings(&ctx, size, hz, focal, eye)
+        if phase == 0 && inVeh < 0 {
+            drawADS(&ctx, size)
+            drawViewGun(&ctx, size)
+        } else if inVeh >= 0 {
+            drawCockpit(&ctx, size)
+        } else {
+            drawAirOverlay(&ctx, size)
+        }
 
         // crosshair
         let ch = CGPoint(x: W / 2, y: H / 2)
         let scoped = adsT > 0.3 && (m.slots[m.cur]?.gun == "rifle" || m.slots[m.cur]?.gun == "smg")
-        if !scoped {
+        if !scoped && phase == 0 && inVeh < 0 {
             let cc: Color = lockT != nil ? brc(1, 0.3, 0.3) : .white
             let gap: CGFloat = 5 + recoilP * 260
             for (ax, ay) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
@@ -134,6 +172,9 @@ extension BREngine {
             }
         }
 
+        if flashT > 0 {
+            ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(brc(1, 1, 1, min(1, flashT * 1.2))))
+        }
         // damage + storm tint
         if m.hurt > 0 {
             ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(brc(1, 0, 0, m.hurt * 0.3)))
@@ -256,6 +297,10 @@ extension BREngine {
                     l.translateBy(x: -px, y: -py)
                 }
                 l.draw(spr, in: rect)
+                if let tint = BRMeta.skinTint() {
+                    l.blendMode = .sourceAtop
+                    l.fill(Path(rect), with: .color(tint.opacity(0.42)))
+                }
             }
         }
         let mp = CGPoint(x: rect.minX + mz.x * rect.width, y: rect.minY + mz.y * rect.height)
@@ -424,7 +469,7 @@ extension BREngine {
         let half = R / sc + 40
         let disc = Path(ellipseIn: CGRect(x: mc.x - R, y: mc.y - R, width: R * 2, height: R * 2))
         let zc = zoneC, zr = zoneR, nc = nextC, nr = nextR
-        let holdPhase = (time - CGFloat(stage) * (BREngine.hold + BREngine.shrink)) < BREngine.hold
+        let holdPhase = (max(0, time - BREngine.dropTime) - CGFloat(stage) * (BREngine.hold + BREngine.shrink)) < BREngine.hold
         ctx.drawLayer { l in
             l.clip(to: disc)
             l.fill(disc, with: .color(brc(0.4, 0.5, 0.34)))
@@ -445,6 +490,7 @@ extension BREngine {
             if holdPhase {
                 l.stroke(Path(ellipseIn: CGRect(x: nc.x - nr, y: nc.y - nr, width: nr * 2, height: nr * 2)), with: .color(.white), lineWidth: 2 / sc)
             }
+            drawMapExtras(&l, sc)
             for a in actors where a.alive && !a.isMe && a.ping > 0 {
                 let r = 6 / sc
                 l.fill(Path(ellipseIn: CGRect(x: a.p.x - r, y: a.p.y - r, width: r * 2, height: r * 2)), with: .color(brc(1, 0.25, 0.25, min(1, a.ping))))
