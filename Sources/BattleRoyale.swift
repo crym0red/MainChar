@@ -141,7 +141,7 @@ struct BattleRoyalePlay: View {
         return GeometryReader { g in
             let W = g.size.width, H = g.size.height
             ZStack {
-                topStats(e).position(x: 108, y: 22)
+                topStats(e).position(x: 131, y: 22)
                 VStack(spacing: 3) {
                     ForEach(Array(e.actors.filter { $0.team == 0 }.enumerated()), id: \.offset) { i, a in
                         squadRow(e, a, i + 1)
@@ -202,8 +202,9 @@ struct BattleRoyalePlay: View {
             stat("person.3.fill", "\(squads)")
             stat("person.fill", "\(e.aliveCount)")
             stat("xmark.circle.fill", "\(e.kills)")
+            Text("\(Int(e.fps)) FPS").font(.jk(10, .heavy)).foregroundColor(.white.opacity(0.7))
         }
-        .padding(.horizontal, 10).frame(width: 190, height: 28, alignment: .leading)
+        .padding(.horizontal, 10).frame(width: 236, height: 28, alignment: .leading)
         .background(Color.black.opacity(0.4)).clipShape(RoundedRectangle(cornerRadius: 6))
         .allowsHitTesting(false)
     }
