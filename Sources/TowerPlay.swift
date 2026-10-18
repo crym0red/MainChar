@@ -21,16 +21,18 @@ struct TowerPlay: View {
             if ready, let sc = scene {
                 TowerSceneView(bridge: sc).ignoresSafeArea()
                 TimelineView(.animation) { tl in
+                    Canvas { ctx, size in
+                        engine.step(tl.date)
+                        sc.sync(engine, dt: engine.dtLast)
+                        drawOverlay(&ctx, size, sc)
+                    }
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                }
+                controls
+                TimelineView(.periodic(from: .now, by: 0.1)) { _ in
                     ZStack {
-                        Canvas { ctx, size in
-                            engine.step(tl.date)
-                            sc.sync(engine, dt: 0.016)
-                            drawOverlay(&ctx, size, sc)
-                        }
-                        .ignoresSafeArea()
-                        .allowsHitTesting(false)
-                        controls
-                        hud
+                        if engine.killcam != nil { killCamHud } else { hud }
                         if engine.paused && !engine.over { pauseView }
                         if engine.over { overView }
                     }
@@ -43,7 +45,9 @@ struct TowerPlay: View {
             let e = TowerEngine()
             e.setup(name: game.s.persona.handle)
             engine = e
-            scene = TowerScene()
+            let sc = TowerScene()
+            sc.configure(e)
+            scene = sc
             ready = true
         }
     }
@@ -53,6 +57,14 @@ struct TowerPlay: View {
     private func drawOverlay(_ ctx: inout GraphicsContext, _ size: CGSize, _ sc: TowerScene) {
         let e = engine
         let f = sc.focus
+        if let k = e.killcam {
+            let v = sc.vs[k.killer]
+            if let s = sc.project(v.p, 70) {
+                ctx.draw(Text("KILLER  \(e.actors[k.killer].name)").font(.jk(11, .heavy)).foregroundColor(.red), at: CGPoint(x: s.x, y: s.y - 6))
+            }
+            ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.black.opacity(0.12)))
+            return
+        }
         // zone ring
         if e.circleOn && f == e.finalFloor {
             var path = Path()
@@ -81,7 +93,7 @@ struct TowerPlay: View {
         // actors
         for i in sc.seenIdx {
             let a = e.actors[i]
-            guard let s = sc.project(a.p, 62) else { continue }
+            guard let s = sc.project(sc.vs[i].p, 62) else { continue }
             let mate = a.team == 0
             let w: CGFloat = 38
             let bar = CGRect(x: s.x - w / 2, y: s.y - 4, width: w, height: 4)
@@ -90,7 +102,7 @@ struct TowerPlay: View {
             if a.armor > 0 {
                 ctx.fill(Path(CGRect(x: bar.minX, y: bar.minY - 3, width: w * min(1, a.armor / 150), height: 2)), with: .color(.cyan))
             }
-            if !a.isMe {
+            if a.team == 0 && !a.isMe {
                 ctx.draw(Text(a.name).font(.jk(9, .bold)).foregroundColor(mate ? .green : .white.opacity(0.9)), at: CGPoint(x: s.x, y: s.y - 12))
             }
             if a.reloadT > 0 {
@@ -108,9 +120,11 @@ struct TowerPlay: View {
         let mo = CGPoint(x: 12, y: 62)
         let k = mw / TowerMap.W
         ctx.fill(Path(CGRect(x: mo.x, y: mo.y, width: mw, height: mh)), with: .color(.black.opacity(0.55)))
+        var wp = Path()
         for w in e.map.walls[f] {
-            ctx.fill(Path(CGRect(x: mo.x + w.minX * k, y: mo.y + w.minY * k, width: max(1, w.width * k), height: max(1, w.height * k))), with: .color(.white.opacity(0.5)))
+            wp.addRect(CGRect(x: mo.x + w.minX * k, y: mo.y + w.minY * k, width: max(1, w.width * k), height: max(1, w.height * k)))
         }
+        ctx.fill(wp, with: .color(.white.opacity(0.5)))
         for d in e.map.doors[f] {
             ctx.fill(Path(CGRect(x: mo.x + d.r.minX * k, y: mo.y + d.r.minY * k, width: max(2, d.r.width * k), height: max(2, d.r.height * k))), with: .color(.orange))
         }
@@ -128,7 +142,8 @@ struct TowerPlay: View {
         }
         for a in e.actors where a.alive && a.f == f && (a.team == 0 || sc.seenIdx.contains(a.id)) {
             let c: Color = a.isMe ? .yellow : a.team == 0 ? .cyan : .red
-            ctx.fill(Path(ellipseIn: CGRect(x: mo.x + a.p.x * k - 2.5, y: mo.y + a.p.y * k - 2.5, width: 5, height: 5)), with: .color(c))
+            let vp = sc.vs[a.id].p
+            ctx.fill(Path(ellipseIn: CGRect(x: mo.x + vp.x * k - 2.5, y: mo.y + vp.y * k - 2.5, width: 5, height: 5)), with: .color(c))
         }
         // hurt vignette
         if e.hurtFlash > 0 {
@@ -285,6 +300,31 @@ struct TowerPlay: View {
         }
     }
 
+    private var killCamHud: some View {
+        let e = engine
+        let k = e.killcam
+        let name = k.map { e.actors[$0.killer].name } ?? ""
+        let gunName = k.map { BRGuns.def(["pistol", "smg", "rifle", "shotgun"][e.currentViews()[$0.killer].gun]).name } ?? ""
+        let prog = k.map { min(1, $0.t / (CGFloat(max(1, $0.frames.count)) * 0.05)) } ?? 0
+        return GeometryReader { g in
+            ZStack {
+                VStack(spacing: 2) {
+                    Text("KILL CAM").font(.jk(11, .heavy)).foregroundColor(.red)
+                    Text("\(name)  -  \(gunName)").font(.jk(18, .heavy)).foregroundColor(.white)
+                }
+                .padding(.horizontal, 18).padding(.vertical, 8)
+                .background(Color.black.opacity(0.6)).clipShape(RoundedRectangle(cornerRadius: 12))
+                .position(x: g.size.width / 2, y: 44)
+                Rectangle().fill(Color.black.opacity(0.55)).frame(width: g.size.width, height: 26).position(x: g.size.width / 2, y: g.size.height - 13)
+                Rectangle().fill(Color.red).frame(width: g.size.width * prog, height: 4).position(x: g.size.width * prog / 2, y: g.size.height - 2)
+                Button { e.skipKillCam() } label: {
+                    Text("SKIP").font(.jk(13, .heavy)).foregroundColor(.black).frame(width: 90, height: 38).background(Color.white).clipShape(Capsule())
+                }
+                .position(x: g.size.width - 70, y: g.size.height - 50)
+            }
+        }
+    }
+
     private func slotView(_ a: TwActor, _ i: Int) -> some View {
         let s = a.slots[i]
         let on = a.cur == i
@@ -321,8 +361,9 @@ struct TowerPlay: View {
                 btn("RELOAD", .white) { e.startReload(m) }
                 btn("SWAP", .white) { e.swap(m) }
                 btn("MED \(m.meds)", .red) { e.useMed(m) }
+                btn("VIEW", .cyan) { e.zoom = (e.zoom + 1) % 3 }
             }
-            .position(x: size.width - 48, y: size.height - 120)
+            .position(x: size.width - 48, y: size.height - 150)
 
             if m.alive {
                 if e.nearStairUp(m) {

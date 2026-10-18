@@ -301,73 +301,92 @@ final class TowerMap {
         return best
     }
 
-    var stairWNode: TwNode { nearestNode(0, CGPoint(x: TowerMap.stairW.midX, y: TowerMap.stairW.midY)) }
-    var stairENode: TwNode { nearestNode(0, CGPoint(x: TowerMap.stairE.midX, y: TowerMap.stairE.midY)) }
-    var elevNodes: [TwNode] { TowerMap.elevs.map { nearestNode(0, CGPoint(x: $0.midX, y: $0.midY)) } }
+    lazy var stairWNode: TwNode = nearestNode(0, CGPoint(x: TowerMap.stairW.midX, y: TowerMap.stairW.midY))
+    lazy var stairENode: TwNode = nearestNode(0, CGPoint(x: TowerMap.stairE.midX, y: TowerMap.stairE.midY))
+    lazy var elevNodes: [TwNode] = TowerMap.elevs.map { nearestNode(0, CGPoint(x: $0.midX, y: $0.midY)) }
 
-    func isElev(_ n: TwNode) -> Bool { elevNodes.contains { $0.i == n.i && $0.j == n.j } }
-
-    /// A* across floors. Stairs W go up, stairs E go down, elevators go anywhere.
-    func path(from a: TwNode, to b: TwNode) -> [TwNode] {
+    private func floorPath(_ f: Int, _ s: TwNode, _ t: TwNode) -> [TwNode]? {
         let gx = TowerMap.gx, gy = TowerMap.gy
-        let per = gx * gy
-        let total = per * TowerMap.nF
-        func id(_ n: TwNode) -> Int { n.f * per + n.j * gx + n.i }
-        func node(_ k: Int) -> TwNode { TwNode(f: k / per, i: (k % per) % gx, j: (k % per) / gx) }
-        let sw = stairWNode, se = stairENode, ev = elevNodes
-        var g = [CGFloat](repeating: 1e9, count: total)
-        var prev = [Int](repeating: -1, count: total)
-        var closed = [Bool](repeating: false, count: total)
-        var open: [Int] = []
-        let s = id(a), t = id(b)
-        g[s] = 0
-        open.append(s)
-        func h(_ n: TwNode) -> CGFloat {
-            let p = nodePos(n.i, n.j), q = nodePos(b.i, b.j)
-            return hypot(p.x - q.x, p.y - q.y) / TowerMap.step * 0.8 + CGFloat(abs(n.f - b.f)) * 3
+        let n = gx * gy
+        var g = [CGFloat](repeating: 1e9, count: n)
+        var prev = [Int](repeating: -1, count: n)
+        var heap: [(CGFloat, Int)] = []
+        func hpush(_ c: CGFloat, _ i: Int) {
+            heap.append((c, i))
+            var k = heap.count - 1
+            while k > 0 {
+                let p = (k - 1) / 2
+                if heap[p].0 <= heap[k].0 { break }
+                heap.swapAt(p, k)
+                k = p
+            }
         }
+        func hpop() -> Int {
+            let top = heap[0]
+            let last = heap.removeLast()
+            if !heap.isEmpty {
+                heap[0] = last
+                var k = 0
+                while true {
+                    let l = 2 * k + 1, r = l + 1
+                    var m = k
+                    if l < heap.count && heap[l].0 < heap[m].0 { m = l }
+                    if r < heap.count && heap[r].0 < heap[m].0 { m = r }
+                    if m == k { break }
+                    heap.swapAt(k, m)
+                    k = m
+                }
+            }
+            return top.1
+        }
+        let si = s.j * gx + s.i, ti = t.j * gx + t.i
+        let tp = nodePos(t.i, t.j)
+        g[si] = 0
+        hpush(0, si)
         var guardN = 0
-        while !open.isEmpty && guardN < 20000 {
+        while !heap.isEmpty && guardN < 3000 {
             guardN += 1
-            var bi = 0
-            var bf: CGFloat = 1e18
-            for (k, c) in open.enumerated() {
-                let fv = g[c] + h(node(c))
-                if fv < bf { bf = fv; bi = k }
-            }
-            let cur = open.remove(at: bi)
-            if cur == t { break }
-            if closed[cur] { continue }
-            closed[cur] = true
-            let cn = node(cur)
-            var nbs: [(Int, CGFloat)] = []
-            for q in adj[cn.f][cn.j * gx + cn.i] {
-                let p0 = nodePos(cn.i, cn.j), p1 = nodePos(q % gx, q / gx)
-                nbs.append((cn.f * per + q, hypot(p1.x - p0.x, p1.y - p0.y) / TowerMap.step))
-            }
-            if cn.i == sw.i && cn.j == sw.j && cn.f + 1 < TowerMap.nF { nbs.append(((cn.f + 1) * per + cn.j * gx + cn.i, 3)) }
-            if cn.i == se.i && cn.j == se.j && cn.f > 0 { nbs.append(((cn.f - 1) * per + cn.j * gx + cn.i, 3)) }
-            if ev.contains(where: { $0.i == cn.i && $0.j == cn.j }) {
-                for ff in 0..<TowerMap.nF where ff != cn.f { nbs.append((ff * per + cn.j * gx + cn.i, 4 + CGFloat(abs(ff - cn.f)))) }
-            }
-            for (nid, c) in nbs where !closed[nid] {
-                let ng = g[cur] + c
-                if ng < g[nid] {
-                    g[nid] = ng
-                    prev[nid] = cur
-                    open.append(nid)
+            let cur = hpop()
+            if cur == ti { break }
+            let cp = nodePos(cur % gx, cur / gx)
+            for q in adj[f][cur] {
+                let qp = nodePos(q % gx, q / gx)
+                let ng = g[cur] + hypot(qp.x - cp.x, qp.y - cp.y)
+                if ng < g[q] {
+                    g[q] = ng
+                    prev[q] = cur
+                    hpush(ng + hypot(qp.x - tp.x, qp.y - tp.y), q)
                 }
             }
         }
-        if prev[t] < 0 && s != t { return [] }
+        if si != ti && prev[ti] < 0 { return nil }
         var out: [TwNode] = []
-        var c = t
+        var c = ti
         while c != -1 {
-            out.append(node(c))
-            if c == s { break }
+            out.append(TwNode(f: f, i: c % gx, j: c / gx))
+            if c == si { break }
             c = prev[c]
         }
         return out.reversed()
+    }
+
+    /// Per-floor A* joined through the cheapest stair or elevator.
+    func path(from a: TwNode, to b: TwNode) -> [TwNode] {
+        if a.f == b.f { return floorPath(a.f, a, b) ?? [] }
+        let pa = pos(a), pb = pos(b)
+        var links = elevNodes
+        if b.f == a.f + 1 { links.append(stairWNode) }
+        if b.f == a.f - 1 { links.append(stairENode) }
+        links.sort { l1, l2 in
+            let p1 = pos(l1), p2 = pos(l2)
+            return hypot(pa.x - p1.x, pa.y - p1.y) + hypot(pb.x - p1.x, pb.y - p1.y) < hypot(pa.x - p2.x, pa.y - p2.y) + hypot(pb.x - p2.x, pb.y - p2.y)
+        }
+        for l in links {
+            let l1 = TwNode(f: a.f, i: l.i, j: l.j)
+            let l2 = TwNode(f: b.f, i: l.i, j: l.j)
+            if let p1 = floorPath(a.f, a, l1), let p2 = floorPath(b.f, l2, b) { return p1 + p2 }
+        }
+        return []
     }
 
     func randomLoot(_ f: Int) -> CGPoint { loot[f].randomElement() ?? CGPoint(x: 800, y: 500) }

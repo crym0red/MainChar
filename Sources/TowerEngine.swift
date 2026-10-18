@@ -32,6 +32,37 @@ struct TwNum {
     var t: CGFloat
 }
 
+struct TwView {
+    var p: CGPoint
+    var f: Int
+    var ang: CGFloat
+    var alive: Bool
+    var flash: Bool
+    var walk: CGFloat
+    var gun: Int
+    var hurt: Bool
+    var team: Int
+}
+
+struct TwFrame {
+    var v: [TwView]
+    var shots: [TwTracer]
+}
+
+final class TwKillCam {
+    var frames: [TwFrame]
+    var t: CGFloat = 0
+    let killer: Int
+    let victim: Int
+    init(frames: [TwFrame], killer: Int, victim: Int) {
+        self.frames = frames
+        self.killer = killer
+        self.victim = victim
+    }
+    var idx: Int { max(0, min(frames.count - 1, Int(t / 0.05))) }
+    var done: Bool { idx >= frames.count - 1 }
+}
+
 final class TwActor {
     let id: Int
     var name: String
@@ -65,6 +96,7 @@ final class TwActor {
     var skill: CGFloat = 0.5
     var stuck: CGFloat = 0
     var lastP = CGPoint.zero
+    var scanT: CGFloat = 0
 
     init(id: Int, name: String, team: Int, isMe: Bool, p: CGPoint, f: Int) {
         self.id = id
@@ -125,6 +157,13 @@ final class TowerEngine {
     var elevCool: CGFloat = 0
     var feed: [(String, CGFloat)] = []
     var recorded = false
+    var hist: [TwFrame] = []
+    var histT: CGFloat = 0
+    var pendingShots: [TwTracer] = []
+    var killcam: TwKillCam? = nil
+    var placeSet = false
+    var zoom = 1
+    var dtLast: CGFloat = 0.016
     var autoReload = true
 
     var me: TwActor { actors[0] }
@@ -175,6 +214,36 @@ final class TowerEngine {
         for a in actors where a.team == 0 && !a.isMe { a.slots[1] = TwGun(id: "smg", rar: 0, mag: 30, res: 90) }
     }
 
+    // MARK: views / replay
+
+    func gunIdx(_ a: TwActor) -> Int {
+        switch a.gun?.id ?? "pistol" {
+        case "smg": return 1
+        case "rifle": return 2
+        case "shotgun": return 3
+        default: return 0
+        }
+    }
+
+    func snapshot() -> [TwView] {
+        actors.map { TwView(p: $0.p, f: $0.f, ang: $0.ang, alive: $0.alive, flash: $0.flash > 0.4, walk: $0.walk, gun: gunIdx($0), hurt: $0.hurtT > 0, team: $0.team) }
+    }
+
+    func currentViews() -> [TwView] {
+        if let k = killcam { return k.frames[k.idx].v }
+        return snapshot()
+    }
+
+    func currentShots(_ f: Int) -> [TwTracer] {
+        if let k = killcam { return k.frames[k.idx].shots.filter { $0.f == f } }
+        return tracers.filter { $0.f == f }
+    }
+
+    func skipKillCam() {
+        killcam = nil
+        checkEnd()
+    }
+
     // MARK: helpers
 
     func teamAlive(_ t: Int) -> Int { actors.filter { $0.team == t && $0.alive }.count }
@@ -206,6 +275,7 @@ final class TowerEngine {
         var dt = CGFloat(last.map { date.timeIntervalSince($0) } ?? 0.016)
         last = date
         dt = max(0.001, min(0.05, dt))
+        dtLast = dt
         if paused || over { return }
         time += dt
         elevCool = max(0, elevCool - dt)
@@ -217,6 +287,17 @@ final class TowerEngine {
         tracers.removeAll { $0.t <= 0 }
         for i in nums.indices { nums[i].t -= dt; nums[i].p.y -= dt * 22 }
         nums.removeAll { $0.t <= 0 }
+        histT += dt
+        if histT >= 0.05 {
+            histT -= 0.05
+            hist.append(TwFrame(v: snapshot(), shots: pendingShots))
+            pendingShots = []
+            if hist.count > 90 { hist.removeFirst() }
+        }
+        if let k = killcam {
+            k.t += dt
+            if k.done { killcam = nil }
+        }
         updateZone(dt)
         updateDoors(dt)
         var rep = 0
@@ -264,6 +345,7 @@ final class TowerEngine {
     }
 
     func updateDoors(_ dt: CGFloat) {
+        var changed = false
         for f in 0..<TowerMap.nF {
             for i in map.doors[f].indices {
                 let c = CGPoint(x: map.doors[f][i].r.midX, y: map.doors[f][i].r.midY)
@@ -272,14 +354,16 @@ final class TowerEngine {
                     if abs(a.p.x - c.x) < 62 && abs(a.p.y - c.y) < 62 { near = true; break }
                 }
                 var d = map.doors[f][i]
+                let was = d.closed
                 if near { d.open = min(1, d.open + dt * 5); d.hold = 0.5 } else {
                     d.hold -= dt
                     if d.hold <= 0 { d.open = max(0, d.open - dt * 3) }
                 }
                 map.doors[f][i] = d
+                if was != d.closed { changed = true }
             }
         }
-        map.refreshBlockers()
+        if changed { map.refreshBlockers() }
     }
 
     // MARK: movement
@@ -379,7 +463,9 @@ final class TowerEngine {
                 }
             }
             let end = CGPoint(x: origin.x + dx * dist, y: origin.y + dy * dist)
-            tracers.append(TwTracer(a: origin, b: end, f: a.f, t: 0.07, hot: g.rar > 0))
+            let tr = TwTracer(a: origin, b: end, f: a.f, t: 0.07, hot: g.rar > 0)
+            tracers.append(tr)
+            pendingShots.append(tr)
             if let e = hit {
                 let fall = 1 - 0.4 * min(1, dist / d.range)
                 let head = rng.f() < 0.1 + (a.isMe ? 0.04 : 0)
@@ -425,7 +511,13 @@ final class TowerEngine {
             // drop
             if let g = e.gun { loot.append(TwLoot(f: e.f, p: e.p, kind: 0, gun: g.id, rar: g.rar)) }
             loot.append(TwLoot(f: e.f, p: CGPoint(x: e.p.x + 14, y: e.p.y), kind: 2, gun: "", rar: 0))
-            if e.isMe { onMeDead() }
+            if e.isMe {
+                if let b = by, !hist.isEmpty {
+                    hist.append(TwFrame(v: snapshot(), shots: pendingShots))
+                    killcam = TwKillCam(frames: hist, killer: b.id, victim: e.id)
+                }
+                onMeDead()
+            }
         }
     }
 
@@ -458,8 +550,8 @@ final class TowerEngine {
     func checkEnd() {
         if over { return }
         if teamAlive(0) == 0 {
-            place = teamsLeft + 1
-            finish(false)
+            if !placeSet { place = teamsLeft + 1; placeSet = true }
+            if killcam == nil { finish(false) }
         } else if teamsLeft <= 1 {
             finish(true)
         }
@@ -539,16 +631,23 @@ final class TowerEngine {
         }
         if a.hp < 55 && a.meds > 0 && a.think < 0 { useMed(a); a.think = 2 }
 
-        // target
+        // target (scanned a few times a second, not every frame)
         var tgt: TwActor? = a.target >= 0 && a.target < actors.count ? actors[a.target] : nil
-        if let t = tgt, !(t.alive && t.f == a.f && t.team != a.team && map.los(a.f, a.p, t.p)) { tgt = nil }
-        if tgt == nil {
-            var bd: CGFloat = 520
-            for e in actors where e.alive && e.team != a.team && e.f == a.f {
-                let d = hypot(e.p.x - a.p.x, e.p.y - a.p.y)
-                if d < bd && map.los(a.f, a.p, e.p) { bd = d; tgt = e }
+        if let t = tgt, !(t.alive && t.f == a.f && t.team != a.team) { tgt = nil; a.target = -1 }
+        a.scanT -= dt
+        if a.scanT <= 0 {
+            a.scanT = 0.18 + rng.f() * 0.12
+            if let t = tgt, !map.los(a.f, a.p, t.p) { tgt = nil; a.target = -1 }
+            if tgt == nil {
+                var bd: CGFloat = 520
+                for e in actors where e.alive && e.team != a.team && e.f == a.f {
+                    let dx = e.p.x - a.p.x, dy = e.p.y - a.p.y
+                    if abs(dx) > bd || abs(dy) > bd { continue }
+                    let d = hypot(dx, dy)
+                    if d < bd && map.los(a.f, a.p, e.p) { bd = d; tgt = e }
+                }
+                a.target = tgt?.id ?? -1
             }
-            a.target = tgt?.id ?? -1
         }
 
         let inGas = gasActive(a)
