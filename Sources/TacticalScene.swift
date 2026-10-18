@@ -79,6 +79,9 @@ final class TacScene {
     var smokePool: [MXNode] = []
     var packNodes: [MXNode] = []
     var lootNodes: [MXNode] = []
+    var dynNodes: [MXNode] = []
+    var evGas: MXNode? = nil
+    var evBeam: MXNode? = nil
     var stormSegs: [[MXNode]] = [[], [], []]
     var lastStormRad: CGFloat = -1
     var lastStormC = CGPoint.zero
@@ -659,13 +662,16 @@ final class TacScene {
             if id == "g:awp" || id == "g:ak" || id == "g:m4" || id == "armor:3" { return C(1, 0.78, 0.2) }
             if id.hasPrefix("g:") || id.hasPrefix("armor") { return C(0.35, 0.65, 1) }
             if id.hasPrefix("val") || id.hasPrefix("part") || id == "intel" || id == "key" { return C(1, 0.82, 0.2) }
+            if id.hasPrefix("vault") { return C(1, 0.45, 0.1) }
+            if id == "plate" { return C(0.3, 0.55, 1) }
+            if id == "band" || id == "kit" { return C(0.9, 0.95, 1) }
             if id == "med" { return C(0.3, 0.95, 0.45) }
             if id == "nade" { return C(1, 0.55, 0.2) }
             return C(0.92, 0.92, 0.92)
         }
         let lootHold = [MXNode(), MXNode(), MXNode()]
         for f in 0..<3 { floorRoot[f].addChildNode(lootHold[f]) }
-        for l in e.loot {
+        for l in (e.gameMode == 6 ? Array(e.loot.prefix(TMap.lootSpots.count)) : e.loot) {
             let g = MXNode()
             let col = lootColor(l.id)
             let isGun = l.id.hasPrefix("g:")
@@ -707,6 +713,56 @@ final class TacScene {
                 floorRoot[TMap.floorOf(z.pos)].addChildNode(beam)
                 floorRoot[TMap.floorOf(z.pos)].addChildNode(pad)
             }
+        }
+        if e.gameMode == 6 {
+            // dropped loot pool (bot drops, supply drops), one set of slots per floor
+            let dcol = C(0.4, 1, 0.95)
+            for f in 0..<3 {
+                for _ in 0..<12 {
+                    let g = MXNode()
+                    let body = MXNode(geometry: MXBox(width: 14, height: 8, length: 12, chamferRadius: 1.5))
+                    body.geometry?.firstMaterial = mat(nil, color: dcol, emission: dcol)
+                    body.position = MXVector3(0, 14, 0)
+                    body.castsShadow = false
+                    let pad = MXNode(geometry: MXCylinder(radius: 14, height: 0.8))
+                    let pm = mat(nil, color: dcol, emission: dcol)
+                    pm.lightingModel = .constant
+                    pad.geometry?.firstMaterial = pm
+                    pad.position = MXVector3(0, 1, 0)
+                    pad.castsShadow = false
+                    g.addChildNode(body); g.addChildNode(pad)
+                    g.spinY = 2.2
+                    g.isHidden = true
+                    lootHold[f].addChildNode(g)
+                    dynNodes.append(g)
+                }
+            }
+            let gcol = C(0.3, 1, 0.3)
+            let gm = mat(nil, color: gcol, emission: gcol)
+            gm.lightingModel = .constant
+            gm.isDoubleSided = true
+            gm.transparency = 0.28
+            gm.writesToDepthBuffer = false
+            let gas = MXNode(geometry: MXCylinder(radius: 230, height: 70))
+            gas.geometry?.firstMaterial = gm
+            gas.castsShadow = false
+            gas.renderingOrder = 9
+            gas.isHidden = true
+            floorRoot[1].addChildNode(gas)
+            evGas = gas
+            let bcol = C(1, 0.8, 0.2)
+            let bm2 = mat(nil, color: bcol, emission: bcol)
+            bm2.lightingModel = .constant
+            bm2.isDoubleSided = true
+            bm2.transparency = 0.3
+            bm2.writesToDepthBuffer = false
+            let sb = MXNode(geometry: MXCylinder(radius: 9, height: 320))
+            sb.geometry?.firstMaterial = bm2
+            sb.castsShadow = false
+            sb.renderingOrder = 9
+            sb.isHidden = true
+            floorRoot[1].addChildNode(sb)
+            evBeam = sb
         }
         // bomb
         let bb = MXNode(geometry: MXBox(width: 18, height: 10, length: 14, chamferRadius: 2))
@@ -1060,6 +1116,25 @@ final class TacScene {
         applyDestruction(Float(max(0.001, min(0.05, CACurrentMediaTime() - lastDestroyT))))
         lastDestroyT = CACurrentMediaTime()
         for (i, l) in e.loot.enumerated() where i < lootNodes.count { lootNodes[i].isHidden = l.taken }
+        if e.gameMode == 6 {
+            for (j, n) in dynNodes.enumerated() {
+                let idx = e.dynBase + j
+                if idx < e.loot.count && !e.loot[idx].taken && !e.loot[idx].id.isEmpty {
+                    n.isHidden = false
+                    n.position = MXVector3(Float(e.loot[idx].pos.x), 0, Float(e.loot[idx].pos.y))
+                } else {
+                    n.isHidden = true
+                }
+            }
+            if let g = evGas {
+                g.isHidden = e.evKind != 4
+                g.position = MXVector3(Float(e.evPos.x), 35, Float(e.evPos.y))
+            }
+            if let b = evBeam {
+                b.isHidden = e.evKind != 1
+                b.position = MXVector3(Float(e.evPos.x), 160, Float(e.evPos.y))
+            }
+        }
         for i in doorLeaves.indices where i < TMap.doorOpen.count {
             let ang = Float(TMap.doorOpen[i]) * 1.65
             if abs(doorAngShown[i] - ang) > 0.004 {

@@ -18,6 +18,8 @@ struct LobbyView: View {
     @State private var mapImg: UIImage? = nil
     @State private var cd = 12
     @State private var fromMatch = false
+    @State private var gsBack = 6
+    @State private var opsBack = 0
     private let modeOrder = [1, 4, 5, 0, 3, 2, 6]
     private let modeLock = [4, 1, 6, 5, 1, 3, 1]
 
@@ -37,11 +39,13 @@ struct LobbyView: View {
                     case 4:
                         CSArsenal(gun: $nav.tacGun, rank: TacRank.index(TacRank.totalXP(t)), cash: game.s.ex.gems, coins: t.wins, back: { screen = 0 },
                                   editLoadout: { fromMatch = false; screen = 6 }, editChar: { showAvatar = true }, editCos: { seasonTab = 1; showSeason = true }, offer: { seasonTab = 2; showSeason = true })
-                    case 7: CSGunsmith(back: { screen = 6 })
-                    case 8: CSStash(back: { screen = 0 })
+                    case 7: CSGunsmith(back: { screen = gsBack })
+                    case 8: CSStash(back: { screen = 0 }, ops: { opsBack = 8; screen = 9 })
+                    case 9: CSOps(back: { screen = opsBack })
+                    case 10: CSMarket(back: { screen = 0 })
                     case 5: CSLeague(rating: t.rating, cash: game.s.ex.gems, coins: t.wins) { screen = 0 }
                     case 6:
-                        CSLoadout(gun: $nav.tacGun, countdown: fromMatch ? cd : nil, showBattle: fromMatch, gunsmith: fromMatch ? nil : { screen = 7 }, ok: { if fromMatch { beginMatch() } else { screen = 4 } }, battle: { beginMatch() })
+                        CSLoadout(gun: $nav.tacGun, countdown: fromMatch ? cd : nil, showBattle: fromMatch, gunsmith: fromMatch ? nil : { gsBack = 6; screen = 7 }, ok: { if fromMatch { beginMatch() } else { screen = 4 } }, battle: { beginMatch() })
                     default: homeScreen(t, g.size)
                     }
                 }
@@ -199,18 +203,27 @@ struct LobbyView: View {
                     .padding(.horizontal, 6).frame(width: 200, height: 24).background(CS.panel.opacity(0.75)).overlay(Rectangle().stroke(CS.gold.opacity(0.7), lineWidth: 1))
                 }
                 .buttonStyle(TuiPress())
-                VStack(alignment: .leading, spacing: 1) {
-                    menuRow("cart.fill", "SHOP", col: CS.orange) { seasonTab = 2; showSeason = true }
-                    menuRow("scope", "MISSIONS") { seasonTab = 0; showSeason = true }
-                    menuRow("person.3.fill", "FRIENDS") { showAdmin = true }
-                    menuRow("shield.lefthalf.filled", "MY CLAN", dot: true) { showRanks = true }
-                    menuRow("trophy.fill", "LEADERBOARD", dot: true) { showRanks = true }
-                    menuRow("bag.fill", "STASH") { screen = 8 }
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        menuRow("cart.fill", "SHOP", col: CS.orange) { seasonTab = 2; showSeason = true }
+                        menuRow("scope", "MISSIONS") { seasonTab = 0; showSeason = true }
+                        menuRow("person.3.fill", "FRIENDS") { showAdmin = true }
+                        menuRow("shield.lefthalf.filled", "MY CLAN", dot: true) { showRanks = true }
+                        menuRow("trophy.fill", "LEADERBOARD", dot: true) { showRanks = true }
+                    }
+                    .frame(width: 142, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 1) {
+                        menuRow("wrench.and.screwdriver.fill", "GUNSMITH", col: CS.gold) { gsBack = 0; screen = 7 }
+                        menuRow("cart.badge.plus", "MARKET", col: CS.gold) { screen = 10 }
+                        menuRow("doc.text.fill", "OPERATIONS") { opsBack = 0; screen = 9 }
+                        menuRow("bag.fill", "STASH") { screen = 8 }
+                    }
+                    .frame(width: 118, alignment: .leading)
                 }
                 .padding(.top, 4)
             }
-            .frame(width: 210, height: 240, alignment: .topLeading)
-            .position(x: 16 + 105, y: 58 + 120)
+            .frame(width: 280, height: 240, alignment: .topLeading)
+            .position(x: 16 + 140, y: 58 + 120)
             // right column
             VStack(spacing: 6) {
                 Button { nav.tacMode = 6; screen = 1 } label: {
@@ -230,6 +243,7 @@ struct LobbyView: View {
                 .buttonStyle(TuiPress())
                 chestRow("scope", "\(t.kills % 50)/50", Color(red: 0.95, green: 0.2, blue: 0.5))
                 chestRow("trophy.fill", "\(t.wins % 3)/3", Color(red: 0.1, green: 0.8, blue: 0.5))
+                contractRow()
             }
             .frame(width: rcw)
             .position(x: W - 16 - rcw / 2, y: 58 + 110)
@@ -239,6 +253,24 @@ struct LobbyView: View {
             CSButton(title: "BATTLE", col: CS.orange, dark: CS.orangeDark, w: 180, h: 40, size: 20) { screen = 1 }
                 .position(x: W - 16 - 90, y: H - 28)
         }
+    }
+
+    private func contractRow() -> some View {
+        let c = TacMeta.pickedContract
+        let kit: String = TacStash.kitId == nil ? "ISSUED GUN" : "STASH GUN"
+        return Button { opsBack = 0; screen = 9 } label: {
+            HStack(spacing: 8) {
+                SF("doc.text.fill", "circle.fill").font(.system(size: 18, weight: .bold)).foregroundColor(CS.gold).frame(width: 30)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("CONTRACT  ·  \(c.title)").font(.jk(10, .heavy)).foregroundColor(.white).lineLimit(1)
+                    Text("+\(c.reward + 10 * TacMeta.traderLevel) GEMS  ·  \(kit)  ·  \(TacStash.packCap) SLOTS").font(.jk(8, .bold)).foregroundColor(.white.opacity(0.6)).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                SF("chevron.right", "circle.fill").font(.system(size: 10, weight: .bold)).foregroundColor(.white.opacity(0.5))
+            }
+            .padding(.horizontal, 8).frame(width: 250, height: 30).background(Rectangle().fill(Color.white.opacity(0.14)))
+        }
+        .buttonStyle(TuiPress())
     }
 
     private func chestRow(_ icon: String, _ v: String, _ col: Color, w: CGFloat = 250) -> some View {

@@ -5,11 +5,41 @@ import UIKit
 
 struct RaidItem: Codable, Identifiable, Hashable {
     var id = UUID().uuidString
-    var kind: String        // val, gun, part, intel
+    var kind: String        // val, gun, part, intel, ammo, med, plate, band, kit
     var name: String
     var value: Int
     var ref = ""
     var issued = false
+    var tier = 0
+    var dur = 100
+    var secure = false
+
+    enum CodingKeys: String, CodingKey { case id, kind, name, value, ref, issued, tier, dur, secure }
+
+    static func supply(_ kind: String) -> RaidItem {
+        switch kind {
+        case "med": return RaidItem(kind: "med", name: "Medkit", value: 25)
+        case "plate": return RaidItem(kind: "plate", name: "Armor Plate", value: 30)
+        case "band": return RaidItem(kind: "band", name: "Bandage", value: 8)
+        case "kit": return RaidItem(kind: "kit", name: "Repair Kit", value: 25)
+        default: return RaidItem(kind: "ammo", name: "Ammo Box", value: 20)
+        }
+    }
+}
+
+extension RaidItem {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+        kind = try c.decodeIfPresent(String.self, forKey: .kind) ?? "val"
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Item"
+        value = try c.decodeIfPresent(Int.self, forKey: .value) ?? 0
+        ref = try c.decodeIfPresent(String.self, forKey: .ref) ?? ""
+        issued = try c.decodeIfPresent(Bool.self, forKey: .issued) ?? false
+        tier = try c.decodeIfPresent(Int.self, forKey: .tier) ?? 0
+        dur = try c.decodeIfPresent(Int.self, forKey: .dur) ?? 100
+        secure = try c.decodeIfPresent(Bool.self, forKey: .secure) ?? false
+    }
 }
 
 enum TacStash {
@@ -46,20 +76,27 @@ enum TacStash {
         set { if let v = newValue { UserDefaults.standard.set(v, forKey: kitKey) } else { UserDefaults.standard.removeObject(forKey: kitKey) } }
     }
 
-    /// moves an extracted bag into the stash. Parts unlock instantly, overflow is sold. Returns the gems the overflow was worth.
+    /// moves an extracted bag into the stash. Parts unlock instantly, supplies go back to your kit, overflow is sold. Returns the gems the overflow was worth.
     @discardableResult
     static func commit(_ bag: [RaidItem]) -> Int {
         var cur = items
         var sold = 0
         for it in bag {
+            if it.issued { continue }
             if it.kind == "part" { if !it.ref.isEmpty { TAtt.own(it.ref) }; continue }
             if it.kind == "intel" { sold += it.value; continue }
-            if it.kind == "ammo" || it.kind == "med" { continue }
-            if it.kind == "gun" && it.issued { continue }
-            if cur.count < cap { cur.append(it) } else { sold += it.value }
+            if ["ammo", "med", "plate", "band", "kit"].contains(it.kind) { TacMeta.addLoadout(it.kind); continue }
+            var x = it
+            x.secure = false
+            if cur.count < cap { cur.append(x) } else { sold += it.value }
         }
         items = cur
         return sold
+    }
+
+    static func update(_ it: RaidItem) {
+        var cur = items
+        if let i = cur.firstIndex(where: { $0.id == it.id }) { cur[i] = it; items = cur }
     }
 
     static func remove(_ id: String) {
@@ -97,7 +134,10 @@ extension TacticalEngine {
         switch contractKind {
         case 0: return "ELIMINATE 4 HOSTILES  \(min(4, me.kills))/4"
         case 1: return raidBag.contains(where: { $0.kind == "intel" }) ? "INTEL SECURED" : "RECOVER THE INTEL (OFFICE)"
-        default: return "SECURE 3 VALUABLES  \(min(3, raidBag.filter { $0.kind == "val" }.count))/3"
+        case 2: return "SECURE 3 VALUABLES  \(min(3, raidBag.filter { $0.kind == "val" }.count))/3"
+        case 3: return cmdKilled > 0 ? "COMMANDER DOWN" : "ELIMINATE A COMMANDER"
+        case 4: return "HOLD CENTRAL YARD  \(Int(min(20, holdT)))/20s"
+        default: return vaultsOpened > 0 ? "VAULT CRACKED" : (raidHasKey ? "CRACK A VAULT" : "FIND AN ACCESS CARD  ·  CRACK A VAULT")
         }
     }
 
@@ -105,25 +145,53 @@ extension TacticalEngine {
 
     func raidStart() {
         loot = TMap.lootSpots.map { Loot(pos: $0.0, id: $0.1, taken: false) }
-        raidBag = [RaidItem(kind: "ammo", name: "Ammo Box", value: 20), RaidItem(kind: "ammo", name: "Ammo Box", value: 20)]
+        dynBase = loot.count
+        for _ in 0..<36 { loot.append(Loot(pos: .zero, id: "", taken: true)) }
+        var a0 = RaidItem.supply("ammo")
+        a0.issued = true
+        var a1 = RaidItem.supply("ammo")
+        a1.issued = true
+        raidBag = [a0, a1]
+        for k in TacMeta.takeLoadout(room: max(0, TacStash.packCap - raidBag.count)) { raidBag.append(RaidItem.supply(k)) }
         raidEquipped = nil
         raidBagOpen = false
+        gunTier = 0
+        gunDur = 100
         if let kid = TacStash.kitId, let it = TacStash.items.first(where: { $0.id == kid }), it.kind == "gun" {
             raidEquipped = it
             TacStash.remove(kid)
             setGun(me, it.ref)
+            gunTier = it.tier
+            gunDur = CGFloat(it.dur)
         }
         TacStash.kitId = nil
-        raidHasKey = false
+        raidHasKey = TacMeta.takeCard()
         raidZoneT = 0
         raidZoneIdx = -1
         raidExtracted = false
         raidCommitted = false
         raidSold = 0
         raidLoudT = 0
-        contractKind = Int.random(in: 0..<3)
+        let c = TacMeta.pickedContract
+        contractKind = c.kind
         contractDone = false
-        contractReward = [40, 60, 50][contractKind]
+        contractReward = c.reward + 10 * TacMeta.traderLevel
+        holdT = 0
+        cmdKilled = 0
+        vaultsOpened = 0
+        bleedT = 0
+        legWound = false
+        noiseR = 0
+        noiseNow = 0
+        hearT = 0
+        evKind = 0
+        evLeft = 0
+        evMsg = ""
+        evT = CGFloat.random(in: 45...75)
+        alarmT = 0
+        alarmPulse = 0
+        raidSecureEq = false
+        raidSetupFactions()
         brPlace = 0
         brEndT = 3
         raidNote("DEPLOYED  ·  FIND LOOT, EXTRACT ALIVE")
@@ -149,16 +217,24 @@ extension TacticalEngine {
             raidNote("INTEL RECOVERED")
         case "key":
             raidHasKey = true
-            raidNote("ACCESS CARD  ·  SOUTH DOCK UNLOCKED")
+            raidNote("ACCESS CARD  ·  VAULTS + SOUTH DOCK UNLOCKED")
         case "g":
-            raidBag.append(RaidItem(kind: "gun", name: TGuns.get(arg).name, value: max(40, Int(TWeapons.w(arg).price) / 5), ref: arg))
-            raidNote("+ \(TGuns.get(arg).name.uppercased())  ·  EQUIP FROM BAG")
-        case "med":
-            raidBag.append(RaidItem(kind: "med", name: "Medkit", value: 25))
-            raidNote("+ MEDKIT")
-        case "ammo":
-            raidBag.append(RaidItem(kind: "ammo", name: "Ammo Box", value: 20))
-            raidNote("+ AMMO BOX")
+            let minT = parts.count > 2 ? (Int(parts[2]) ?? 0) : 0
+            raidBag.append(raidRollGun(arg, minTier: minT))
+            let t = raidBag[raidBag.count - 1].tier
+            raidNote("+ \(TacRarity.name(t))  \(TGuns.get(arg).name.uppercased())")
+        case "med", "plate", "band", "kit", "ammo":
+            let it = RaidItem.supply(parts[0])
+            raidBag.append(it)
+            raidNote("+ \(it.name.uppercased())")
+        case "vault":
+            raidBag.append(RaidItem(kind: "val", name: "Gold Bars", value: 600))
+            raidBag.append(raidRollGun(["ak", "m4", "awp", "p90"].randomElement() ?? "ak", minTier: 2))
+            raidBag.append(RaidItem.supply("plate"))
+            vaultsOpened += 1
+            alarmT = 25
+            alarmPulse = 0
+            raidNote("VAULT OPEN  ·  ALARM TRIGGERED")
         default:
             break
         }
@@ -176,10 +252,30 @@ extension TacticalEngine {
         let it = raidBag[i]
         switch it.kind {
         case "med":
-            guard me.hp < 100 else { raidNote("ALREADY AT FULL HEALTH"); return }
+            guard me.hp < 100 || bleedT > 0 || legWound else { raidNote("ALREADY AT FULL HEALTH"); return }
             raidBag.remove(at: i)
             me.hp = min(100, me.hp + 45)
+            bleedT = 0
+            legWound = false
             pop(me.pos, "+45", .green)
+        case "band":
+            guard bleedT > 0 || me.hp < 100 else { raidNote("NOT BLEEDING"); return }
+            raidBag.remove(at: i)
+            bleedT = 0
+            me.hp = min(100, me.hp + 10)
+            pop(me.pos, "BANDAGED", .green)
+        case "plate":
+            guard me.armorKind >= 1 else { raidNote("NEED A VEST TO FIT PLATES"); return }
+            let cap: CGFloat = me.armorKind >= 3 ? 150 : (me.armorKind == 2 ? 100 : 60)
+            guard me.armor < cap else { raidNote("ARMOR FULL"); return }
+            raidBag.remove(at: i)
+            me.armor = min(cap, me.armor + 50)
+            pop(me.pos, "PLATE", .blue)
+        case "kit":
+            guard gunDur < 100 else { raidNote("WEAPON IN GOOD SHAPE"); return }
+            raidBag.remove(at: i)
+            gunDur = min(100, gunDur + 50)
+            pop(me.pos, "REPAIRED", .yellow)
         case "ammo":
             guard !TWeapons.isPistol(me.gun), me.spare < TacticalEngine.raidAmmoCap else { raidNote("AMMO FULL"); return }
             raidBag.remove(at: i)
@@ -187,12 +283,19 @@ extension TacticalEngine {
             pop(me.pos, "AMMO", .yellow)
         case "gun":
             raidBag.remove(at: i)
-            let cur = me.gun
-            let prev = raidEquipped ?? RaidItem(kind: "gun", name: TGuns.get(cur).name + " (issued)", value: 0, ref: cur, issued: true)
+            var prev = raidEquipped ?? RaidItem(kind: "gun", name: TGuns.get(me.gun).name + " (issued)", value: 0, ref: me.gun)
+            if raidEquipped == nil { prev.issued = true }
+            prev.dur = Int(gunDur)
+            prev.tier = gunTier
+            prev.secure = raidSecureEq
             raidBag.append(prev)
+            raidSecureEq = it.secure
             raidEquipped = it
+            raidEquipped?.secure = false
+            gunTier = it.tier
+            gunDur = CGFloat(it.dur)
             setGun(me, it.ref)
-            raidNote("EQUIPPED \(TGuns.get(it.ref).name.uppercased())")
+            raidNote("EQUIPPED \(TacRarity.name(it.tier))  \(TGuns.get(it.ref).name.uppercased())")
         default:
             break
         }
@@ -202,12 +305,41 @@ extension TacticalEngine {
         raidBag.removeAll { $0.id == id }
     }
 
+    /// safe pouch: one item (or the equipped stash gun) is kept even if you die
+    func raidToggleSecure(_ id: String?) {
+        if let id = id {
+            guard let i = raidBag.firstIndex(where: { $0.id == id }), !raidBag[i].issued else { return }
+            let on = !raidBag[i].secure
+            raidClearSecure()
+            raidBag[i].secure = on
+        } else {
+            guard raidEquipped != nil else { return }
+            let on = !raidSecureEq
+            raidClearSecure()
+            raidSecureEq = on
+        }
+    }
+
+    private func raidClearSecure() {
+        for i in raidBag.indices { raidBag[i].secure = false }
+        raidSecureEq = false
+    }
+
+    func raidSecureCommit() -> Int {
+        var items = raidBag.filter { $0.secure && !$0.issued }
+        if raidSecureEq, var q = raidEquipped {
+            q.dur = Int(gunDur)
+            items.append(q)
+        }
+        return TacStash.commit(items)
+    }
+
     func raidAlertBots() {
         for p in players where !p.isPlayer && p.alive { p.lastSeen = me.pos; p.hunt = 6 }
     }
 
     func raidTick(_ dt: CGFloat) {
-        for i in loot.indices where !loot[i].taken {
+        for i in loot.indices where !loot[i].taken && !loot[i].id.isEmpty {
             let lp = loot[i].pos
             let lf = TMap.floorOf(lp)
             for p in players where p.alive && TMap.floorOf(p.pos) == lf && tDist(p.pos, lp) < 28 {
@@ -215,17 +347,23 @@ extension TacticalEngine {
                     loot[i].taken = true
                     if p.isPlayer { raidCollect(loot[i].id) }
                     break
-                } else if p.isPlayer && raidBagFull && TacticalEngine.isBagKind(loot[i].id) && raidMsgT <= 0 {
-                    raidNote("BACKPACK FULL  ·  OPEN BAG TO DROP ITEMS")
+                } else if p.isPlayer {
+                    raidRefuse(loot[i].id)
                 }
             }
         }
         raidMsgT = max(0, raidMsgT - dt)
+        raidSurvival(dt)
+        raidEventTick(dt)
         if !contractDone {
+            if contractKind == 4 && me.alive && TMap.floorOf(me.pos) == TMap.floorOf(TacticalEngine.raidZones[1].pos) && tDist(me.pos, TacticalEngine.raidZones[1].pos) < 120 { holdT += dt }
             switch contractKind {
             case 0: contractDone = me.kills >= 4
             case 1: contractDone = raidBag.contains(where: { $0.kind == "intel" })
-            default: contractDone = raidBag.filter { $0.kind == "val" }.count >= 3
+            case 2: contractDone = raidBag.filter { $0.kind == "val" }.count >= 3
+            case 3: contractDone = cmdKilled >= 1
+            case 4: contractDone = holdT >= 20
+            default: contractDone = vaultsOpened >= 1
             }
             if contractDone { raidNote("CONTRACT COMPLETE  ·  EXTRACT TO CLAIM +\(contractReward)") }
         }
@@ -254,7 +392,11 @@ extension TacticalEngine {
                         raidExtracted = true
                         if !raidCommitted {
                             raidCommitted = true
-                            raidSold = TacStash.commit(raidBag + (raidEquipped.map { [$0] } ?? []))
+                            var eq = raidEquipped
+                            eq?.dur = Int(gunDur)
+                            raidSold = TacStash.commit(raidBag + (eq.map { [$0] } ?? []))
+                            if contractDone { TacMeta.contractsDone += 1 }
+                            TacMeta.rollBoard()
                         }
                         phase = 4
                         over = true
@@ -267,12 +409,19 @@ extension TacticalEngine {
         }
         if !me.alive {
             brEndT -= dt
+            if !raidCommitted {
+                raidCommitted = true
+                raidSold = raidSecureCommit()
+                TacMeta.rollBoard()
+            }
             if brEndT <= 0 { phase = 4; over = true; won = false; banner = "K.I.A."; bannerT = 3 }
         }
     }
 
     /// bots patrol rooms, scavenge nearby loot and sometimes hunt the player
     func raidGoal(_ p: TPlayer) -> CGPoint {
+        if p.faction == 2 { return p.home }
+        if p.faction == 1 || p.faction == 3 { return raidPost(p) }
         if p.roam != .zero && p.goalT > time && tDist(p.pos, p.roam) > 40 { return p.roam }
         p.goalT = time + CGFloat.random(in: 4...8)
         var dest = p.roam
@@ -323,6 +472,7 @@ struct HudRaidBar: View {
                 }
             }
             .foregroundColor(.white).padding(.horizontal, 14).padding(.vertical, 6).hudFloat(18)
+            HudRaidStatus(e: e)
             if inZ >= 0 {
                 let z = TacticalEngine.raidZones[inZ]
                 let need = z.key && !e.raidHasKey
@@ -343,10 +493,29 @@ struct HudRaidBar: View {
 struct CSStash: View {
     @EnvironmentObject var game: Game
     let back: () -> Void
+    var ops: () -> Void = {}
     @State private var tick = 0
 
     private func icon(_ k: String) -> String {
         switch k { case "gun": return "scope"; case "part": return "wrench.and.screwdriver.fill"; case "intel": return "doc.text.fill"; default: return "diamond.fill" }
+    }
+
+    private func repairCost(_ it: RaidItem) -> Int { max(1, (100 - it.dur) / 3) }
+
+    private func repair(_ it: RaidItem) {
+        let c = repairCost(it)
+        guard it.dur < 100, game.s.ex.gems >= c else { return }
+        var st = game.s
+        st.ex.gems -= c
+        game.s = st
+        var x = it
+        x.dur = 100
+        TacStash.update(x)
+        tick += 1
+    }
+
+    private func sub(_ it: RaidItem) -> String {
+        it.kind == "gun" ? "\(TacRarity.name(it.tier))  ·  \(it.dur)%" : "VALUABLE"
     }
 
     private func sell(_ it: RaidItem) {
@@ -385,6 +554,10 @@ struct CSStash: View {
             } else {
                 Text("MAX").font(.jk(10, .heavy)).foregroundColor(TUI.green)
             }
+            Button { ops() } label: {
+                Text("OPERATIONS").font(.jk(10, .heavy)).foregroundColor(.black).padding(.horizontal, 8).frame(height: 24).background(Rectangle().fill(CS.gold))
+            }
+            .buttonStyle(TuiPress())
             Spacer()
             if let k = TacStash.kitId, let it = TacStash.items.first(where: { $0.id == k }) {
                 Text("RAID WEAPON: \(it.name.uppercased())").font(.jk(10, .heavy)).foregroundColor(Color(red: 0.4, green: 0.95, blue: 0.4))
@@ -437,10 +610,16 @@ struct CSStash: View {
                                     HStack(spacing: 8) {
                                         SF(icon(it.kind), "circle.fill").font(.system(size: 16, weight: .bold)).foregroundColor(it.kind == "gun" ? TUI.blue : TUI.gold).frame(width: 26)
                                         VStack(alignment: .leading, spacing: 1) {
-                                            Text(it.name).font(.jk(12, .heavy)).foregroundColor(.white).lineLimit(1)
-                                            Text(it.kind == "gun" ? "WEAPON" : "VALUABLE").font(.jk(8, .heavy)).foregroundColor(.white.opacity(0.5))
+                                            Text(it.name).font(.jk(12, .heavy)).foregroundColor(it.kind == "gun" ? TacRarity.color(it.tier) : .white).lineLimit(1)
+                                            Text(sub(it)).font(.jk(8, .heavy)).foregroundColor(.white.opacity(0.5))
                                         }
                                         Spacer(minLength: 0)
+                                        if it.kind == "gun" && it.dur < 100 {
+                                            Button { repair(it) } label: {
+                                                Text("FIX \(repairCost(it))").font(.jk(10, .heavy)).foregroundColor(.white).padding(.horizontal, 6).frame(height: 24).background(Rectangle().fill(Color.white.opacity(0.2)))
+                                            }
+                                            .buttonStyle(TuiPress())
+                                        }
                                         if it.kind == "gun" {
                                             let on = TacStash.kitId == it.id
                                             Button { TacStash.kitId = on ? nil : it.id; tick += 1 } label: {
@@ -473,59 +652,101 @@ struct RaidBagPanel: View {
     let e: TacticalEngine
 
     private func icon(_ k: String) -> String {
-        switch k { case "gun": return "scope"; case "med": return "cross.case.fill"; case "ammo": return "shippingbox.fill"; case "part": return "wrench.and.screwdriver.fill"; case "intel": return "doc.text.fill"; default: return "diamond.fill" }
+        switch k {
+        case "gun": return "scope"
+        case "med": return "cross.case.fill"
+        case "band": return "bandage.fill"
+        case "plate": return "shield.fill"
+        case "kit": return "wrench.fill"
+        case "ammo": return "shippingbox.fill"
+        case "part": return "wrench.and.screwdriver.fill"
+        case "intel": return "doc.text.fill"
+        default: return "diamond.fill"
+        }
     }
 
     private func label(_ it: RaidItem) -> String {
-        switch it.kind { case "gun": return "EQUIP"; case "med": return "USE"; case "ammo": return "LOAD"; default: return "" }
+        switch it.kind {
+        case "gun": return "EQUIP"
+        case "med", "band", "plate": return "USE"
+        case "kit": return "FIX"
+        case "ammo": return "LOAD"
+        default: return ""
+        }
+    }
+
+    private func chip(_ t: String, _ bg: Color, _ fg: Color = .black) -> some View {
+        Text(t).font(.jk(9, .heavy)).foregroundColor(fg).padding(.horizontal, 7).frame(height: 22).background(Rectangle().fill(bg))
+    }
+
+    private func row(_ it: RaidItem) -> some View {
+        HStack(spacing: 6) {
+            SF(icon(it.kind), "circle.fill").font(.system(size: 14, weight: .bold)).foregroundColor(it.kind == "gun" ? TacRarity.color(it.tier) : TUI.gold).frame(width: 22)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(it.name).font(.jk(12, .heavy)).foregroundColor(it.kind == "gun" ? TacRarity.color(it.tier) : .white).lineLimit(1)
+                if it.kind == "gun" {
+                    Text("\(TacRarity.name(it.tier))  ·  \(it.dur)%").font(.jk(8, .heavy)).foregroundColor(.white.opacity(0.55))
+                }
+            }
+            Spacer(minLength: 0)
+            if it.value > 0 { Text("$\(it.value)").font(.jk(10, .heavy)).foregroundColor(TUI.green) }
+            if !it.issued {
+                Button { e.raidToggleSecure(it.id) } label: { chip(it.secure ? "SAFE ✓" : "SAFE", it.secure ? TUI.green : Color.white.opacity(0.18), it.secure ? .black : .white) }
+                    .buttonStyle(TuiPress())
+            }
+            if !label(it).isEmpty {
+                Button { e.raidUse(it.id) } label: { chip(label(it), CS.gold) }.buttonStyle(TuiPress())
+            }
+            Button { e.raidDrop(it.id) } label: { chip("DROP", Color.white.opacity(0.18), .white) }.buttonStyle(TuiPress())
+        }
+        .padding(7).background(Color.black.opacity(0.6)).overlay(Rectangle().stroke(Color.white.opacity(0.2), lineWidth: 1))
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            SF("bag.fill", "circle.fill").font(.system(size: 16, weight: .bold)).foregroundColor(TUI.accent)
+            Text(TacStash.packNames[TacStash.packTier]).font(.jk(14, .heavy)).foregroundColor(.white)
+            Text("\(e.raidBag.count)/\(TacStash.packCap)").font(.jk(13, .heavy)).foregroundColor(e.raidBagFull ? TUI.red : TUI.green)
+            Spacer()
+            Button { e.raidBagOpen = false } label: {
+                SF("xmark").font(.system(size: 13, weight: .bold)).foregroundColor(.white).frame(width: 30, height: 30).background(Circle().fill(Color.white.opacity(0.15)))
+            }
+            .buttonStyle(TuiPress())
+        }
+    }
+
+    private var equipped: some View {
+        HStack(spacing: 8) {
+            Text("EQUIPPED").font(.jk(9, .heavy)).foregroundColor(.white.opacity(0.5))
+            Text(TGuns.get(e.me.gun).name.uppercased()).font(.jk(11, .heavy)).foregroundColor(TacRarity.color(e.gunTier))
+            Text("\(TacRarity.name(e.gunTier))  ·  \(Int(e.gunDur))%").font(.jk(9, .heavy)).foregroundColor(e.gunDur < 40 ? TUI.red : .white.opacity(0.6))
+            Spacer()
+            if e.raidEquipped != nil {
+                Button { e.raidToggleSecure(nil) } label: { chip(e.raidSecureEq ? "SAFE ✓" : "SAFE", e.raidSecureEq ? TUI.green : Color.white.opacity(0.18), e.raidSecureEq ? .black : .white) }
+                    .buttonStyle(TuiPress())
+            }
+        }
     }
 
     var body: some View {
-        let cap = TacStash.packCap
-        return ZStack {
+        ZStack {
             Color.black.opacity(0.55).ignoresSafeArea().onTapGesture { e.raidBagOpen = false }
-            VStack(spacing: 8) {
-                HStack {
-                    SF("bag.fill", "circle.fill").font(.system(size: 16, weight: .bold)).foregroundColor(TUI.accent)
-                    Text(TacStash.packNames[TacStash.packTier]).font(.jk(14, .heavy)).foregroundColor(.white)
-                    Text("\(e.raidBag.count)/\(cap)").font(.jk(13, .heavy)).foregroundColor(e.raidBagFull ? TUI.red : TUI.green)
-                    Spacer()
-                    Text("EQUIPPED: \(TGuns.get(e.me.gun).name.uppercased())").font(.jk(10, .heavy)).foregroundColor(.white.opacity(0.7))
-                    Button { e.raidBagOpen = false } label: {
-                        SF("xmark").font(.system(size: 13, weight: .bold)).foregroundColor(.white).frame(width: 30, height: 30).background(Circle().fill(Color.white.opacity(0.15)))
-                    }
-                    .buttonStyle(TuiPress())
-                }
+            VStack(spacing: 7) {
+                header
+                equipped
                 if e.raidBag.isEmpty {
-                    Text("Backpack is empty").font(.jk(12, .semibold)).foregroundColor(.white.opacity(0.6)).frame(maxWidth: .infinity, minHeight: 80)
+                    Text("Backpack is empty").font(.jk(12, .semibold)).foregroundColor(.white.opacity(0.6)).frame(maxWidth: .infinity, minHeight: 70)
                 } else {
                     ScrollView(showsIndicators: false) {
                         VStack(spacing: 5) {
-                            ForEach(e.raidBag) { it in
-                                HStack(spacing: 8) {
-                                    SF(icon(it.kind), "circle.fill").font(.system(size: 15, weight: .bold)).foregroundColor(it.kind == "gun" ? TUI.blue : TUI.gold).frame(width: 24)
-                                    Text(it.name).font(.jk(12, .heavy)).foregroundColor(.white).lineLimit(1)
-                                    Spacer(minLength: 0)
-                                    if it.value > 0 { Text("$\(it.value)").font(.jk(10, .heavy)).foregroundColor(TUI.green) }
-                                    if !label(it).isEmpty {
-                                        Button { e.raidUse(it.id) } label: {
-                                            Text(label(it)).font(.jk(10, .heavy)).foregroundColor(.black).padding(.horizontal, 8).frame(height: 22).background(Rectangle().fill(CS.gold))
-                                        }
-                                        .buttonStyle(TuiPress())
-                                    }
-                                    Button { e.raidDrop(it.id) } label: {
-                                        Text("DROP").font(.jk(10, .heavy)).foregroundColor(.white).padding(.horizontal, 8).frame(height: 22).background(Rectangle().fill(Color.white.opacity(0.18)))
-                                    }
-                                    .buttonStyle(TuiPress())
-                                }
-                                .padding(8).background(Color.black.opacity(0.6)).overlay(Rectangle().stroke(Color.white.opacity(0.2), lineWidth: 1))
-                            }
+                            ForEach(e.raidBag) { it in row(it) }
                         }
                     }
-                    .frame(maxHeight: 190)
+                    .frame(maxHeight: 170)
                 }
+                Text("SAFE: one item (or your stash gun) survives death").font(.jk(8, .semibold)).foregroundColor(.white.opacity(0.45))
             }
-            .padding(14).frame(width: 440).background(Color(red: 0.06, green: 0.08, blue: 0.12).opacity(0.96)).overlay(Rectangle().stroke(Color.white.opacity(0.3), lineWidth: 1))
+            .padding(14).frame(width: 470).background(Color(red: 0.06, green: 0.08, blue: 0.12).opacity(0.96)).overlay(Rectangle().stroke(Color.white.opacity(0.3), lineWidth: 1))
         }
     }
 }

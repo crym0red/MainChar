@@ -263,6 +263,8 @@ final class TPlayer {
     var hideT: CGFloat = 0
     var cover: CGPoint? = nil
     var noiseT: CGFloat = 0
+    var faction = 0
+    var home = CGPoint.zero
     var respawn: CGFloat = 0
     var money = 800
     var armorKind = 0
@@ -418,6 +420,25 @@ final class TacticalEngine {
     var raidExtracted = false
     var raidCommitted = false
     var raidSold = 0
+    var gunDur: CGFloat = 100
+    var gunTier = 0
+    var bleedT: CGFloat = 0
+    var legWound = false
+    var noiseR: CGFloat = 0
+    var noiseNow: CGFloat = 0
+    var hearT: CGFloat = 0
+    var evT: CGFloat = 60
+    var evKind = 0
+    var evLeft: CGFloat = 0
+    var evPos = CGPoint.zero
+    var evMsg = ""
+    var alarmT: CGFloat = 0
+    var alarmPulse: CGFloat = 0
+    var raidSecureEq = false
+    var holdT: CGFloat = 0
+    var dynBase = 0
+    var cmdKilled = 0
+    var vaultsOpened = 0
     var raidLoudT: CGFloat = 0
     var raidMsg = ""
     var raidMsgT: CGFloat = 0
@@ -1023,7 +1044,8 @@ final class TacticalEngine {
         let p = me
         guard p.alive else { return }
         if p.crouch && !coverNear(p) { p.crouch = false }
-        let sp: CGFloat = (p.crouch ? 88 : (p.knife ? 195 : 170)) * (scoped ? 0.6 : 1)
+        let legMul: CGFloat = (gameMode == 6 && legWound) ? 0.62 : 1
+        let sp: CGFloat = (p.crouch ? 88 : (p.knife ? 195 : 170)) * (scoped ? 0.6 : 1) * legMul
         var mv = move
         let tgt = autoAim ? pickTarget(p) : nil
         autoTarget = tgt?.id ?? -1
@@ -1096,7 +1118,8 @@ final class TacticalEngine {
         let g = TGuns.get(p.gun)
         if p.isPlayer && gameMode == 6 && p.spare <= 0 && !TWeapons.isPistol(p.gun) && p.mag < magSize(p, p.gun) { raidFeedAmmo() }
         guard !p.knife, p.reloadT <= 0, p.mag < magSize(p, p.gun), p.spare > 0 else { return }
-        p.reloadT = g.reload * (p.isPlayer ? TAtt.mods(p.gun).reloadMul : 1)
+        let tierMul: CGFloat = (p.isPlayer && gameMode == 6) ? max(0.6, 1 - 0.05 * CGFloat(gunTier)) : 1
+        p.reloadT = g.reload * (p.isPlayer ? TAtt.mods(p.gun).reloadMul : 1) * tierMul
     }
 
     private func finishReload(_ p: TPlayer) {
@@ -1147,13 +1170,15 @@ final class TacticalEngine {
         var sprd = g.spread + err
         if TWeapons.cls(p.gun) == "sniper" && !(p.isPlayer && scoped) { sprd += 0.06 }
         let am = p.isPlayer ? TAtt.mods(p.gun) : TAttMods()
+        let gm = gunMods(p)
+        let rMul = am.recoilMul * gm.rec
         if p.isPlayer {
-            sprd += recoil * 0.045 * am.recoilMul + (moving ? 0.03 : 0) + (p.crouch ? -0.004 : 0)
+            sprd += recoil * 0.045 * rMul + (moving ? 0.03 : 0) + (p.crouch ? -0.004 : 0)
             if scoped { sprd *= 0.35 * am.scopeMul }
             sprd = max(0.002, sprd)
             p.aim += CGFloat.random(in: -0.0035...0.0035) * (0.4 + recoil)
-            recoil = min(1.2, recoil + 0.13 * am.recoilMul)
-            kick = min(38, kick + (6 + recoil * 4) * am.recoilMul)
+            recoil = min(1.2, recoil + 0.13 * rMul)
+            kick = min(38, kick + (6 + recoil * 4) * rMul)
         }
         if p.isPlayer && p.crouch {
             let bx = cos(p.aim), by = sin(p.aim)
@@ -1164,16 +1189,18 @@ final class TacticalEngine {
         }
         if p.blind > 0 { sprd += p.isPlayer ? 0.05 : 0.35 }
         p.noiseT = am.silenced ? 0.45 : 1.5
+        if p.isPlayer { noiseR = am.silenced ? 230 : 720 }
         for _ in 0..<g.pellets {
             let a = p.aim + CGFloat.random(in: -sprd...sprd)
             bullets.append(Bullet(pos: CGPoint(x: p.pos.x + cos(a) * muzzle, y: p.pos.y + sin(a) * muzzle),
-                                  vel: CGVector(dx: cos(a) * spd, dy: sin(a) * spd), dmg: g.dmg * (p.isPlayer ? am.dmgMul : [0.85, 1, 1][diff]),
+                                  vel: CGVector(dx: cos(a) * spd, dy: sin(a) * spd), dmg: g.dmg * (p.isPlayer ? am.dmgMul * gm.dmg : [0.85, 1, 1][diff]),
                                   life: g.range * am.rangeMul / spd + 0.15, owner: p.id, team: p.team))
         }
         p.mag -= 1
         p.fireCd = (1 / g.rate) * (p.isPlayer ? 1 : 1.15)
         p.flash = am.silenced ? 0 : 0.05
         if p.isPlayer { shake = max(shake, g.pellets > 1 ? 4 : 1.5) }
+        if p.isPlayer && gameMode == 6 { raidWear(p) }
     }
 
     private func throwNade(_ p: TPlayer, _ ang: CGFloat, _ speed: CGFloat, smoke: Bool = false, flash: Bool = false) {
@@ -1183,10 +1210,10 @@ final class TacticalEngine {
                           vel: CGVector(dx: cos(ang) * speed, dy: sin(ang) * speed), fuse: 1.5, owner: p.id, team: p.team, kind: flash ? 2 : (smoke ? 1 : 0)))
     }
 
-    private func damage(_ victim: TPlayer, _ amt: CGFloat, by owner: Int) {
+    func damage(_ victim: TPlayer, _ amt: CGFloat, by owner: Int) {
         guard victim.alive else { return }
         var amt = amt
-        if victim.armor > 0 {
+        if victim.armor > 0 && owner > -2 {
             let ratio: CGFloat = victim.armorKind >= 3 ? 0.75 : (victim.armorKind == 2 ? 0.6 : 0.5)
             let red: CGFloat = victim.armorKind >= 3 ? 0.9 : (victim.armorKind == 2 ? 0.85 : 0.8)
             let ab = min(victim.armor, amt * ratio); victim.armor -= ab; amt -= ab * red
@@ -1194,7 +1221,8 @@ final class TacticalEngine {
         victim.hp -= victim.crouch ? amt * 0.7 : amt
         victim.hurt = 0.25
         if owner == 0 && victim.team != me.team { hitT = 0.2 }
-        if victim.isPlayer { shake = max(shake, 8) }
+        if victim.isPlayer && owner > -2 { shake = max(shake, 8) }
+        if victim.isPlayer && gameMode == 6 && owner >= 0 && amt >= 10 { raidWound() }
         if let o = players.first(where: { $0.id == owner }), o.team != victim.team {
             if !victim.isPlayer && victim.targetID < 0 && victim.hunt <= 0 { victim.lastSeen = o.pos; victim.hunt = 4 }
         }
@@ -1211,6 +1239,8 @@ final class TacticalEngine {
                 if gameMode == 0 { k.money = min(16000, k.money + 300) }
                 if k.isPlayer { fxT = 1; fxId = killFx; fxSerial += 1 }
             }
+            if let k = killer, k.isPlayer, k.team != victim.team, let msg = TacMeta.addMastery(k.gun) { pop(k.pos, msg, TUI.gold) }
+            if gameMode == 6 && !victim.isPlayer { raidBotDrop(victim, by: owner) }
             if gameMode != 0 {
                 victim.respawn = gameMode == 6 ? 0 : (victim.isPlayer && replayOn ? 999 : 3)
                 if gameMode == 6 && victim.isPlayer { brPlace = players.filter { $0.alive }.count + 1; brEndT = 3 }
@@ -1222,7 +1252,7 @@ final class TacticalEngine {
                     if k.ladder < TWeapons.ladder.count { setGun(k, TWeapons.ladder[k.ladder]) }
                 }
             }
-            let kn = killer?.name ?? (owner == -1 ? "The Storm" : "?")
+            let kn = killer?.name ?? (owner == -1 ? "The Storm" : (owner == -2 ? "Bleeding" : (owner == -3 ? "Toxic Gas" : "?")))
             feed.append(Feed(text: "\(kn)  >  \(victim.name)", life: 5, mine: killer?.isPlayer == true || victim.isPlayer, k: kn, v: victim.name, kTeam: killer?.team ?? 0, gun: knifeKill ? "knife" : (killer?.gun ?? "pistol"), head: knifeKill ? false : amt >= 45))
             if feed.count > 4 { feed.removeFirst() }
             pop(victim.pos, "X", .red)
@@ -1454,7 +1484,7 @@ final class TacticalEngine {
             var bd = CGFloat.greatestFiniteMagnitude
             for e in players where e.team != p.team && e.alive {
                 let d = tDist(p.pos, e.pos)
-                if d < 780 && d < bd && see(p.pos, e.pos) { best = e; bd = d }
+                if d < raidSight(p) && d < bd && see(p.pos, e.pos) { best = e; bd = d }
             }
             if let b = best {
                 if p.targetID != b.id { p.targetID = b.id; p.reactT = react[diff] }
@@ -1653,7 +1683,14 @@ final class TacticalEngine {
                 g.stroke(Path(ellipseIn: CGRect(x: c.x - 6, y: c.y - 6, width: 12, height: 12)), with: .color(zc), lineWidth: 2)
                 g.fill(Path(ellipseIn: CGRect(x: c.x - 2, y: c.y - 2, width: 4, height: 4)), with: .color(zc))
             }
-            for l in loot where !l.taken && TMap.floorOf(l.pos) == rf {
+            if (evKind == 1 || evKind == 4) && TMap.floorOf(evPos) == rf {
+                let ec = P(evPos.x, evPos.y)
+                let er: CGFloat = evKind == 4 ? 230 * s : 7
+                if hypot(ec.x - cx, ec.y - cy) < R {
+                    g.stroke(Path(ellipseIn: CGRect(x: ec.x - er, y: ec.y - er, width: er * 2, height: er * 2)), with: .color(evKind == 4 ? Color.green : TUI.gold), lineWidth: 2)
+                }
+            }
+            for l in loot where !l.taken && !l.id.isEmpty && TMap.floorOf(l.pos) == rf {
                 let c = P(l.pos.x, l.pos.y)
                 if hypot(c.x - cx, c.y - cy) > R - 4 { continue }
                 let tier: Color = (l.id == "g:awp" || l.id == "g:ak" || l.id == "g:m4" || l.id == "armor:3") ? TUI.gold : (l.id.hasPrefix("g:") || l.id.hasPrefix("armor") ? TUI.blue : (l.id == "med" ? TUI.green : Color.white.opacity(0.7)))
@@ -1833,6 +1870,10 @@ extension TacticalEngine {
             return true
         case "val", "part", "intel":
             return p.isPlayer && !raidBagFull
+        case "plate", "band", "kit":
+            return p.isPlayer && gameMode == 6 && !raidBagFull
+        case "vault":
+            return p.isPlayer && gameMode == 6 && raidHasKey && raidBag.count + 3 <= TacStash.packCap
         case "key":
             return p.isPlayer
         case "g":
@@ -2483,6 +2524,7 @@ struct TacticalPlay: View {
                 if !engine.me.alive && !engine.over && !engine.paused && engine.gameMode != 6 && engine.gameMode != 0 && engine.me.respawn > 0 {
                     CSKillcam(e: engine) { showLoadout = true; engine.paused = true }.ignoresSafeArea()
                 }
+                if engine.gameMode == 6 && !engine.over { RaidFX(e: engine) }
                 if engine.raidBagOpen && engine.gameMode == 6 && engine.me.alive && !engine.over { RaidBagPanel(e: engine) }
                 if showLoadout {
                     CSLoadout(gun: $nav.tacGun, ok: { engine.myGun = nav.tacGun; showLoadout = false; engine.paused = false; engine.last = nil }, battle: {}).background(Color.black.opacity(0.4)).ignoresSafeArea()
@@ -2588,7 +2630,7 @@ struct TacticalPlay: View {
                     guard !collected else { return }
                     collected = true
                     var extra = 0
-                    if e.gameMode == 6 && e.won { extra = e.raidSold }
+                    if e.gameMode == 6 { extra = e.raidSold }
                     game.tacticalFinish(won: e.won, kills: e.kills, gems: gems + extra)
                     dismiss()
                 } label: {
