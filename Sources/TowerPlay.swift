@@ -14,6 +14,7 @@ struct TowerPlay: View {
     @State private var rKnob = CGPoint.zero
     @State private var lastT = Date()
     @State private var lookOn = false
+    @State private var driver: TowerDriver? = nil
     @State private var lastDrag = CGSize.zero
     @State private var baseDist: CGFloat = 430
 
@@ -24,10 +25,8 @@ struct TowerPlay: View {
             Color.black.ignoresSafeArea()
             if ready, let sc = scene {
                 TowerSceneView(bridge: sc).ignoresSafeArea()
-                TimelineView(.animation) { tl in
+                TimelineView(.animation(minimumInterval: 1.0 / 40.0)) { _ in
                     Canvas { ctx, size in
-                        engine.step(tl.date)
-                        sc.sync(engine, dt: engine.dtLast)
                         drawOverlay(&ctx, size, sc)
                     }
                     .ignoresSafeArea()
@@ -44,6 +43,7 @@ struct TowerPlay: View {
             }
         }
         .statusBarHidden(true)
+        .onDisappear { driver?.stop() }
         .onAppear {
             OrientationLock.set(landscape: true)
             let e = TowerEngine(def: TowerMaps.all[max(0, min(TowerMaps.all.count - 1, mapId))])
@@ -52,6 +52,9 @@ struct TowerPlay: View {
             let sc = TowerScene(map: e.map)
             sc.configure(e)
             scene = sc
+            let d = TowerDriver(engine: e, scene: sc)
+            d.start()
+            driver = d
             ready = true
         }
     }
@@ -59,6 +62,7 @@ struct TowerPlay: View {
     // MARK: overlay
 
     private func drawOverlay(_ ctx: inout GraphicsContext, _ size: CGSize, _ sc: TowerScene) {
+        guard !sc.vs.isEmpty else { return }
         let e = engine
         let f = sc.focus
         if let k = e.killcam {
@@ -495,5 +499,34 @@ struct TowerPlay: View {
                 }
             }
         }
+    }
+}
+
+/// Steps the simulation and the scene from a display link at the screen's rate, independent of SwiftUI redraws.
+final class TowerDriver: NSObject {
+    private let engine: TowerEngine
+    private let scene: TowerScene
+    private var link: CADisplayLink?
+
+    init(engine: TowerEngine, scene: TowerScene) {
+        self.engine = engine
+        self.scene = scene
+    }
+
+    func start() {
+        let l = CADisplayLink(target: self, selector: #selector(tick))
+        l.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+        l.add(to: .main, forMode: .common)
+        link = l
+    }
+
+    func stop() {
+        link?.invalidate()
+        link = nil
+    }
+
+    @objc private func tick() {
+        engine.step(Date())
+        scene.sync(engine, dt: engine.dtLast)
     }
 }

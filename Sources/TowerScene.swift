@@ -68,6 +68,10 @@ final class TowerScene {
     var switchNodes: [SCNNode] = []
     var trainNodes: [SCNNode] = []
     var doorKindShown: [[Int]] = []
+    var poolRoots: [SCNNode] = []
+    var quality = 2
+    var fpsEMA: CGFloat = 60
+    var lowTime: CGFloat = 0
     private var rng = TwLCG(s: 4242)
 
 
@@ -431,6 +435,7 @@ final class TowerScene {
         }
         for p in map.props[f] { st.addChildNode(propNode(p, f)) }
         // light pools
+        let pst = SCNNode()
         var pools: [CGPoint] = []
         for x in stride(from: 160, to: 1500, by: 220) { pools.append(CGPoint(x: CGFloat(x), y: 500)); pools.append(CGPoint(x: CGFloat(x), y: 300)); pools.append(CGPoint(x: CGFloat(x), y: 700)) }
         for r in map.rooms[f] { pools.append(CGPoint(x: r.r.midX, y: r.r.midY)) }
@@ -446,7 +451,7 @@ final class TowerScene {
             let n = SCNNode(geometry: pl)
             n.eulerAngles = SCNVector3(-Float.pi / 2, 0, 0)
             n.position = SCNVector3(Float(p.x), 0.8, Float(p.y))
-            st.addChildNode(n)
+            pst.addChildNode(n)
         }
         // stairs
         for (k, r) in [TowerMap.stairW, TowerMap.stairE].enumerated() {
@@ -486,6 +491,9 @@ final class TowerScene {
         }
         let root = SCNNode()
         root.addChildNode(st.flattenedClone())
+        let pflat = pst.flattenedClone()
+        root.addChildNode(pflat)
+        poolRoots.append(pflat)
         var dn: [SCNNode] = []
         var dk: [Int] = []
         for d in map.doors[f] {
@@ -889,7 +897,22 @@ final class TowerScene {
         return CGPoint(x: CGFloat(v.x), y: CGFloat(v.y))
     }
 
+    private func applyQuality() {
+        if quality <= 1 { view.antialiasingMode = .none }
+        for n in poolRoots { n.isHidden = quality <= 0 }
+        if quality <= 0 { view.contentScaleFactor = min(view.contentScaleFactor, 1.5) }
+    }
+
     func sync(_ e: TowerEngine, dt: CGFloat) {
+        // adaptive quality: step down if the frame rate stays low
+        fpsEMA = fpsEMA * 0.95 + (1 / max(0.001, dt)) * 0.05
+        if fpsEMA < 42 { lowTime += dt } else { lowTime = max(0, lowTime - dt) }
+        if lowTime > 2.5 && quality > 0 {
+            quality -= 1
+            applyQuality()
+            lowTime = 0
+            fpsEMA = 60
+        }
         vs = e.currentViews()
         let kc = e.killcam
         var ti = 0
