@@ -247,8 +247,8 @@ enum TAttBuild {
         let x4 = MXNode()
         let lift: Float = 3.0
         x4.addChildNode(box(2.2, 0.7, 6.5, blk, at(topPos, SIMD3<Float>(0, 0.35, 0)), QG))
-        x4.addChildNode(box(1.6, lift, 1.0, metal, at(topPos, SIMD3<Float>(0, lift / 2, 3.2)), QG))
-        x4.addChildNode(box(1.6, lift, 1.0, metal, at(topPos, SIMD3<Float>(0, lift / 2, -3.2)), QG))
+        x4.addChildNode(box(1.6, CGFloat(lift), 1.0, metal, at(topPos, SIMD3<Float>(0, lift / 2, 3.2)), QG))
+        x4.addChildNode(box(1.6, CGFloat(lift), 1.0, metal, at(topPos, SIMD3<Float>(0, lift / 2, -3.2)), QG))
         let tubeC = at(topPos, SIMD3<Float>(0, lift + 1.2, 0))
         x4.addChildNode(cyl(1.15, 11, metal, tubeC, QB))
         x4.addChildNode(cyl(1.7, 3.4, blk, at(topPos, SIMD3<Float>(0, lift + 1.2, -6.2)), QB))

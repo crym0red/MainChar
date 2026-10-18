@@ -416,6 +416,8 @@ final class TacticalEngine {
     var raidZoneT: CGFloat = 0
     var raidZoneIdx = -1
     var raidExtracted = false
+    var raidCommitted = false
+    var raidSold = 0
     var raidLoudT: CGFloat = 0
     var raidMsg = ""
     var raidMsgT: CGFloat = 0
@@ -2586,7 +2588,7 @@ struct TacticalPlay: View {
                     guard !collected else { return }
                     collected = true
                     var extra = 0
-                    if e.gameMode == 6 && e.won { extra = TacStash.commit(e.raidBag + (e.raidEquipped.map { [$0] } ?? [])) }
+                    if e.gameMode == 6 && e.won { extra = e.raidSold }
                     game.tacticalFinish(won: e.won, kills: e.kills, gems: gems + extra)
                     dismiss()
                 } label: {

@@ -85,6 +85,7 @@ extension TacticalEngine {
     ]
 
     var bagValue: Int { raidBag.reduce(0) { $0 + $1.value } }
+    static let raidAmmoCap = 8
     var raidBagFull: Bool { raidBag.count >= TacStash.packCap }
 
     static func isBagKind(_ id: String) -> Bool {
@@ -117,6 +118,8 @@ extension TacticalEngine {
         raidZoneT = 0
         raidZoneIdx = -1
         raidExtracted = false
+        raidCommitted = false
+        raidSold = 0
         raidLoudT = 0
         contractKind = Int.random(in: 0..<3)
         contractDone = false
@@ -164,7 +167,7 @@ extension TacticalEngine {
     func raidFeedAmmo() {
         guard let i = raidBag.firstIndex(where: { $0.kind == "ammo" }) else { return }
         raidBag.remove(at: i)
-        me.spare = min(8, me.spare + 2)
+        me.spare = min(TacticalEngine.raidAmmoCap, me.spare + 2)
         raidNote("+2 MAGS FROM BACKPACK")
     }
 
@@ -178,9 +181,9 @@ extension TacticalEngine {
             me.hp = min(100, me.hp + 45)
             pop(me.pos, "+45", .green)
         case "ammo":
-            guard !TWeapons.isPistol(me.gun), me.spare < 6 else { raidNote("AMMO FULL"); return }
+            guard !TWeapons.isPistol(me.gun), me.spare < TacticalEngine.raidAmmoCap else { raidNote("AMMO FULL"); return }
             raidBag.remove(at: i)
-            me.spare = min(8, me.spare + 2)
+            me.spare = min(TacticalEngine.raidAmmoCap, me.spare + 2)
             pop(me.pos, "AMMO", .yellow)
         case "gun":
             raidBag.remove(at: i)
@@ -249,6 +252,10 @@ extension TacticalEngine {
                     }
                     if raidZoneT >= z.hold {
                         raidExtracted = true
+                        if !raidCommitted {
+                            raidCommitted = true
+                            raidSold = TacStash.commit(raidBag + (raidEquipped.map { [$0] } ?? []))
+                        }
                         phase = 4
                         over = true
                         won = true
