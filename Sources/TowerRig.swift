@@ -12,6 +12,10 @@ struct TwSoldier {
     var shirt: SCNMaterial
     var face: SCNNode
     var faceMat: SCNMaterial
+    var kev: SCNNode
+    var helm: SCNNode
+    var heavy: SCNNode
+    var hat: SCNNode
 }
 
 enum TwRig {
@@ -80,168 +84,373 @@ enum TwRig {
         return n
     }
 
-    static func gunIdx(_ id: String) -> Int {
-        switch TWeapons.rig(id) {
-        case "smg": return 1
-        case "rifle": return 2
-        case "shotgun": return 3
-        default: return 0
-        }
+    static func gunIdx(_ id: String) -> Int { TWeapons.all.firstIndex { $0.id == id } ?? 0 }
+
+    static func cone(_ r: CGFloat, _ h: CGFloat, _ c: UIColor) -> SCNNode {
+        let g = SCNCone(topRadius: 0, bottomRadius: r, height: h)
+        g.radialSegmentCount = 16
+        g.materials = [mat(c)]
+        return SCNNode(geometry: g)
     }
 
-    static let flashX: [Float] = [10, 16, 29, 34]
-
-    static func gunModel(_ k: Int, tint: UIColor?) -> SCNNode {
+    /// 3D hair for the AvatarLook hair styles. Head centre is (0.4, 35.5, 0), the face looks along +x.
+    static func hair3D(_ st: Int, _ c: UIColor) -> SCNNode {
         let n = SCNNode()
-        let metal = col(0.1, 0.1, 0.12)
-        let metal2 = tint ?? col(0.2, 0.2, 0.23)
-        let wood = tint.map { _ in metal2 } ?? col(0.3, 0.2, 0.12)
-        switch k {
-        case 0:
-            let slide = box(10, 2.6, 2.4, metal2)
-            n.addChildNode(at(slide, 4.6, 1.6, 0))
-            let bar = cyl(0.55, 2.2, metal); bar.eulerAngles = SCNVector3(0, 0, Float.pi / 2)
-            n.addChildNode(at(bar, 9.8, 1.6, 0))
-            n.addChildNode(at(box(8, 1.2, 2, metal), 3.6, -0.3, 0))
-            let grip = box(2.5, 5.8, 2.5, metal)
-            grip.eulerAngles = SCNVector3(0, 0, 0.2)
-            n.addChildNode(at(grip, 0.6, -2.2, 0))
-            let tg = SCNNode(geometry: SCNTorus(ringRadius: 1.3, pipeRadius: 0.22))
-            tg.geometry?.firstMaterial = mat(metal2)
-            tg.eulerAngles = SCNVector3(Float.pi / 2, 0, 0)
-            tg.scale = SCNVector3(1, 1, 1.2)
-            n.addChildNode(at(tg, 3.2, -1.2, 0))
-            n.addChildNode(at(box(0.7, 0.9, 0.7, col(1, 1, 1)), 9.2, 3.2, 0))
-            n.addChildNode(at(box(1.2, 0.9, 1.4, metal), 0.4, 3.2, 0))
-        case 1:
-            n.addChildNode(at(box(14, 3.2, 3, metal), 5, 0, 0))
-            n.addChildNode(at(box(5, 1.4, 1.4, metal2), 14, 0.4, 0))
-            let mag = box(2.4, 7, 2.2, metal2)
-            mag.eulerAngles = SCNVector3(0, 0, 0.12)
-            n.addChildNode(at(mag, 4, -4.5, 0))
-            n.addChildNode(at(box(2.4, 5, 2.4, metal), -1, -3.2, 0))
-            n.addChildNode(at(box(3, 1.2, 1.2, metal2), 2, 2.4, 0))
-            n.addChildNode(at(box(5, 2, 2.6, metal2), -4.5, 0.4, 0))
-        case 2:
-            let rc = box(14, 3.6, 3, metal2)
-            n.addChildNode(at(rc, 2, 0.6, 0))
-            n.addChildNode(at(box(10, 3.4, 3.1, metal), 12, 0.4, 0))
-            let br = cyl(0.55, 12, metal); br.eulerAngles = SCNVector3(0, 0, Float.pi / 2)
-            n.addChildNode(at(br, 24, 0.9, 0))
-            let fh = cyl(0.9, 3.4, metal); fh.eulerAngles = SCNVector3(0, 0, Float.pi / 2)
-            n.addChildNode(at(fh, 30.4, 0.9, 0))
-            n.addChildNode(at(box(1, 2, 1, metal), 22, 2.4, 0))
-            n.addChildNode(at(box(16, 0.8, 1.3, metal), 10, 2.4, 0))
-            let mag = box(2.6, 8.4, 2.4, metal2)
-            mag.eulerAngles = SCNVector3(0, 0, 0.28)
-            n.addChildNode(at(mag, 3.2, -5.2, 0))
-            let pg = box(2.4, 5.4, 2.5, metal)
-            pg.eulerAngles = SCNVector3(0, 0, 0.35)
-            n.addChildNode(at(pg, -1.2, -3.6, 0))
-            n.addChildNode(at(box(9, 3.6, 2.8, wood), -9, -0.3, 0))
-            n.addChildNode(at(box(1.4, 6, 3.4, metal), -13.6, -0.4, 0))
-            let ob = cyl(1.5, 6, metal); ob.eulerAngles = SCNVector3(0, 0, Float.pi / 2)
-            n.addChildNode(at(ob, 4, 3.8, 0))
-            let lens = cyl(1.3, 0.4, col(0.2, 0.5, 0.8)); lens.eulerAngles = SCNVector3(0, 0, Float.pi / 2)
-            n.addChildNode(at(lens, 7.1, 3.8, 0))
-        default:
-            n.addChildNode(at(box(26, 2.2, 2.2, metal), 12, 1.2, 0))
-            n.addChildNode(at(box(18, 1.8, 1.8, metal2), 11, -1.4, 0))
-            n.addChildNode(at(box(8, 3.2, 3.4, wood), 14, -1.4, 0))
-            n.addChildNode(at(box(11, 4, 2.8, wood), -6, -0.4, 0))
-            n.addChildNode(at(box(5, 3, 2.6, metal), 1, 0.4, 0))
+        func capHair(_ sy: CGFloat, _ yy: CGFloat = 38.2) {
+            let b = ball(4.9, c)
+            b.scale = SCNVector3(0.98, Float(sy), 0.95)
+            n.addChildNode(at(b, 0.1, yy, 0))
+        }
+        switch st {
+        case 9: break
+        case 2: capHair(0.5, 37.8)
+        case 3, 13:
+            let b = ball(6.2, c)
+            b.scale = SCNVector3(0.95, 0.85, 1.05)
+            n.addChildNode(at(b, -0.2, 38.6, 0))
+        case 4:
+            capHair(0.6)
+            n.addChildNode(at(ball(2, c), -0.4, 42.4, 0))
+        case 10, 15:
+            capHair(0.45, 37.9)
+            for k in -2...2 { n.addChildNode(at(box(1.2, 2.8 - CGFloat(abs(k)) * 0.4, 1.0, c), 0.2, 41.6, CGFloat(k) * 1.3)) }
+        case 1, 16, 12:
+            capHair(0.62)
+            n.addChildNode(at(box(2.2, 8.4, 8.8, c), -3.4, 33.6, 0))
+        case 11:
+            capHair(0.62)
+            n.addChildNode(at(cap(1.1, 7.5, c), -4.6, 34.2, 0))
+        case 17:
+            capHair(0.62)
+            for z in [-4.9, 4.9] as [CGFloat] { n.addChildNode(at(cap(1.1, 7.5, c), -1.0, 34.0, z)) }
+        case 19:
+            capHair(0.6)
+            for z in [-3.6, 3.6] as [CGFloat] { n.addChildNode(at(ball(1.9, c), -0.4, 41.6, z)) }
+        default: capHair(0.62)
         }
         return n
     }
 
-    static func soldier(shirt: UIColor, skin: UIColor, tint: UIColor?) -> TwSoldier {
+    /// 3D hats for the AvatarLook hat list.
+    static func hat3D(_ k: Int, _ c: UIColor) -> SCNNode {
+        let n = SCNNode()
+        let gold = col(1, 0.82, 0.25)
+        func dome(_ r: CGFloat, _ sy: CGFloat, _ y: CGFloat, _ cc: UIColor) {
+            let b = ball(r, cc)
+            b.scale = SCNVector3(1, Float(sy), 1)
+            n.addChildNode(at(b, 0.2, y, 0))
+        }
+        switch k {
+        case 1: dome(5.15, 0.66, 38.3, c); n.addChildNode(at(ball(1.2, c), 0.2, 42.2, 0))
+        case 2: dome(5.15, 0.58, 38.4, c); n.addChildNode(at(box(3.8, 0.5, 7.8, c), 5.5, 37.6, 0))
+        case 3:
+            n.addChildNode(at(cyl(4.3, 2.4, gold), 0.3, 40.4, 0))
+            for z in [-3.2, -1.6, 0, 1.6, 3.2] as [CGFloat] { n.addChildNode(at(cone(0.9, 2.4, gold), 0.3, 42.6, z)) }
+        case 4: n.addChildNode(at(cone(3.1, 7, c), 0.3, 43.4, 0))
+        case 5:
+            n.addChildNode(at(cyl(8.4, 0.5, c), 0.3, 38.8, 0))
+            n.addChildNode(at(cyl(4.3, 3.6, c), 0.3, 40.6, 0))
+        case 6: n.addChildNode(at(cyl(4.6, 1.4, c), 0.3, 38.0, 0))
+        case 7:
+            let t = SCNTorus(ringRadius: 3.6, pipeRadius: 0.45)
+            t.materials = [mat(gold, glow: true)]
+            n.addChildNode(at(SCNNode(geometry: t), 0.3, 44.0, 0))
+        case 8:
+            for z in [-2.2, 2.2] as [CGFloat] { n.addChildNode(at(box(1.4, 7, 1.6, c), 0.2, 43.5, z)) }
+        case 9:
+            for z in [-3.2, 3.2] as [CGFloat] { n.addChildNode(at(cone(1.9, 3.2, c), 0.3, 41.8, z)) }
+        case 10:
+            n.addChildNode(at(cyl(4.1, 5.8, c), 0.3, 41.8, 0))
+            n.addChildNode(at(cyl(6.2, 0.5, c), 0.3, 39.0, 0))
+        case 11:
+            n.addChildNode(at(cone(5, 9.5, c), 0.3, 43.8, 0))
+            n.addChildNode(at(cyl(6.8, 0.4, c), 0.3, 39.2, 0))
+        case 12:
+            for z in [-4.3, 4.3] as [CGFloat] {
+                let h = cone(1.1, 4.4, col(0.92, 0.9, 0.82))
+                h.eulerAngles = SCNVector3(Float(z > 0 ? 0.6 : -0.6), 0, 0)
+                n.addChildNode(at(h, 0.3, 41.2, z))
+            }
+        case 13: n.addChildNode(at(box(3.4, 2.4, 9.6, c), 0.2, 39.9, 0)); n.addChildNode(at(box(8.2, 0.6, 5.2, c), 0.2, 38.9, 0))
+        case 14:
+            n.addChildNode(at(cone(4.6, 8.5, col(0.85, 0.12, 0.12)), -0.6, 43.2, 0))
+            n.addChildNode(at(cyl(5, 1.3, col(0.96, 0.96, 0.96)), 0.2, 38.7, 0))
+            n.addChildNode(at(ball(1.2, col(0.96, 0.96, 0.96)), -0.6, 47.6, 0))
+        case 15:
+            n.addChildNode(at(cyl(4.4, 5.2, col(0.97, 0.97, 0.97)), 0.2, 41.4, 0))
+            let t = ball(5.2, col(0.97, 0.97, 0.97)); t.scale = SCNVector3(1, 0.5, 1)
+            n.addChildNode(at(t, 0.2, 44.0, 0))
+        case 16:
+            let cols = [col(1, 0.4, 0.6), col(1, 0.85, 0.3), col(0.7, 0.5, 1), col(1, 0.6, 0.3)]
+            for (i, z) in ([-3.6, -1.2, 1.2, 3.6] as [CGFloat]).enumerated() { n.addChildNode(at(ball(1.2, cols[i]), 0.4, 40.9, z)) }
+        case 17:
+            n.addChildNode(at(cyl(0.25, 5, col(0.6, 0.6, 0.64)), 0.2, 43.2, 0))
+            n.addChildNode(at(ball(0.9, col(1, 0.2, 0.2)), 0.2, 46.0, 0).applyingGlow())
+        case 18:
+            n.addChildNode(at(box(1.0, 1.0, 9.6, c), 0.2, 40.8, 0))
+            for z in [-4.9, 4.9] as [CGFloat] { n.addChildNode(at(box(2.0, 3.6, 2.4, c), 0.2, 35.6, z)) }
+        case 19:
+            n.addChildNode(at(cyl(4.7, 3.4, c), 0.3, 38.8, 0))
+            n.addChildNode(at(cyl(6.3, 0.4, c), 0.3, 37.6, 0))
+        case 20:
+            dome(5.15, 0.62, 38.4, col(0.55, 0.57, 0.6))
+            for z in [-5.2, 5.2] as [CGFloat] {
+                let h = cone(1.1, 4.6, col(0.92, 0.9, 0.82))
+                h.eulerAngles = SCNVector3(Float(z > 0 ? 0.7 : -0.7), 0, 0)
+                n.addChildNode(at(h, 0.3, 40.4, z))
+            }
+        case 21:
+            n.addChildNode(at(box(10, 0.6, 10, c), 0.2, 41.0, 0))
+            n.addChildNode(at(cyl(4.4, 2.2, c), 0.2, 39.6, 0))
+            n.addChildNode(at(box(0.5, 2.6, 0.5, gold), 0.2, 39.6, 4.6))
+        default: break
+        }
+        return n
+    }
+
+    /// team: coloured shoulder markers so allies and enemies read at a glance.
+    /// style: the player's own designed avatar (face, outfit, build, hair, hats ...).
+    /// rank: 0 = regular player, 1 = staff (hi-vis vest, cap, lanyard), 2 = admin (black suit, tie).
+    static func soldier(team: UIColor, style st: TwStyle, rank: Int) -> TwSoldier {
         let root = SCNNode()
-        let pants = col(0.5, 0.43, 0.3)
-        let pantsM = camoMat(pants, "pants")
-        let vest = col(0.36, 0.34, 0.26)
-        let plate = col(0.22, 0.23, 0.2)
+        let admin = rank == 2, staff = rank == 1
+        let bw: CGFloat = [0.85, 1.0, 1.12, 1.3][max(0, min(3, st.build))]
+        let hs: Float = [0.93, 1.0, 1.07][max(0, min(2, st.height))]
+        let skin = st.skin
+
+        // ---- clothing colours
+        let pantsCol: UIColor = admin ? col(0.07, 0.07, 0.09) : (staff ? col(0.1, 0.13, 0.22) : st.pants)
+        let top: UIColor = admin ? col(0.08, 0.08, 0.1) : (staff ? col(0.08, 0.45, 0.5) : st.top)
+        let tank = !admin && !staff && st.outfit == 7
+        let sleeveM: SCNMaterial = tank ? mat(skin) : mat(top)
+        let vestC = st.vest
+        let plateC = col(0.22, 0.23, 0.2)
+        let bootC: UIColor = admin ? col(0.04, 0.04, 0.05) : st.shoes
+        let shorts = !admin && !staff && st.pantsStyle == 3
+
+        // ---- legs
         var legs: [SCNNode] = []
         for z in [-3.5, 3.5] as [CGFloat] {
             let hip = SCNNode()
-            hip.position = SCNVector3(0, 16, Float(z))
-            let th = cap(3.0, 15, pants); th.geometry?.materials = [pantsM]
-            hip.addChildNode(at(th, 0, -7.5, 0))
-            let kp = cap(3.5, 5, col(0.2, 0.2, 0.17)); hip.addChildNode(at(kp, 0.6, -9, 0))
-            let boot = ball(3, col(0.12, 0.09, 0.07)); boot.scale = SCNVector3(1.7, 0.8, 1.05)
+            hip.position = SCNVector3(0, 16, Float(z * bw))
+            if shorts {
+                hip.addChildNode(at(cap(3.0, 8.5, pantsCol), 0, -4.2, 0))
+                hip.addChildNode(at(cap(2.2, 8.5, skin), 0, -10.2, 0))
+            } else {
+                hip.addChildNode(at(cap(3.0, 15, pantsCol), 0, -7.5, 0))
+                if !admin && !staff {
+                    if st.pantsStyle == 0 {
+                        hip.addChildNode(at(box(2.0, 5, 3.4, pantsCol.withAlphaComponent(1)), 2.6, -9, 0))
+                    } else if st.pantsStyle == 2 {
+                        hip.addChildNode(at(box(1.8, 3.4, 4.6, col(0.12, 0.12, 0.14)), 2.4, -9.8, 0))
+                    }
+                }
+            }
+            let boot = ball(3, bootC); boot.scale = SCNVector3(1.7, 0.8, 1.05)
             hip.addChildNode(at(boot, 1.6, -14.4, 0))
             root.addChildNode(hip)
             legs.append(hip)
         }
+
+        // ---- torso + shoulders
         let sm = SCNMaterial()
-        sm.diffuse.contents = shirt
+        sm.diffuse.contents = top
         let tg = SCNSphere(radius: 1)
         tg.segmentCount = 24
         tg.materials = [sm]
         let torso = SCNNode(geometry: tg)
-        torso.scale = SCNVector3(4.6, 8.4, 7.4)
+        torso.scale = SCNVector3(4.6, 8.4, Float(7.4 * bw))
         root.addChildNode(at(torso, 0, 23.8, 0))
-        for z in [-7.6, 7.6] as [CGFloat] { root.addChildNode(at(ball(3, shirt), 0, 29.4, z)) }
-        root.addChildNode(at(box(9.8, 5, 15.4, vest), 0, 28, 0))
-        root.addChildNode(at(box(2, 2.2, 3.4, col(0.3, 0.28, 0.2)), 5.6, 23.4, -4))
-        root.addChildNode(at(box(2, 2.2, 3.4, col(0.3, 0.28, 0.2)), 5.6, 23.4, 0))
-        root.addChildNode(at(box(2, 2.2, 3.4, col(0.3, 0.28, 0.2)), 5.6, 23.4, 4))
-        root.addChildNode(at(box(1, 8, 9.5, plate), 5, 26, 0))
-        root.addChildNode(at(box(1, 8, 9.5, plate), -5, 26, 0))
-        root.addChildNode(at(box(2.6, 3.6, 3.6, col(0.15, 0.17, 0.13)), 5.4, 20.4, -3.4))
-        root.addChildNode(at(box(2.6, 3.6, 3.6, col(0.15, 0.17, 0.13)), 5.4, 20.4, 3.4))
-        root.addChildNode(at(box(8, 2, 14.5, col(0.1, 0.1, 0.08)), 0, 17.6, 0))
-        root.addChildNode(at(ball(3.2, vest), 0, 30.4, -7.6))
-        root.addChildNode(at(ball(3.2, vest), 0, 30.4, 7.6))
-        root.addChildNode(at(cyl(2.6, 3, skin), 0.2, 31.6, 0))
-        root.addChildNode(at(cyl(3.6, 3.2, col(0.78, 0.68, 0.5)), 0.2, 31.2, 0))
-        root.addChildNode(at(box(4, 12, 9, col(0.24, 0.26, 0.2)), -6.2, 24, 0))
-        root.addChildNode(at(box(2.4, 2.4, 14, col(0.12, 0.12, 0.1)), 1.2, 21.2, 0))
-        let head = ball(4.6, skin); head.scale = SCNVector3(0.95, 1.12, 0.92)
-        root.addChildNode(at(head, 0.4, 35.5, 0))
-        root.addChildNode(at(box(1.2, 1.6, 8.6, col(0.04, 0.04, 0.05)), 4.7, 36.2, 0))
-        root.addChildNode(at(box(0.8, 1, 8, col(0.35, 0.65, 0.9), glow: true), 5.1, 36.2, 0))
-        let helmet = ball(5.2, col(0.3, 0.32, 0.24)); helmet.geometry?.materials = [camoMat(col(0.42, 0.4, 0.28), "helm")]
+        for z in [-7.6, 7.6] as [CGFloat] {
+            root.addChildNode(at(ball(3, tank ? skin : top), 0, 29.4, z * bw))
+            root.addChildNode(at(box(2.4, 1.0, 3.4, team, glow: true), 0, 32.3, z * bw))   // team marker
+        }
+        root.addChildNode(at(box(8, 2, 14.5 * bw, admin ? col(0.04, 0.04, 0.05) : col(0.1, 0.1, 0.08)), 0, 17.6, 0))   // belt
+        let turtle = !admin && !staff && st.outfit == 3
+        root.addChildNode(at(cyl(turtle ? 3.1 : 2.6, 3, turtle ? top : skin), 0.2, 31.6, 0))
+
+        // ---- clothing details (scaled with the build)
+        let roleN = SCNNode()
+        roleN.scale = SCNVector3(1, 1, Float(bw))
+        root.addChildNode(roleN)
+        if admin {
+            roleN.addChildNode(at(box(0.9, 5.6, 3.8, col(0.95, 0.95, 0.97)), 4.72, 26.6, 0))
+            roleN.addChildNode(at(box(0.7, 6.2, 1.1, col(0.8, 0.08, 0.1)), 5.12, 26.2, 0))
+            for s in [-1.0, 1.0] as [CGFloat] {
+                let lap = box(0.8, 6.8, 2.4, col(0.05, 0.05, 0.07))
+                lap.eulerAngles = SCNVector3(0, Float(s) * 0.4, 0)
+                roleN.addChildNode(at(lap, 4.9, 26.4, s * 3.0))
+            }
+            roleN.addChildNode(at(box(0.5, 1.0, 1.0, col(1, 0.82, 0.25), glow: true), 5.15, 28.6, 3.6))
+            roleN.addChildNode(at(box(5.2, 0.7, 14.8, col(0.04, 0.04, 0.05)), 0, 20.2, 0))
+        } else if staff {
+            let hv = col(0.82, 0.96, 0.12)
+            roleN.addChildNode(at(box(9.6, 8.6, 15.2, hv), 0, 25.6, 0))
+            roleN.addChildNode(at(box(9.8, 0.9, 15.4, col(0.88, 0.88, 0.92)), 0, 23.6, 0))
+            roleN.addChildNode(at(box(9.8, 0.9, 15.4, col(0.88, 0.88, 0.92)), 0, 27.6, 0))
+            roleN.addChildNode(at(box(0.4, 5.6, 0.7, col(1, 1, 1)), 5.1, 26.2, 1.4))
+            roleN.addChildNode(at(box(0.5, 2.8, 2.0, col(0.95, 0.95, 1)), 5.25, 22.6, 1.4))
+            roleN.addChildNode(at(box(0.3, 0.8, 1.6, col(0.1, 0.55, 0.6)), 5.55, 23.4, 1.4))
+        } else {
+            switch st.outfit {
+            case 1:   // hoodie
+                let hd = ball(3.4, top); hd.scale = SCNVector3(0.8, 0.9, 1.3)
+                roleN.addChildNode(at(hd, -3.2, 32.4, 0))
+                roleN.addChildNode(at(box(0.6, 3.6, 7.6, top.withAlphaComponent(1)), 4.9, 20.8, 0))
+            case 4, 12, 13:   // jacket / varsity / kimono
+                roleN.addChildNode(at(box(5.2, 0.9, 14.8, top), 0, 20.2, 0))
+                roleN.addChildNode(at(box(0.5, 8, 0.6, col(0.9, 0.9, 0.92)), 4.9, 24.6, 0))
+                if st.outfit == 12 { roleN.addChildNode(at(box(0.5, 1.6, 15, col(1, 1, 1)), 4.8, 27.8, 0)) }
+            case 5:   // jersey
+                roleN.addChildNode(at(box(0.5, 8, 1.4, col(1, 1, 1)), 4.85, 24.6, -2.6))
+                roleN.addChildNode(at(box(0.5, 8, 1.4, col(1, 1, 1)), 4.85, 24.6, 2.6))
+            case 6:   // suit
+                roleN.addChildNode(at(box(0.9, 5.6, 3.8, col(0.95, 0.95, 0.97)), 4.72, 26.6, 0))
+                roleN.addChildNode(at(box(0.7, 6.0, 1.0, col(0.8, 0.1, 0.12)), 5.1, 26.2, 0))
+            case 8:   // overalls
+                roleN.addChildNode(at(box(0.8, 6.6, 6.4, st.pants), 4.85, 22.8, 0))
+                for z in [-2.8, 2.8] as [CGFloat] { roleN.addChildNode(at(box(0.8, 8, 1.2, st.pants), 4.8, 27.2, z)) }
+            case 9:   // hawaiian
+                for (i, z) in ([-4.5, -1.5, 1.5, 4.5] as [CGFloat]).enumerated() {
+                    roleN.addChildNode(at(ball(0.9, i % 2 == 0 ? col(1, 0.9, 0.3) : col(1, 0.4, 0.6)), 4.7, 24 + CGFloat(i % 2) * 3, z))
+                }
+            case 10:  // armor tee
+                roleN.addChildNode(at(box(1.3, 7.2, 9.4, col(0.23, 0.25, 0.3)), 4.95, 25.6, 0))
+            case 11:  // lab coat
+                roleN.addChildNode(at(box(9.8, 11.5, 15.4, col(0.95, 0.95, 0.97)), 0, 23.6, 0))
+            default: break
+            }
+        }
+
+        // ---- backpack
+        if !admin && !staff && st.pack > 0 {
+            if st.pack == 1 {
+                roleN.addChildNode(at(box(3.2, 7, 8, st.packCol), -6.0, 25.5, 0))
+            } else {
+                roleN.addChildNode(at(box(4.6, 11, 10.5, st.packCol), -6.8, 26, 0))
+                roleN.addChildNode(at(cyl(1.4, 10, st.packCol.withAlphaComponent(1)), -6.9, 20.4, 0))
+            }
+        }
+
+        // ---- armor layers (toggled from the scene by the player's armor state)
+        let kev = SCNNode()
+        kev.scale = SCNVector3(1, 1, Float(bw))
+        kev.addChildNode(at(box(9.8, 5, 15.4, vestC), 0, 28, 0))
+        for z in [-4.0, 0.0, 4.0] as [CGFloat] { kev.addChildNode(at(box(2, 2.2, 3.4, col(0.3, 0.28, 0.2)), 5.6, 23.4, z)) }
+        kev.addChildNode(at(box(1, 8, 9.5, plateC), 5, 26, 0))
+        kev.addChildNode(at(box(1, 8, 9.5, plateC), -5, 26, 0))
+        for z in [-3.4, 3.4] as [CGFloat] { kev.addChildNode(at(box(2.6, 3.6, 3.6, col(0.15, 0.17, 0.13)), 5.4, 20.4, z)) }
+        kev.addChildNode(at(ball(3.2, vestC), 0, 30.4, -7.6))
+        kev.addChildNode(at(ball(3.2, vestC), 0, 30.4, 7.6))
+        kev.addChildNode(at(cyl(3.6, 3.2, col(0.78, 0.68, 0.5)), 0.2, 31.2, 0))
+        kev.addChildNode(at(box(4, 12, 9, col(0.24, 0.26, 0.2)), -6.2, 24, 0))
+        kev.addChildNode(at(box(2.4, 2.4, 14, col(0.12, 0.12, 0.1)), 1.2, 21.2, 0))
+        kev.isHidden = true
+        root.addChildNode(kev)
+
+        let heavy = SCNNode()
+        heavy.scale = SCNVector3(1, 1, Float(bw))
+        for z in [-9.2, 9.2] as [CGFloat] { heavy.addChildNode(at(box(3.4, 3.6, 4.8, col(0.14, 0.15, 0.17)), 0, 32, z)) }
+        heavy.addChildNode(at(box(1.6, 10.5, 11.5, col(0.12, 0.13, 0.15)), 5.9, 26, 0))
+        heavy.addChildNode(at(box(2, 4.2, 6.6, col(0.14, 0.15, 0.17)), 5.4, 16.6, 0))
+        heavy.addChildNode(at(box(0.5, 0.9, 10, col(1, 0.75, 0.2), glow: true), 6.8, 30, 0))
+        heavy.addChildNode(at(box(0.5, 0.9, 10, col(1, 0.75, 0.2), glow: true), 6.8, 22.4, 0))
+        heavy.isHidden = true
+        root.addChildNode(heavy)
+
+        // ---- head: a rounded block with a flat front so the illustrated face sits cleanly on it
+        let hg = SCNBox(width: 8.8, height: 10, length: 8.4, chamferRadius: 2.2)
+        hg.chamferSegmentCount = 4
+        hg.materials = [mat(skin)]
+        root.addChildNode(at(SCNNode(geometry: hg), 0.4, 35.5, 0))
+
+        let faceMat = SCNMaterial()
+        faceMat.lightingModel = .constant
+        faceMat.isDoubleSided = false
+        faceMat.diffuse.contents = UIColor.clear
+        faceMat.transparencyMode = .aOne
+        let fp = SCNPlane(width: 11, height: 11)
+        fp.materials = [faceMat]
+        let pn = SCNNode(geometry: fp)
+        pn.eulerAngles = SCNVector3(0, Float.pi / 2, 0)
+        pn.castsShadow = false
+        root.addChildNode(at(pn, 4.88, 35.5, 0))
+        TacAvatar.applyFace(faceMat, style: st)
+
+        // ---- hair + hats (hidden together when a helmet is worn)
+        let hat = SCNNode()
+        if staff {
+            let c = ball(5, col(0.1, 0.14, 0.3)); c.scale = SCNVector3(1, 0.55, 1)
+            hat.addChildNode(at(c, 0.2, 38.4, 0))
+            hat.addChildNode(at(box(3.8, 0.5, 7.8, col(0.08, 0.1, 0.24)), 5.4, 37.6, 0))
+            hat.addChildNode(at(box(0.4, 1.5, 1.7, col(1, 0.82, 0.25), glow: true), 5.0, 38.6, 0))
+        } else {
+            hat.addChildNode(hair3D(st.hairStyle, st.hairCol))
+            if !admin && st.hat != 0 { hat.addChildNode(hat3D(st.hat, st.hatCol)) }
+        }
+        root.addChildNode(hat)
+
+        let helm = SCNNode()
+        helm.addChildNode(at(box(1.2, 1.6, 8.6, col(0.04, 0.04, 0.05)), 5.0, 36.6, 0))
+        helm.addChildNode(at(box(0.8, 1, 8, col(0.35, 0.65, 0.9), glow: true), 5.4, 36.6, 0))
+        let helmet = ball(5.4, col(0.3, 0.32, 0.24)); helmet.geometry?.materials = [camoMat(col(0.42, 0.4, 0.28), "helm")]
         helmet.scale = SCNVector3(1, 0.72, 1)
-        root.addChildNode(at(helmet, 0.2, 37.6, 0))
-        root.addChildNode(at(box(2.4, 1.4, 7.5, col(0.05, 0.05, 0.07)), 4.1, 36, 0))
-        let rArm = cap(2.0, 12, col(0.3, 0.3, 0.22)); rArm.geometry?.materials = [pantsM]
-        rArm.eulerAngles.z = Float.pi / 2
+        helm.addChildNode(at(helmet, 0.2, 38.0, 0))
+        helm.addChildNode(at(box(2.4, 1.4, 7.5, col(0.05, 0.05, 0.07)), 4.4, 36.4, 0))
+        helm.isHidden = true
+        root.addChildNode(helm)
+
+        // ---- arms + hands
+        let az = Float(min(bw, 1.12))
+        let rArm = cap(2.0, 12, col(0.3, 0.3, 0.22)); rArm.geometry?.materials = [sleeveM]
         rArm.eulerAngles = SCNVector3(0, -0.2, Float.pi / 2 - 0.1)
-        root.addChildNode(at(rArm, 6.5, 26.5, 6))
-        root.addChildNode(at(ball(1.9, skin), 12.2, 26, 4.8))
-        let lArm = cap(2.0, 16, col(0.3, 0.3, 0.22)); lArm.geometry?.materials = [pantsM]
+        root.addChildNode(at(rArm, 6.5, 26.5, CGFloat(6 * az)))
+        let lArm = cap(2.0, 16, col(0.3, 0.3, 0.22)); lArm.geometry?.materials = [sleeveM]
         lArm.eulerAngles = SCNVector3(0, 0.35, Float.pi / 2 - 0.08)
-        root.addChildNode(at(lArm, 8.2, 26.5, -4.6))
-        root.addChildNode(at(ball(1.9, skin), 15.5, 26, -1.4))
+        root.addChildNode(at(lArm, 8.2, 26.5, -4.6 * CGFloat(az)))
+        for (hx, hy, hz) in [(12.2, 26.0, 4.8), (15.5, 26.0, -1.4)] as [(CGFloat, CGFloat, CGFloat)] {
+            if admin {
+                root.addChildNode(at(ball(1.9, col(0.92, 0.92, 0.94)), hx, hy, hz))
+            } else if st.gloves == 2 {
+                root.addChildNode(at(ball(2.15, st.gloveCol), hx, hy, hz))
+            } else {
+                root.addChildNode(at(ball(1.9, skin), hx, hy, hz))
+                if st.gloves == 1 { root.addChildNode(at(cyl(1.9, 1.2, st.gloveCol), hx - 1.3, hy, hz)) }
+            }
+        }
+
+        // ---- weapon: one detailed model per gun id
         let holder = SCNNode()
         holder.position = SCNVector3(10, 26.5, 1.8)
         var variants: [SCNNode] = []
-        for k in 0..<4 {
-            let gm = gunModel(k, tint: tint)
+        for (k, w) in TWeapons.all.enumerated() {
+            let gm = TwGunLib.worldGun(w.id)
             gm.isHidden = k != 0
             holder.addChildNode(gm)
             variants.append(gm)
         }
         let fl = box(6, 5, 5, col(1, 0.85, 0.3), glow: true)
-        fl.position = SCNVector3(flashX[0], 1, 0)
+        fl.position = SCNVector3(TwGunLib.muzzleX(TWeapons.all[0].id) + 1, 1, 0)
         fl.isHidden = true
         holder.addChildNode(fl)
         root.addChildNode(holder)
-        // avatar badge on top of the helmet (readable from the top-down camera)
-        let faceMat = SCNMaterial()
-        faceMat.lightingModel = .constant
-        faceMat.isDoubleSided = true
-        faceMat.diffuse.contents = UIColor.gray
-        let fp = SCNPlane(width: 14, height: 14)
-        fp.materials = [faceMat]
-        let pn = SCNNode(geometry: fp)
-        pn.eulerAngles = SCNVector3(-Float.pi / 2, 0, 0)
+
         let face = SCNNode()
-        face.position = SCNVector3(0.2, 42.6, 0)
-        face.addChildNode(pn)
+        face.isHidden = true
         root.addChildNode(face)
-        root.scale = SCNVector3(1.25, 1.25, 1.25)
-        return TwSoldier(root: root, legL: legs[0], legR: legs[1], holder: holder, variants: variants, flash: fl, shirt: sm, face: face, faceMat: faceMat)
+        root.scale = SCNVector3(1.25, 1.25 * hs, 1.25)
+        return TwSoldier(root: root, legL: legs[0], legR: legs[1], holder: holder, variants: variants, flash: fl, shirt: sm, face: face, faceMat: faceMat, kev: kev, helm: helm, heavy: heavy, hat: hat)
+    }
+}
+
+extension SCNNode {
+    /// emissive copy of the node's first material (used for small indicator lights)
+    func applyingGlow() -> SCNNode {
+        if let m = geometry?.firstMaterial {
+            m.emission.contents = m.diffuse.contents
+            m.lightingModel = .constant
+        }
+        return self
     }
 }
 

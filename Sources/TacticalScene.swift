@@ -47,6 +47,10 @@ final class TacScene {
     var flashes: [SCNNode] = []
     var headKey: [String] = []
     var shirts: [SCNMaterial] = []
+    var kevs: [SCNNode] = []
+    var helms: [SCNNode] = []
+    var heavies: [SCNNode] = []
+    var hats: [SCNNode] = []
     var faceMats: [SCNMaterial] = []
     var preset = 1
     var lookOn = false
@@ -255,7 +259,7 @@ final class TacScene {
                 i.draw(in: rect)
             } else {
                 color.withAlphaComponent(0.5).setFill(); g.fill(rect)
-                (emoji as NSString).draw(in: rect.insetBy(dx: 18, dy: 14), withAttributes: [.font: UIFont.systemFont(ofSize: 44)])
+                (emoji as NSString).draw(in: rect.insetBy(dx: 18, dy: 14), withAttributes: [.font: UIFont.systemFont(ofSize: 52, weight: .heavy), .foregroundColor: UIColor.white])
             }
             g.restoreGState()
             color.setStroke()
@@ -642,14 +646,12 @@ final class TacScene {
         bombNode.isHidden = true
         root.addChildNode(bombNode)
         // players
-        let skinTints: [UIColor] = [UIColor(red: 0.9, green: 0.72, blue: 0.58, alpha: 1), UIColor(red: 0.65, green: 0.45, blue: 0.32, alpha: 1), UIColor(red: 0.45, green: 0.3, blue: 0.22, alpha: 1), UIColor(red: 0.95, green: 0.8, blue: 0.68, alpha: 1)]
-        for p in e.players {
+                for p in e.players {
             let rt = SCNNode()
             let col: UIColor = p.isPlayer ? UIColor(red: 0.3, green: 0.9, blue: 0.45, alpha: 1) : (p.team == e.me.team ? UIColor(red: 0.25, green: 0.6, blue: 1, alpha: 1) : UIColor(red: 1, green: 0.25, blue: 0.3, alpha: 1))
-            let fcol: (CGFloat, CGFloat, CGFloat) = p.team == e.me.team ? TacSeason.factions[e.myFaction % 4].1 : TacSeason.enemyFactions[(e.gameMode == 4 ? p.id : e.foeFaction) % 3].1
-            let shirtC = p.isPlayer ? col : UIColor(red: fcol.0, green: fcol.1, blue: fcol.2, alpha: 1)
-            let tint: UIColor? = nil
-            let sol = TwRig.soldier(shirt: shirtC, skin: skinTints[p.id % skinTints.count], tint: tint)
+            let teamC: UIColor = p.team == e.me.team ? UIColor(red: 0.25, green: 0.6, blue: 1, alpha: 1) : UIColor(red: 1, green: 0.55, blue: 0.2, alpha: 1)
+            let sol = TwRig.soldier(team: p.isPlayer ? col : teamC, style: TacAvatar.style(p.isPlayer ? TacAvatar.myKey : p.handle), rank: p.rank)
+            kevs.append(sol.kev); helms.append(sol.helm); heavies.append(sol.heavy); hats.append(sol.hat)
             let body = sol.root
             let gun = sol.holder
             let fl = sol.flash
@@ -662,7 +664,6 @@ final class TacScene {
             lastPos.append(.zero)
             let head = sol.face
             faceMats.append(sol.faceMat)
-            sol.faceMat.diffuse.contents = ringed(nil, emoji: p.emoji, color: col)
             rt.addChildNode(body)
             root.addChildNode(rt)
             roots.append(rt); bodies.append(body); heads.append(head); guns.append(gun); flashes.append(fl)
@@ -828,6 +829,7 @@ final class TacScene {
     var cull: [CullItem] = []
     var cullBuilt = false
     var lastCull: CGFloat = -1
+    var lastVmT: CGFloat = 0
 
     private func chunked(_ src: SCNNode, into dst: SCNNode, cell: Float = 700) {
         var cells: [Int: SCNNode] = [:]
@@ -920,14 +922,13 @@ final class TacScene {
             if abs(e.time - lastCull) > 0.1 { lastCull = e.time; updateCull(ex, ez, dxv, dzv) }
             camNode.camera?.zNear = 0.6
             camNode.camera?.zFar = 2200
-            vm.show(TWeapons.rig(focus.gun))
+            vm.show(TWeapons.model(focus.gun))
             vm.root.isHidden = !(focus.alive && !e.scoped)
-            let mvg = Float(min(1, hypot(e.move.dx, e.move.dy)))
-            let tt = Float(e.time)
-            let rl = Float(min(1, focus.reloadT * 2.5))
-            let kk = Float(e.kick)
-            vm.root.position = SCNVector3(sin(tt * 8) * 0.22 * mvg, -abs(cos(tt * 8)) * 0.18 * mvg - rl * 3.5, kk * 0.02)
-            vm.root.eulerAngles = SCNVector3(kk * 0.004 - rl * 0.6, 0, 0)
+            let gw = TWeapons.w(focus.gun)
+            let rprog: Float? = focus.reloadT > 0 ? Float(max(0, min(1, 1 - focus.reloadT / max(0.1, gw.reload)))) : nil
+            let vdt = Float(max(0.001, min(0.05, e.time - lastVmT)))
+            lastVmT = e.time
+            vm.update(dt: vdt, t: Float(e.time), move: Float(min(1, hypot(e.move.dx, e.move.dy))), kick: Float(e.kick), reload: rprog, flashing: focus.flash > 0, recoilScale: TWeapons.recoil(focus.gun))
             vm.flash(focus.flash > 0)
             camNode.camera?.fieldOfView += ((e.scoped ? 26 : 62) - (camNode.camera?.fieldOfView ?? 62)) * 0.3
             camNode.position = SCNVector3(Float(ex + jx * 0.3), Float(eh), Float(ez + jz * 0.3))
@@ -958,7 +959,7 @@ final class TacScene {
             if p.alive {
                 bodies[i].eulerAngles = SCNVector3(0, 0, 0)
                 bodies[i].position = SCNVector3(0, 0, 0)
-                heads[i].isHidden = false
+                heads[i].isHidden = true
                 guns[i].isHidden = false
                 flashes[i].isHidden = !(p.flash > 0)
                 shirts[i].emission.contents = p.hurt > 0 ? UIColor(red: 0.8, green: 0.1, blue: 0.1, alpha: 1) : UIColor.black
@@ -969,10 +970,18 @@ final class TacScene {
                 let sw = Float(sin(walkPh[i])) * 0.7
                 legLs[i].eulerAngles = SCNVector3(0, 0, sw)
                 legRs[i].eulerAngles = SCNVector3(0, 0, -sw)
+                var ek = 0
+                if p.rank == 0 && p.armor > 0 {
+                    ek = p.armorKind > 0 ? p.armorKind : (e.gameMode != 0 ? [1, 2, 3, 1, 2][p.id % 5] : 0)
+                }
+                kevs[i].isHidden = ek < 1
+                helms[i].isHidden = ek < 2
+                heavies[i].isHidden = ek < 3
+                hats[i].isHidden = ek >= 2
                 let gi = TwRig.gunIdx(p.gun)
                 if gunShown[i] != gi {
                     for (k, g) in gunVars[i].enumerated() { g.isHidden = k != gi }
-                    flashes[i].position = SCNVector3(TwRig.flashX[gi], 1, 0)
+                    flashes[i].position = SCNVector3(TwGunLib.muzzleX(p.gun) + 1, 1, 0)
                     gunShown[i] = gi
                 }
             } else {
@@ -981,13 +990,6 @@ final class TacScene {
                 heads[i].isHidden = true
                 flashes[i].isHidden = true
                 shirts[i].emission.contents = UIColor.black
-            }
-            let img: UIImage? = nil
-            let key = p.handle + (img == nil ? "-n" : "-y")
-            if headKey[i] != key {
-                headKey[i] = key
-                let col: UIColor = p.isPlayer ? UIColor(red: 0.3, green: 0.9, blue: 0.45, alpha: 1) : (p.team == e.me.team ? UIColor(red: 0.25, green: 0.6, blue: 1, alpha: 1) : UIColor(red: 1, green: 0.25, blue: 0.3, alpha: 1))
-                faceMats[i].diffuse.contents = ringed(img, emoji: p.emoji, color: col)
             }
         }
         // bullets
@@ -1084,18 +1086,73 @@ extension TacticalEngine {
             let al = fp ? Double(max(0.15, min(0.7, 1.1 - dd / 900))) : 0.5
             ctx.draw(Text(rm.name.uppercased()).font(.system(size: fp ? 14 : 11, weight: .heavy)).foregroundColor(Color(red: 1, green: 0.93, blue: 0.7).opacity(al)), at: pt)
         }
-        // name tags
-        for p in players where p.alive && (p.team == me.team || (p.spotted && !fp)) {
-            if fp && (p.isPlayer || hypot(p.pos.x - focus.pos.x, p.pos.y - focus.pos.y) > 420) { continue }
-            guard let pt = pr(p.pos, 84) else { continue }
+        // name tags: every visible player gets a name, health and armor bar; staff/admin are marked
+        let gold = Color(red: 1, green: 0.82, blue: 0.25)
+        for p in players where p.alive && !p.isPlayer && p.id != focus.id {
             let ally = p.team == me.team
-            let col: Color = p.isPlayer ? Color(red: 0.4, green: 0.95, blue: 0.5) : (ally ? Color(red: 0.25, green: 0.6, blue: 1) : Color(red: 1, green: 0.25, blue: 0.3))
-            ctx.draw(Text(p.name).font(.system(size: 11, weight: .bold)).foregroundColor(col), at: CGPoint(x: pt.x, y: pt.y - 6))
-            let bar = CGRect(x: pt.x - 20, y: pt.y + 2, width: 40, height: 4)
-            ctx.fill(Path(bar), with: .color(.black.opacity(0.6)))
-            ctx.fill(Path(CGRect(x: bar.minX, y: bar.minY, width: 40 * max(0, p.hp / 100), height: 4)), with: .color(col))
+            if !(ally || p.spotted) { continue }
+            let dx0 = p.pos.x - focus.pos.x, dy0 = p.pos.y - focus.pos.y
+            let dist = hypot(dx0, dy0)
+            if fp && dist > 1100 { continue }
+            if TMap.floorOf(p.pos) != TMap.floorOf(focus.pos) { continue }
+            if fp && TMap.rayDist(focus.pos, atan2(dy0, dx0), dist + 1) < dist - 24 { continue }
+            guard let pt = pr(p.pos, 74) else { continue }
+            let k = max(0.72, min(1.15, 1.25 - dist / 900))
+            let nameCol: Color = p.rank == 2 ? Color(red: 1, green: 0.22, blue: 0.22)
+                : (p.rank == 1 ? Color(red: 0.45, green: 0.95, blue: 0.65)
+                : (ally ? Color(red: 0.42, green: 0.72, blue: 1) : Color(red: 1, green: 0.68, blue: 0.28)))
+            let fs = 12 * k
+            let main = ctx.resolve(Text(p.name).font(.system(size: fs, weight: .heavy)).foregroundColor(nameCol))
+            let shade = ctx.resolve(Text(p.name).font(.system(size: fs, weight: .heavy)).foregroundColor(.black.opacity(0.75)))
+            let nsz = main.measure(in: CGSize(width: 320, height: 40))
+            let crownW: CGFloat = p.rank == 2 ? 15 * k : 0
+            let badgeW: CGFloat = p.rank == 1 ? 34 * k : 0
+            let gap: CGFloat = 4 * k
+            let total = (crownW > 0 ? crownW + gap : 0) + nsz.width + (badgeW > 0 ? badgeW + gap : 0)
+            var x0 = pt.x - total / 2
+            let yMid = pt.y - 8 * k
+            if crownW > 0 {
+                let h = 11 * k
+                var c = Path()
+                c.move(to: CGPoint(x: x0, y: yMid + h / 2))
+                c.addLine(to: CGPoint(x: x0, y: yMid - h * 0.3))
+                c.addLine(to: CGPoint(x: x0 + crownW * 0.26, y: yMid + h * 0.05))
+                c.addLine(to: CGPoint(x: x0 + crownW * 0.5, y: yMid - h / 2))
+                c.addLine(to: CGPoint(x: x0 + crownW * 0.74, y: yMid + h * 0.05))
+                c.addLine(to: CGPoint(x: x0 + crownW, y: yMid - h * 0.3))
+                c.addLine(to: CGPoint(x: x0 + crownW, y: yMid + h / 2))
+                c.closeSubpath()
+                ctx.fill(c, with: .color(gold))
+                ctx.stroke(c, with: .color(Color(red: 0.45, green: 0.3, blue: 0.05)), lineWidth: 1)
+                ctx.fill(Path(CGRect(x: x0, y: yMid + h * 0.28, width: crownW, height: h * 0.22)), with: .color(Color(red: 0.8, green: 0.55, blue: 0.1)))
+                for jx in [0.0, 0.5, 1.0] as [CGFloat] {
+                    let r: CGFloat = 1.5 * k
+                    let jy = jx == 0.5 ? yMid - h / 2 : yMid - h * 0.3
+                    ctx.fill(Path(ellipseIn: CGRect(x: x0 + crownW * jx - r, y: jy - r, width: r * 2, height: r * 2)), with: .color(.white.opacity(0.9)))
+                }
+                x0 += crownW + gap
+            }
+            ctx.draw(shade, at: CGPoint(x: x0 + 1, y: yMid + 1), anchor: .leading)
+            ctx.draw(main, at: CGPoint(x: x0, y: yMid), anchor: .leading)
+            x0 += nsz.width + gap
+            if badgeW > 0 {
+                let br = CGRect(x: x0, y: yMid - 6 * k, width: badgeW, height: 12 * k)
+                ctx.fill(Path(roundedRect: br, cornerRadius: 3 * k), with: .color(Color(red: 0.1, green: 0.55, blue: 0.4)))
+                ctx.draw(Text("STAFF").font(.system(size: 8 * k, weight: .heavy)).foregroundColor(.white), at: CGPoint(x: br.midX, y: br.midY))
+            }
+            let bw: CGFloat = 54 * k, bh: CGFloat = 5 * k
+            let bar = CGRect(x: pt.x - bw / 2, y: pt.y + 2 * k, width: bw, height: bh)
+            let frac = max(0, min(1, p.hp / 100))
+            let hpCol: Color = frac > 0.6 ? Color(red: 0.35, green: 0.9, blue: 0.4) : (frac > 0.3 ? Color(red: 1, green: 0.8, blue: 0.2) : Color(red: 1, green: 0.28, blue: 0.25))
+            ctx.fill(Path(roundedRect: bar.insetBy(dx: -1, dy: -1), cornerRadius: bh / 2 + 1), with: .color(.black.opacity(0.7)))
+            if frac > 0 { ctx.fill(Path(roundedRect: CGRect(x: bar.minX, y: bar.minY, width: bw * frac, height: bh), cornerRadius: bh / 2), with: .color(hpCol)) }
+            if p.armor > 0 {
+                let ab = CGRect(x: bar.minX, y: bar.maxY + 2 * k, width: bw, height: 2.5 * k)
+                ctx.fill(Path(roundedRect: ab, cornerRadius: 1.2 * k), with: .color(.black.opacity(0.6)))
+                ctx.fill(Path(roundedRect: CGRect(x: ab.minX, y: ab.minY, width: bw * max(0, min(1, p.armor / 100)), height: ab.height), cornerRadius: 1.2 * k), with: .color(Color(red: 0.4, green: 0.7, blue: 1)))
+            }
             if p.reloadT > 0 {
-                ctx.draw(Text("reload").font(.system(size: 9, weight: .semibold)).foregroundColor(.white.opacity(0.85)), at: CGPoint(x: pt.x, y: pt.y + 14))
+                ctx.draw(Text("reloading").font(.system(size: 9 * k, weight: .semibold)).foregroundColor(.white.opacity(0.85)), at: CGPoint(x: pt.x, y: bar.maxY + 12 * k))
             }
         }
         if autoTarget >= 0, let tp = players.first(where: { $0.id == autoTarget }), tp.alive, let pt = pr(tp.pos, 30) {

@@ -21,6 +21,11 @@ enum TWeapons {
     static func cls(_ id: String) -> String { w(id).cls }
     static func isPistol(_ id: String) -> Bool { cls(id) == "pistol" }
     /// model / icon id used by the viewmodel rigs and sprites
+    /// each weapon has its own first-person model
+    static func model(_ id: String) -> String { all.contains { $0.id == id } ? id : "pistol" }
+    static func recoil(_ id: String) -> Float {
+        switch cls(id) { case "pistol": return 1.0; case "smg": return 0.45; case "rifle": return 0.7; case "shotgun": return 1.6; default: return 1.9 }
+    }
     static func rig(_ id: String) -> String { let c = cls(id); return c == "sniper" ? "rifle" : c }
 
     static let ladder = ["pistol", "eagle", "pump", "mp7", "p90", "ak", "m4", "awp"]

@@ -18,7 +18,7 @@ jobs:
 
       - name: Prune legacy files
         run: |
-          keep=" Lobby.swift MainShotCore.swift TacRadar.swift TacSeason.swift TacWeapons.swift Tactical.swift TacticalScene.swift TowerRig.swift TwProps.swift ViewModel.swift "
+          keep=" AvatarStudio.swift Lobby.swift MainShotCore.swift Portrait.swift PortraitExtras.swift TacAvatar.swift TacRadar.swift TacSeason.swift TacUI.swift TacWeapons.swift Tactical.swift TacticalScene.swift TowerRig.swift TwProps.swift ViewModel.swift "
           find Sources -name '*.swift' | while IFS= read -r f; do
             case "$keep" in *" $(basename "$f") "*) ;; *) rm -f "$f" ;; esac
           done

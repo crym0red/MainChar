@@ -453,6 +453,7 @@ final class TPlayer {
     var strafe: CGFloat = 1
     var strafeT: CGFloat = 0
     var role = 0
+    var rank = 0   // 0 fighter, 1 staff, 2 admin
     var site = 0
     var spotted = false
     var seenEver = false
@@ -541,7 +542,7 @@ final class TacticalEngine {
     var pops: [Pop] = []
     var feed: [Feed] = []
     var sprites: [String: UIImage] = [:]
-    private let dummyMe = TPlayer(id: 0, team: 0, name: "You", handle: "you", emoji: "🙂", isPlayer: true)
+    private let dummyMe = TPlayer(id: 0, team: 0, name: "You", handle: "you", emoji: "", isPlayer: true)
     var me: TPlayer { players.first ?? dummyMe }
 
     var phase = 0              // 0 prep, 1 live, 2 planted, 3 round end, 4 match over
@@ -563,6 +564,7 @@ final class TacticalEngine {
     var move = CGVector.zero
     var aimIn: CGFloat? = nil
     var autoAim = true
+    var autoFire = true
     var autoTarget = -1
     var firing = false
     var actHeld = false
@@ -585,8 +587,7 @@ final class TacticalEngine {
     var charm = "charm_none"
     var fxId = "fx_none"
     var fxT: CGFloat = 0
-    var myFaction = 0
-    var foeFaction = 0
+    var fxSerial = 0
     var cpProg: [CGFloat] = [0, 0, 0]
     var cpT: CGFloat = 0
     var rivalScore: Int { gameMode == 4 ? (scores.dropFirst().max() ?? 0) : scores[1] }
@@ -618,10 +619,12 @@ final class TacticalEngine {
         gameMode = mode
         tags = []
         myGun = gun
-        let names: [(String, String, String)] = BotNames.pick(9)
+        let names: [(String, String, String)] = TacRoster.pick(9)
         players = [TPlayer(id: 0, team: 0, name: "You", handle: "you", emoji: "", isPlayer: true)]
         for i in 0..<9 {
-            players.append(TPlayer(id: i + 1, team: i < 4 ? 0 : 1, name: names[i].0, handle: names[i].1, emoji: names[i].2, isPlayer: false))
+            let bp = TPlayer(id: i + 1, team: i < 4 ? 0 : 1, name: names[i].0, handle: names[i].1, emoji: names[i].2, isPlayer: false)
+            bp.rank = TacRoster.rank(of: names[i].1)
+            players.append(bp)
         }
         scores = [0, 0]
         killTarget = mode == 4 ? 20 : (mode == 5 ? 100 : 30)
@@ -724,7 +727,7 @@ final class TacticalEngine {
             buyT = 16
             buyOpen = me.alive
             for p in players where !p.isPlayer { botBuy(p) }
-            banner = "\(TacSeason.factions[myFaction % 4].0) vs \(TacSeason.enemyFactions[foeFaction % 3].0)"
+            banner = "BLUE TEAM vs ORANGE TEAM"
         }
         bannerT = 3.5
     }
@@ -747,7 +750,7 @@ final class TacticalEngine {
         shake = max(0, shake - dt * 30)
         recoil = max(0, recoil - dt * 2.4)
         jumpT = max(0, jumpT - dt)
-        fxT = max(0, fxT - dt * 1.4)
+        fxT = max(0, fxT - dt * 1.0)
         buyT = max(0, buyT - dt)
         if buyT <= 0 { buyOpen = false }
         kick = max(0, kick - dt * (22 + kick * 3))
@@ -1115,7 +1118,9 @@ final class TacticalEngine {
             mv = CGVector(dx: fx * (-move.dy) - fy * move.dx, dy: fy * (-move.dy) + fx * move.dx)
             if let e = tgt {
                 let want = atan2(e.pos.y - p.pos.y, e.pos.x - p.pos.x)
+                let off = abs(angWrap(want - p.aim))
                 if !manual { p.aim = turnToward(p.aim, want, 9 * dt) }
+                else if off < 0.4 { p.aim = turnToward(p.aim, want, 3 * dt) }
                 aligned = abs(angWrap(want - p.aim)) < 0.09
             }
         } else if let a = aimIn { p.aim = a }
@@ -1135,7 +1140,7 @@ final class TacticalEngine {
         if p.reloadT > 0 {
             p.reloadT -= dt
             if p.reloadT <= 0 { finishReload(p) }
-        } else if (firing || aligned) && p.fireCd <= 0 && !actHeld {
+        } else if (firing || (autoFire && aligned)) && p.fireCd <= 0 && !actHeld {
             if p.mag > 0 { shoot(p, 0) } else { startReload(p) }
         }
         if wantNade { wantNade = false; throwNade(p, p.aim, 420) }
@@ -1246,7 +1251,7 @@ final class TacticalEngine {
             if let k = killer, k.team != victim.team {
                 k.kills += 1
                 if gameMode == 0 { k.money = min(16000, k.money + 300) }
-                if k.isPlayer { fxT = 1; fxId = killFx }
+                if k.isPlayer { fxT = 1; fxId = killFx; fxSerial += 1 }
             }
             if gameMode != 0 {
                 victim.respawn = 3
@@ -1719,8 +1724,7 @@ struct TacticalPlay: View {
             controls
             hud
             buyLayer
-            if engine.paused && !engine.over { pauseView }
-            if engine.over { overView }
+            stateLayer
         }
         .statusBarHidden(true)
         .onAppear {
@@ -1734,8 +1738,6 @@ struct TacticalPlay: View {
             engine.killFx = sxd.fx
             engine.charm = sxd.charm
             engine.theme = TacSeason.themes.firstIndex(of: sxd.map) ?? 0
-            engine.myFaction = sxd.faction
-            engine.foeFaction = Int.random(in: 0..<3)
             let gc = TacSeason.cos(sxd.gloves).rgb
             TwViewModel.gloveColor = UIColor(red: gc.0, green: gc.1, blue: gc.2, alpha: 1)
             engine.setup(gun: "rifle", diff: diff, mode: modeId)
@@ -1747,25 +1749,48 @@ struct TacticalPlay: View {
         }
     }
 
-    private func buyBtn(_ e: TacticalEngine, _ id: String, _ name: String) -> some View {
+    private func gearSym(_ id: String) -> String {
+        switch id {
+        case "kev": return "shield.lefthalf.filled"
+        case "vest": return "shield.fill"
+        case "spec": return "shield.checkered"
+        case "flashb": return "sun.max.fill"
+        case "smokeb": return "smoke.fill"
+        default: return "circle.hexagongrid.fill"
+        }
+    }
+
+    private func buyBtn(_ e: TacticalEngine, _ id: String, _ name: String, gear: Bool) -> some View {
         let c = e.price(id)
         let own = e.me.gun == id || e.me.altGun == id
         let ok = e.me.money >= c && !own
         return Button { e.buyItem(e.me, id) } label: {
-            HStack {
-                Text(name).font(.jk(12, .heavy)).foregroundColor(.white)
-                Spacer(minLength: 4)
-                Text(own ? "OWNED" : "$\(c)").font(.jk(11, .bold)).foregroundColor(own ? .gray : (ok ? Color(red: 0.55, green: 0.95, blue: 0.4) : .red.opacity(0.8)))
+            HStack(spacing: 8) {
+                if gear {
+                    SF(gearSym(id), "circle.fill").font(.system(size: 13, weight: .bold)).foregroundColor(.white.opacity(0.9)).frame(width: 34)
+                } else {
+                    Image(uiImage: GunSprites.icon(TWeapons.rig(id))).renderingMode(.template).resizable().scaledToFit()
+                        .foregroundColor(.white.opacity(0.9)).frame(width: 34, height: 15)
+                }
+                Text(name).font(.jk(11, .heavy)).foregroundColor(.white).lineLimit(1).minimumScaleFactor(0.7)
+                Spacer(minLength: 2)
+                if own {
+                    SF("checkmark.circle.fill").font(.system(size: 13)).foregroundColor(TUI.green)
+                } else {
+                    Text("$\(c)").font(.jk(11, .bold)).foregroundColor(ok ? TUI.green : TUI.red.opacity(0.85))
+                }
             }
-            .padding(.horizontal, 8).frame(width: 128, height: 32)
-            .background(Color.white.opacity(ok ? 0.14 : 0.05)).clipShape(RoundedRectangle(cornerRadius: 6))
+            .padding(.horizontal, 9).frame(width: 150, height: 34)
+            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.white.opacity(ok ? 0.14 : 0.05)))
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(own ? TUI.green.opacity(0.6) : Color.white.opacity(0.08), lineWidth: 1))
         }
+        .buttonStyle(TuiPress())
     }
 
-    private func buyCol(_ e: TacticalEngine, _ title: String, _ items: [(String, String)]) -> some View {
+    private func buyCol(_ e: TacticalEngine, _ title: String, _ items: [(String, String)], gear: Bool = false) -> some View {
         VStack(spacing: 5) {
-            Text(title).font(.jk(11, .heavy)).foregroundColor(.white.opacity(0.6))
-            ForEach(items, id: \.0) { it in buyBtn(e, it.0, it.1) }
+            Text(title).font(.jk(10, .heavy)).tracking(1).foregroundColor(TUI.accent)
+            ForEach(items, id: \.0) { it in buyBtn(e, it.0, it.1, gear: gear) }
         }
     }
 
@@ -1774,24 +1799,30 @@ struct TacticalPlay: View {
             let e = engine
             ZStack {
                 if e.buyOpen && e.gameMode == 0 && e.buyT > 0 && e.me.alive {
-                    VStack(spacing: 8) {
-                        HStack {
-                            Text("BUY MENU").font(.jk(16, .heavy)).foregroundColor(.white)
+                    VStack(spacing: 10) {
+                        HStack(spacing: 8) {
+                            SF("cart.fill").font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                            Text("BUY MENU").font(.jk(15, .heavy)).foregroundColor(.white)
+                            Text("\(Int(e.buyT))s").font(.jk(12, .bold)).foregroundColor(.white.opacity(0.6))
                             Spacer()
-                            Text("$\(e.me.money)").font(.system(size: 20, weight: .heavy, design: .rounded)).foregroundColor(Color(red: 0.55, green: 0.95, blue: 0.4))
-                            Button { e.buyOpen = false } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 22)).foregroundColor(.white.opacity(0.8)) }
+                            SF("dollarsign.circle.fill").font(.system(size: 16)).foregroundColor(TUI.green)
+                            Text("\(e.me.money)").font(.system(size: 20, weight: .heavy, design: .rounded)).foregroundColor(TUI.green)
+                            Button { e.buyOpen = false } label: {
+                                SF("xmark").font(.system(size: 12, weight: .black)).foregroundColor(.white)
+                                    .frame(width: 30, height: 30).background(Circle().fill(Color.white.opacity(0.15)))
+                            }
+                            .buttonStyle(TuiPress())
                         }
                         HStack(alignment: .top, spacing: 10) {
                             buyCol(e, "PISTOL", [("eagle", "EAGLE-50")])
                             buyCol(e, "SMG", [("smg", "VX-9 SMG"), ("mp7", "MP-7"), ("p90", "P-90")])
                             buyCol(e, "RIFLE", [("rifle", "AR-27"), ("ak", "AK-74X"), ("m4", "M4-CQ")])
                             buyCol(e, "HEAVY", [("pump", "PUMP-12"), ("shotgun", "BREACHER"), ("awp", "AWP-X")])
-                            buyCol(e, "GEAR", [("kev", "KEVLAR"), ("vest", "VEST + HELMET"), ("spec", "SPECIAL ARMOR"), ("flashb", "FLASHBANG"), ("smokeb", "SMOKE"), ("fragb", "FRAG")])
+                            buyCol(e, "GEAR", [("kev", "KEVLAR"), ("vest", "VEST + HELMET"), ("spec", "SPECIAL ARMOR"), ("flashb", "FLASHBANG"), ("smokeb", "SMOKE"), ("fragb", "FRAG")], gear: true)
                         }
                     }
                     .padding(14)
-                    .background(Color.black.opacity(0.82)).clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.25), lineWidth: 1))
+                    .tuiGlass(18, fill: 0.84)
                 }
             }
         }
@@ -1898,238 +1929,274 @@ struct TacticalPlay: View {
 
 
 
-    private func gridIcon(_ p: TPlayer?, ally: Bool) -> some View {
-        let navy = Color(red: 0.09, green: 0.13, blue: 0.27)
-        let lblue = Color(red: 0.68, green: 0.82, blue: 0.98)
-        let gold = Color(red: 0.89, green: 0.69, blue: 0.27)
+    // MARK: HUD building blocks
+
+    private func pip(_ p: TPlayer?, ally: Bool) -> some View {
+        let col = ally ? TUI.blue : TUI.orange
         let alive = p?.alive ?? false
         return ZStack {
-            Rectangle().fill(ally ? navy : gold)
-            Rectangle().stroke(ally ? lblue : Color(red: 0.97, green: 0.85, blue: 0.55), lineWidth: 1.5)
-            if p == nil {
-                Color.black.opacity(0.35)
-            } else if !alive {
-                Text("\u{2620}\u{FE0E}").font(.system(size: 22, weight: .black)).foregroundColor(.white)
-            } else if ally {
-                Image(systemName: "chevron.up.2").font(.system(size: 17, weight: .black)).foregroundColor(lblue)
-            } else {
-                Image(systemName: "star.fill").font(.system(size: 15, weight: .black)).foregroundColor(Color(red: 0.2, green: 0.14, blue: 0.05))
+            Circle().fill(p == nil ? Color.white.opacity(0.12) : (alive ? col : Color.black.opacity(0.55)))
+            Circle().stroke(p == nil ? Color.white.opacity(0.12) : col.opacity(alive ? 1 : 0.6), lineWidth: 1.5)
+            if p != nil {
+                if alive { SF("person.fill").font(.system(size: 11, weight: .bold)).foregroundColor(Color.black.opacity(0.75)) }
+                else { SF("xmark").font(.system(size: 10, weight: .black)).foregroundColor(.white.opacity(0.85)) }
             }
         }
-        .frame(width: 36, height: 30)
+        .frame(width: 24, height: 24)
     }
 
-    private func teamGrid(_ list: [TPlayer], ally: Bool) -> some View {
-        VStack(spacing: 2) {
-            ForEach(0..<2, id: \.self) { r in
-                HStack(spacing: 2) {
-                    ForEach(0..<3, id: \.self) { c in
-                        let i = r * 3 + c
-                        gridIcon(i < list.count ? list[i] : nil, ally: ally)
-                    }
-                }
-            }
+    private func teamPips(_ list: [TPlayer], ally: Bool) -> some View {
+        HStack(spacing: 4) {
+            ForEach(0..<5, id: \.self) { i in pip(i < list.count ? list[i] : nil, ally: ally) }
         }
     }
 
     private func vbtn(_ icon: String, _ d: CGFloat, on: Bool = false, dim: Bool = false) -> some View {
-        Image(systemName: icon).font(.system(size: d * 0.42, weight: .semibold))
+        SF(icon, "circle.fill").font(.system(size: d * 0.42, weight: .semibold))
             .foregroundColor(on ? .black : .white.opacity(dim ? 0.35 : 0.95))
             .frame(width: d, height: d)
-            .background(on ? Color.white.opacity(0.9) : Color.black.opacity(0.38))
-            .clipShape(Circle())
-            .overlay(Circle().stroke(Color.white.opacity(0.55), lineWidth: 1.5))
+            .background(Circle().fill(on ? TUI.accent : Color.black.opacity(0.42)))
+            .overlay(Circle().stroke(on ? Color.white.opacity(0.9) : Color.white.opacity(0.4), lineWidth: 1.5))
     }
 
     private func nadeBubble(_ icon: String, _ n: Int) -> some View {
         ZStack(alignment: .bottomTrailing) {
-            Image(systemName: icon).font(.system(size: 20, weight: .bold)).foregroundColor(.white.opacity(n == 0 ? 0.3 : 0.95))
+            SF(icon, "circle.fill").font(.system(size: 19, weight: .bold)).foregroundColor(.white.opacity(n == 0 ? 0.3 : 0.95))
                 .frame(width: 48, height: 48)
-                .background(Color.black.opacity(0.4))
-                .clipShape(Circle())
-                .overlay(Circle().stroke(Color.white.opacity(0.5), lineWidth: 1.5))
-            Text("\(n)").font(.jk(11, .heavy)).foregroundColor(.white).padding(.horizontal, 5).background(Color.black.opacity(0.7)).clipShape(Capsule())
+                .background(Circle().fill(Color.black.opacity(0.42)))
+                .overlay(Circle().stroke(Color.white.opacity(n == 0 ? 0.2 : 0.45), lineWidth: 1.5))
+            Text("\(n)").font(.jk(11, .heavy)).foregroundColor(.black).frame(minWidth: 17, minHeight: 17)
+                .background(Circle().fill(n == 0 ? Color.white.opacity(0.4) : TUI.accent))
         }
     }
 
     private func statBar(_ icon: String, _ v: CGFloat, _ col: Color) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon).font(.system(size: 14, weight: .black)).foregroundColor(.white).frame(width: 18)
-            Capsule().fill(Color.white.opacity(0.25)).frame(width: 110, height: 6)
-                .overlay(alignment: .leading) { Capsule().fill(col).frame(width: 110 * max(0, min(1, v / 100)), height: 6) }
-            Text("\(Int(max(0, v)))").font(.system(size: 20, weight: .heavy, design: .rounded)).foregroundColor(.white)
+        HStack(spacing: 7) {
+            SF(icon, "circle.fill").font(.system(size: 13, weight: .black)).foregroundColor(col).frame(width: 16)
+            Capsule().fill(Color.white.opacity(0.18)).frame(width: 104, height: 6)
+                .overlay(alignment: .leading) { Capsule().fill(col).frame(width: 104 * max(0, min(1, v / 100)), height: 6) }
+            Text("\(Int(max(0, v)))").font(.system(size: 19, weight: .heavy, design: .rounded)).foregroundColor(.white).frame(width: 36, alignment: .trailing)
         }
+    }
+
+    private func togglePill(_ icon: String, _ label: String, _ on: Bool, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            HStack(spacing: 5) {
+                SF(icon, "circle.fill").font(.system(size: 11, weight: .bold))
+                Text(label).font(.jk(10, .heavy))
+            }
+            .foregroundColor(on ? .black : .white.opacity(0.9)).frame(width: 64, height: 28)
+            .background(Capsule().fill(on ? TUI.accent : Color.black.opacity(0.45)))
+            .overlay(Capsule().stroke(Color.white.opacity(on ? 0.8 : 0.35), lineWidth: 1))
+        }
+        .buttonStyle(TuiPress())
+    }
+
+    private func actionPill(_ icon: String, _ label: String, _ col: Color) -> some View {
+        HStack(spacing: 6) {
+            SF(icon, "circle.fill").font(.system(size: 13, weight: .bold))
+            Text(label).font(.jk(12, .heavy))
+        }
+        .foregroundColor(.black).padding(.horizontal, 14).frame(height: 40).background(Capsule().fill(col))
+        .overlay(Capsule().stroke(Color.white.opacity(0.6), lineWidth: 1))
     }
 
     private var fpHud: some View {
         TimelineView(.periodic(from: .now, by: 0.1)) { _ in
             let e = engine
-            let blue = Color(red: 0.25, green: 0.6, blue: 1.0)
-            let orange = Color(red: 0.96, green: 0.62, blue: 0.16)
             let allies = e.players.filter { $0.team == e.me.team }
             let foes = e.players.filter { $0.team != e.me.team }
             let t = Int(max(0, e.timer))
             let g = TGuns.get(e.me.gun)
-            let navy = Color(red: 0.09, green: 0.13, blue: 0.27)
+            let charm = TacSeason.cos(e.charm)
             GeometryReader { geo in
                 let W = geo.size.width, H = geo.size.height
                 ZStack(alignment: .topLeading) {
-                    // top-left: health + armor, then minimap (canvas) + gear
-                    VStack(alignment: .leading, spacing: 3) {
-                        statBar("plus", e.me.hp, e.me.hp < 35 ? .red : .white)
-                        statBar("shield.fill", e.me.armor, .white)
+                    // top-left: vitals card, then radar (canvas) and settings
+                    VStack(alignment: .leading, spacing: 4) {
+                        statBar("heart.fill", e.me.hp, e.me.hp < 35 ? TUI.red : .white)
+                        statBar("shield.fill", e.me.armor, TUI.blue)
                         if e.gameMode == 0 {
-                            Text("$\(e.me.money)").font(.system(size: 18, weight: .heavy, design: .rounded)).foregroundColor(Color(red: 0.55, green: 0.95, blue: 0.4)).padding(.leading, 24)
+                            HStack(spacing: 5) {
+                                SF("dollarsign.circle.fill").font(.system(size: 13)).foregroundColor(TUI.green)
+                                Text("\(e.me.money)").font(.system(size: 16, weight: .heavy, design: .rounded)).foregroundColor(TUI.green)
+                            }
+                            .padding(.leading, 1)
                         }
                     }
-                    .padding(.leading, 14).padding(.top, 2)
-                    .shadow(color: .black.opacity(0.6), radius: 3)
-                    VStack(spacing: 8) {
-                        Button { e.paused = true } label: { vbtn("gearshape.fill", 34) }
-                    }
-                    .position(x: 180, y: 84)
-                    Text(TMap.roomName(e.me.pos).uppercased()).font(.jk(11, .heavy)).foregroundColor(Color(red: 1, green: 0.93, blue: 0.7))
-                        .shadow(radius: 3).position(x: 84, y: 128 + 64 + 14)
+                    .padding(.horizontal, 10).padding(.vertical, 6).tuiGlass(12, fill: 0.4)
+                    .padding(.leading, 10).padding(.top, 2)
+                    Button { e.paused = true } label: { vbtn("gearshape.fill", 34) }
+                        .buttonStyle(TuiPress())
+                        .position(x: 180, y: 84)
+                    Text(TMap.roomName(e.me.pos).uppercased()).font(.jk(10, .heavy)).tracking(1).foregroundColor(.white.opacity(0.95))
+                        .padding(.horizontal, 10).frame(height: 20).background(Capsule().fill(Color.black.opacity(0.45)))
+                        .position(x: 84, y: 206)
 
                     // top-center: scoreboard
-                    VStack(spacing: 4) {
-                        HStack(spacing: 2) {
-                            teamGrid(allies, ally: true)
-                            VStack(spacing: 2) {
+                    VStack(spacing: 5) {
+                        HStack(spacing: 10) {
+                            teamPips(allies, ally: true)
+                            VStack(spacing: 1) {
                                 Text(String(format: "%02d:%02d", t / 60, t % 60))
-                                    .font(.system(size: 22, weight: .heavy, design: .monospaced))
-                                    .foregroundColor(e.planted ? .red : .white)
-                                    .frame(width: 84, height: 30).background(navy.opacity(0.92))
-                                HStack(spacing: 2) {
-                                    Text("\(e.scores[0])").foregroundColor(blue).frame(width: 41, height: 30).background(navy.opacity(0.92))
-                                    Text("\(e.rivalScore)").foregroundColor(orange).frame(width: 41, height: 30).background(navy.opacity(0.92))
+                                    .font(.system(size: 19, weight: .heavy, design: .monospaced))
+                                    .foregroundColor(e.planted ? TUI.red : .white)
+                                HStack(spacing: 8) {
+                                    Text("\(e.scores[0])").foregroundColor(TUI.blue)
+                                    Text("\(e.rivalScore)").foregroundColor(TUI.orange)
                                 }
-                                .font(.system(size: 24, weight: .heavy, design: .rounded))
+                                .font(.system(size: 20, weight: .heavy, design: .rounded))
                             }
-                            teamGrid(foes, ally: false)
+                            .frame(width: 84)
+                            teamPips(foes, ally: false)
                         }
-                        Text(e.objectiveText).font(.jk(11, .semibold)).foregroundColor(.white.opacity(0.9)).shadow(radius: 3)
+                        .padding(.horizontal, 12).padding(.vertical, 6).tuiGlass(18, fill: 0.5)
+                        Text(e.objectiveText).font(.jk(11, .semibold)).foregroundColor(.white.opacity(0.95))
+                            .padding(.horizontal, 12).frame(height: 22).background(Capsule().fill(Color.black.opacity(0.4)))
                         if e.gameMode == 5 {
-                            HStack(spacing: 4) {
+                            HStack(spacing: 5) {
                                 ForEach(0..<3, id: \.self) { i in
                                     let pr = e.cpProg[i]
-                                    Text(["A", "B", "C"][i]).font(.jk(12, .heavy)).foregroundColor(.white).frame(width: 28, height: 22)
-                                        .background(pr == 0 ? Color.gray.opacity(0.55) : (pr > 0 ? blue.opacity(0.35 + 0.65 * Double(pr)) : orange.opacity(0.35 + 0.65 * Double(-pr))))
+                                    Text(["A", "B", "C"][i]).font(.jk(12, .heavy)).foregroundColor(.white).frame(width: 30, height: 24)
+                                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(pr == 0 ? Color.gray.opacity(0.55) : (pr > 0 ? TUI.blue.opacity(0.35 + 0.65 * Double(pr)) : TUI.orange.opacity(0.35 + 0.65 * Double(-pr)))))
                                 }
                             }
                         }
                         if e.bannerT > 0 {
-                            Text(e.banner).font(.jk(24, .heavy)).foregroundColor(.white).shadow(radius: 6).multilineTextAlignment(.center)
-                                .padding(.top, 20).opacity(Double(min(1, e.bannerT)))
+                            Text(e.banner).font(.jk(24, .heavy)).foregroundColor(.white).shadow(color: .black.opacity(0.6), radius: 6).multilineTextAlignment(.center)
+                                .padding(.top, 16).opacity(Double(min(1, e.bannerT)))
                         }
                         if e.plantProg > 0 || e.defuseProg > 0 {
                             let pr = e.plantProg > 0 ? e.plantProg / 3 : e.defuseProg / 4
-                            VStack(spacing: 3) {
-                                Text(e.plantProg > 0 ? "PLANTING" : "DEFUSING").font(.jk(11, .heavy)).foregroundColor(.white)
-                                Capsule().fill(Color.white.opacity(0.25)).frame(width: 150, height: 7)
-                                    .overlay(alignment: .leading) { Capsule().fill(Color.yellow).frame(width: 150 * min(1, pr), height: 7) }
+                            VStack(spacing: 4) {
+                                HStack(spacing: 5) {
+                                    SF(e.plantProg > 0 ? "timer" : "wrench.and.screwdriver.fill", "circle.fill").font(.system(size: 11, weight: .bold))
+                                    Text(e.plantProg > 0 ? "PLANTING" : "DEFUSING").font(.jk(11, .heavy))
+                                }
+                                .foregroundColor(.white)
+                                Capsule().fill(Color.white.opacity(0.22)).frame(width: 160, height: 7)
+                                    .overlay(alignment: .leading) { Capsule().fill(TUI.gold).frame(width: 160 * min(1, pr), height: 7) }
                             }
-                            .padding(.top, 30)
+                            .padding(.top, 20)
                         }
                     }
                     .frame(width: W).padding(.top, 2)
 
-                    // top-right: weapon panel + feed bar
-                    VStack(alignment: .trailing, spacing: 0) {
-                        HStack(spacing: 6) {
-                            Text(TacSeason.cos(e.charm).emoji).font(.system(size: 18))
-                            Image(uiImage: GunSprites.icon(TWeapons.rig(e.me.gun))).renderingMode(.template).resizable().scaledToFit()
-                                .foregroundColor(.white).frame(width: 120, height: 38).shadow(color: .black.opacity(0.5), radius: 2)
-                        }
-                        HStack {
-                            Button { e.wantSwap = true } label: {
-                                Image(systemName: "arrow.2.squarepath").font(.system(size: 15, weight: .bold)).foregroundColor(.white).frame(width: 34, height: 24)
+                    // top-right: weapon card + feed
+                    VStack(alignment: .trailing, spacing: 6) {
+                        VStack(alignment: .trailing, spacing: 5) {
+                            HStack(spacing: 8) {
+                                if !charm.sym.isEmpty { SF(charm.sym, "sparkles").font(.system(size: 15, weight: .bold)).foregroundColor(TUI.gold) }
+                                Image(uiImage: GunSprites.icon(TWeapons.rig(e.me.gun))).renderingMode(.template).resizable().scaledToFit()
+                                    .foregroundColor(.white).frame(width: 112, height: 34)
                             }
-                            Spacer()
-                            HStack(spacing: 3) {
-                                Image(systemName: "star.fill").font(.system(size: 11)).foregroundColor(.yellow)
-                                Text("\(e.me.kills)").font(.jk(13, .heavy)).foregroundColor(.white)
-                            }
-                        }
-                        .frame(width: 190).padding(.top, 2)
-                        Rectangle().fill(Color.white.opacity(0.25)).frame(width: 200, height: 1).padding(.vertical, 4)
-                        HStack(alignment: .lastTextBaseline, spacing: 4) {
-                            Text(e.me.reloadT > 0 ? "RELOAD" : "\(e.me.mag)").font(.system(size: 22, weight: .medium, design: .rounded)).foregroundColor(e.me.mag == 0 ? .red : .white)
-                            Text("/ \(TWeapons.isPistol(e.me.gun) ? "\u{221E}" : "\(e.me.spare * g.mag)")").font(.jk(13, .bold)).foregroundColor(.white.opacity(0.8))
-                            Text("////").font(.system(size: 14, weight: .black).italic()).foregroundColor(.white)
-                        }
-                        VStack(alignment: .trailing, spacing: 0) {
-                            ForEach(Array(e.feed.suffix(1).enumerated()), id: \.offset) { _, f in
-                                HStack(spacing: 10) {
-                                    Text(f.k.split(separator: " ").first.map(String.init) ?? f.k).font(.jk(13, .medium)).foregroundColor(f.kTeam == e.me.team ? blue : orange)
-                                    Image(uiImage: GunSprites.icon(TWeapons.rig(f.gun))).renderingMode(.template).resizable().scaledToFit()
-                                        .foregroundColor(.white).frame(width: 40, height: 16)
-                                    if f.head { Text("\u{2620}\u{FE0E}").font(.system(size: 14, weight: .black)).foregroundColor(.white) }
-                                    Text(f.v.split(separator: " ").first.map(String.init) ?? f.v).font(.jk(13, .medium)).foregroundColor(f.kTeam == e.me.team ? orange : blue)
+                            HStack(alignment: .lastTextBaseline, spacing: 5) {
+                                if e.me.reloadT > 0 {
+                                    Text("RELOADING").font(.jk(15, .heavy)).foregroundColor(TUI.gold)
+                                } else {
+                                    Text("\(e.me.mag)").font(.system(size: 30, weight: .heavy, design: .rounded)).foregroundColor(e.me.mag == 0 ? TUI.red : .white)
                                 }
-                                .padding(.horizontal, 10).frame(height: 24)
+                                Text("/").font(.jk(14, .bold)).foregroundColor(.white.opacity(0.5))
+                                if TWeapons.isPistol(e.me.gun) {
+                                    SF("infinity", "circle.fill").font(.system(size: 13, weight: .bold)).foregroundColor(.white.opacity(0.8))
+                                } else {
+                                    Text("\(e.me.spare * g.mag)").font(.jk(14, .bold)).foregroundColor(.white.opacity(0.8))
+                                }
                             }
+                            Capsule().fill(Color.white.opacity(0.18)).frame(width: 170, height: 4)
+                                .overlay(alignment: .leading) {
+                                    Capsule().fill(e.me.mag <= max(1, g.mag / 4) ? TUI.red : TUI.accent)
+                                        .frame(width: 170 * max(0, min(1, CGFloat(e.me.mag) / CGFloat(max(1, g.mag)))), height: 4)
+                                }
+                            HStack {
+                                Button { e.wantSwap = true } label: {
+                                    SF("arrow.triangle.swap", "arrow.2.squarepath").font(.system(size: 13, weight: .bold)).foregroundColor(.white)
+                                        .frame(width: 34, height: 24).background(Capsule().fill(Color.white.opacity(0.14)))
+                                }
+                                .buttonStyle(TuiPress())
+                                Spacer()
+                                HStack(spacing: 4) {
+                                    SF("scope", "circle.fill").font(.system(size: 11, weight: .bold)).foregroundColor(TUI.gold)
+                                    Text("\(e.me.kills)").font(.jk(13, .heavy)).foregroundColor(.white)
+                                }
+                            }
+                            .frame(width: 170)
                         }
-                        .frame(minWidth: 200, alignment: .trailing)
-                        .background(Color.black.opacity(e.feed.isEmpty ? 0 : 0.55))
-                        .padding(.top, 4)
+                        .padding(10).tuiGlass(14, fill: 0.42)
+                        if let f = e.feed.last {
+                            HStack(spacing: 8) {
+                                Text(f.k.split(separator: " ").first.map(String.init) ?? f.k).font(.jk(12, .bold)).foregroundColor(f.kTeam == e.me.team ? TUI.blue : TUI.orange)
+                                Image(uiImage: GunSprites.icon(TWeapons.rig(f.gun))).renderingMode(.template).resizable().scaledToFit()
+                                    .foregroundColor(.white).frame(width: 36, height: 14)
+                                if f.head { SF("scope", "circle.fill").font(.system(size: 11, weight: .black)).foregroundColor(TUI.red) }
+                                Text(f.v.split(separator: " ").first.map(String.init) ?? f.v).font(.jk(12, .bold)).foregroundColor(f.kTeam == e.me.team ? TUI.orange : TUI.blue)
+                            }
+                            .padding(.horizontal, 10).frame(height: 24).tuiGlass(12, fill: 0.5)
+                        }
                     }
-                    .padding(.trailing, 20).padding(.top, 4)
+                    .padding(.trailing, 16).padding(.top, 4)
                     .frame(width: W, alignment: .trailing)
 
                     if e.me.alive {
-                        // right cluster: grenades + actions (clear of the feed and the fire button)
                         Button { e.wantSmoke = true } label: { nadeBubble("smoke.fill", e.me.smokes) }
-                            .position(x: W - 36, y: 205)
+                            .buttonStyle(TuiPress()).position(x: W - 36, y: 205)
                         Button { e.wantNade = true } label: { nadeBubble("circle.hexagongrid.fill", e.me.nades) }
-                            .position(x: W - 96, y: 232)
-                        Button { e.wantFlash = true } label: { nadeBubble("bolt.fill", e.me.flashes) }
-                            .position(x: W - 36, y: 257)
+                            .buttonStyle(TuiPress()).position(x: W - 96, y: 232)
+                        Button { e.wantFlash = true } label: { nadeBubble("sun.max.fill", e.me.flashes) }
+                            .buttonStyle(TuiPress()).position(x: W - 36, y: 257)
                         Button { e.scoped.toggle() } label: { vbtn("scope", 44, on: e.scoped) }
-                            .position(x: W - 96, y: 288)
+                            .buttonStyle(TuiPress()).position(x: W - 96, y: 288)
                         Button { e.toggleCover() } label: { vbtn("figure.stand", 44, on: e.me.crouch) }
-                            .position(x: W - 36, y: 309)
-                        Button { e.jumpT = max(e.jumpT, 0.55) } label: { vbtn("figure.jumprope", 44) }
-                            .position(x: W - 36, y: 361)
+                            .buttonStyle(TuiPress()).position(x: W - 36, y: 309)
+                        Button { e.jumpT = max(e.jumpT, 0.55) } label: { vbtn("arrow.up", 44) }
+                            .buttonStyle(TuiPress()).position(x: W - 36, y: 361)
                         Button { e.wantReload = true } label: { vbtn("arrow.triangle.2.circlepath", 48) }
-                            .position(x: W - 250, y: 352)
+                            .buttonStyle(TuiPress()).position(x: W - 250, y: 352)
+                        togglePill("target", "AIM", e.autoAim) { e.autoAim.toggle() }
+                            .position(x: W - 250, y: 302)
+                        togglePill("repeat", "AUTO", e.autoFire) { e.autoFire.toggle() }
+                            .position(x: W - 250, y: 332)
                     } else {
                         Button { e.fast.toggle() } label: {
-                            Text(e.fast ? "Normal speed" : "Skip ahead").font(.jk(13, .bold)).foregroundColor(.white)
-                                .padding(.horizontal, 14).frame(height: 38).background(Color.black.opacity(0.55)).clipShape(Capsule())
+                            HStack(spacing: 6) {
+                                SF(e.fast ? "play.fill" : "forward.fill", "circle.fill").font(.system(size: 12, weight: .bold))
+                                Text(e.fast ? "Normal speed" : "Skip ahead").font(.jk(13, .bold))
+                            }
+                            .foregroundColor(.white).padding(.horizontal, 14).frame(height: 38).tuiGlass(19, fill: 0.55)
                         }
+                        .buttonStyle(TuiPress())
                         .position(x: W - 110, y: H - 40)
                     }
 
                     if e.gameMode == 0 && e.buyT > 0 && e.me.alive {
                         Button { e.buyOpen.toggle() } label: {
-                            Text("BUY  \(Int(e.buyT))").font(.jk(13, .heavy)).foregroundColor(.black).padding(.horizontal, 14).frame(height: 36)
-                                .background(Color(red: 0.55, green: 0.95, blue: 0.4)).clipShape(Capsule())
+                            HStack(spacing: 6) {
+                                SF("cart.fill").font(.system(size: 13, weight: .bold))
+                                Text("BUY  \(Int(e.buyT))").font(.jk(13, .heavy))
+                            }
+                            .foregroundColor(.black).padding(.horizontal, 14).frame(height: 38).background(Capsule().fill(TUI.green))
+                            .overlay(Capsule().stroke(Color.white.opacity(0.6), lineWidth: 1))
                         }
+                        .buttonStyle(TuiPress())
                         .position(x: 70, y: H * 0.55)
                     }
                     if e.fxT > 0 && e.fxId != "fx_none" {
-                        ZStack {
-                            ForEach(0..<8, id: \.self) { i in
-                                let a = Double(i) * 0.785
-                                let rr = Double(150 * (1 - e.fxT) + 24)
-                                Text(TacSeason.cos(e.fxId).emoji).font(.system(size: 30)).offset(x: CGFloat(cos(a) * rr), y: CGFloat(sin(a) * rr)).opacity(Double(e.fxT))
-                            }
-                        }
-                        .position(x: W / 2, y: H / 2)
-                        .allowsHitTesting(false)
+                        TacGif(name: e.fxId).id(e.fxSerial)
+                            .frame(width: 240, height: 240)
+                            .position(x: W / 2, y: H * 0.42)
+                            .allowsHitTesting(false)
                     }
                     // bottom-center: contextual
                     HStack(spacing: 10) {
                         if let di = e.nearestDoor() {
+                            let closing = TMap.doorWant[di] || TMap.doorOpen[di] > 0.5
                             Button { e.toggleDoor() } label: {
-                                Text(TMap.doorWant[di] || TMap.doorOpen[di] > 0.5 ? "CLOSE DOOR" : "OPEN DOOR").font(.jk(12, .heavy)).foregroundColor(.black)
-                                    .padding(.horizontal, 12).frame(height: 40).background(Color.yellow).clipShape(Capsule())
+                                actionPill(closing ? "door.left.hand.closed" : "door.left.hand.open", closing ? "CLOSE DOOR" : "OPEN DOOR", TUI.gold)
                             }
+                            .buttonStyle(TuiPress())
                         }
                         if e.meInSite || e.meNearBomb {
-                            Text(e.meInSite ? "HOLD PLANT" : "HOLD DEFUSE").font(.jk(12, .heavy)).foregroundColor(.black)
-                                .padding(.horizontal, 14).frame(height: 44).background(Color.yellow).clipShape(Capsule())
+                            actionPill(e.meInSite ? "timer" : "wrench.and.screwdriver.fill", e.meInSite ? "HOLD PLANT" : "HOLD DEFUSE", TUI.gold)
                                 .gesture(DragGesture(minimumDistance: 0).onChanged { _ in e.actHeld = true }.onEnded { _ in e.actHeld = false })
                         }
                     }
@@ -2140,39 +2207,114 @@ struct TacticalPlay: View {
         }
     }
 
+    // MARK: pause + results
+
+    private var stateLayer: some View {
+        TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+            ZStack {
+                if engine.paused && !engine.over { pauseView }
+                if engine.over { overView }
+            }
+        }
+    }
+
+    private func settingRow(_ icon: String, _ title: String, _ sub: String, _ on: Bool, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            HStack(spacing: 12) {
+                SF(icon, "circle.fill").font(.system(size: 14, weight: .bold)).foregroundColor(on ? .black : .white.opacity(0.8))
+                    .frame(width: 34, height: 34).background(Circle().fill(on ? TUI.accent : Color.white.opacity(0.12)))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(.jk(14, .heavy)).foregroundColor(.white)
+                    Text(sub).font(.jk(10, .semibold)).foregroundColor(.white.opacity(0.55))
+                }
+                Spacer()
+                ZStack(alignment: on ? .trailing : .leading) {
+                    Capsule().fill(on ? TUI.accent : Color.white.opacity(0.2)).frame(width: 46, height: 26)
+                    Circle().fill(Color.white).frame(width: 20, height: 20).padding(.horizontal, 3)
+                }
+            }
+            .padding(.horizontal, 12).frame(width: 340, height: 56).tuiGlass(14, fill: 0.35)
+        }
+        .buttonStyle(TuiPress())
+    }
 
     private var pauseView: some View {
         ZStack {
-            Color.black.opacity(0.7).ignoresSafeArea()
-            VStack(spacing: 14) {
-                Text("PAUSED").font(.jk(30, .heavy))
+            Color.black.opacity(0.65).ignoresSafeArea()
+            VStack(spacing: 10) {
+                HStack(spacing: 8) {
+                    SF("pause.circle.fill").font(.system(size: 22)).foregroundColor(TUI.accent)
+                    Text("PAUSED").font(.jk(24, .heavy)).tracking(2).foregroundColor(.white)
+                }
+                .padding(.bottom, 4)
+                settingRow("target", "Aim assist", "Turns toward enemies in view", engine.autoAim) { engine.autoAim.toggle() }
+                settingRow("repeat", "Auto fire", "Shoots when your crosshair is on target", engine.autoFire) { engine.autoFire.toggle() }
                 Button { engine.paused = false; engine.last = nil } label: {
-                    Text("Resume").font(.jk(18, .bold)).foregroundColor(.black).frame(width: 220, height: 50).background(Color.white).clipShape(Capsule())
+                    HStack(spacing: 8) {
+                        SF("play.fill").font(.system(size: 14, weight: .bold))
+                        Text("RESUME").font(.jk(16, .heavy))
+                    }
+                    .foregroundColor(.black).frame(width: 340, height: 50).background(Capsule().fill(TUI.accent))
                 }
+                .buttonStyle(TuiPress())
                 Button { engine.scores = [0, engine.target]; engine.over = true; engine.won = false; engine.paused = false } label: {
-                    Text("Forfeit match").font(.jk(16, .bold)).foregroundColor(.red).frame(width: 220, height: 46).background(Color.red.opacity(0.15)).clipShape(Capsule())
+                    HStack(spacing: 8) {
+                        SF("flag.fill").font(.system(size: 13, weight: .bold))
+                        Text("FORFEIT MATCH").font(.jk(13, .heavy))
+                    }
+                    .foregroundColor(TUI.red).frame(width: 340, height: 42).background(Capsule().fill(TUI.red.opacity(0.14)))
+                    .overlay(Capsule().stroke(TUI.red.opacity(0.4), lineWidth: 1))
                 }
+                .buttonStyle(TuiPress())
             }
+            .padding(20).tuiGlass(22, fill: 0.7)
         }
+    }
+
+    private func resultTile(_ icon: String, _ value: String, _ label: String, _ col: Color) -> some View {
+        VStack(spacing: 4) {
+            SF(icon, "circle.fill").font(.system(size: 18, weight: .bold)).foregroundColor(col)
+            Text(value).font(.system(size: 22, weight: .heavy, design: .rounded)).foregroundColor(.white)
+            Text(label).font(.jk(9, .heavy)).tracking(1).foregroundColor(.white.opacity(0.55))
+        }
+        .frame(width: 108, height: 78).tuiGlass(14, fill: 0.35)
     }
 
     private var overView: some View {
         let e = engine
         let gems = (e.won ? 25 : 8) + e.kills * 2 + e.scores[0] * 3
+        let xp = 40 + e.kills * 10 + (e.won ? 60 : 0)
+        let col = e.won ? TUI.green : TUI.red
         return ZStack {
-            Color.black.opacity(0.82).ignoresSafeArea()
-            VStack(spacing: 14) {
-                Text(e.won ? "VICTORY" : "DEFEAT").font(.jk(40, .heavy)).foregroundColor(e.won ? Color(red: 0.4, green: 0.95, blue: 0.5) : .red)
-                Text("\(e.scores[0])  :  \(e.rivalScore)").font(.jk(28, .heavy))
-                Text("\(e.kills) kills   \(gems) gems   +\(40 + e.kills * 10 + (e.won ? 60 : 0)) season XP").font(.jk(17, .semibold))
+            Color.black.opacity(0.78).ignoresSafeArea()
+            VStack(spacing: 12) {
+                SF(e.won ? "trophy.fill" : "xmark.octagon.fill", "star.fill").font(.system(size: 34)).foregroundColor(col)
+                Text(e.won ? "VICTORY" : "DEFEAT").font(.jk(38, .heavy)).tracking(3).foregroundColor(col)
+                HStack(spacing: 14) {
+                    Text("\(e.scores[0])").foregroundColor(TUI.blue)
+                    Text(":").foregroundColor(.white.opacity(0.5))
+                    Text("\(e.rivalScore)").foregroundColor(TUI.orange)
+                }
+                .font(.system(size: 30, weight: .heavy, design: .rounded))
+                HStack(spacing: 10) {
+                    resultTile("scope", "\(e.kills)", "KILLS", TUI.gold)
+                    resultTile("diamond.fill", "+\(gems)", "GEMS", TUI.accent)
+                    resultTile("star.fill", "+\(xp)", "SEASON XP", TUI.blue)
+                }
                 Button {
                     guard !collected else { return }
                     collected = true
                     game.tacticalFinish(won: e.won, kills: e.kills, gems: gems)
                     dismiss()
                 } label: {
-                    Text("Collect and exit").font(.jk(18, .bold)).foregroundColor(.black).frame(width: 240, height: 52).background(Color.white).clipShape(Capsule())
+                    HStack(spacing: 8) {
+                        SF("checkmark.circle.fill").font(.system(size: 15, weight: .bold))
+                        Text("COLLECT AND EXIT").font(.jk(15, .heavy))
+                    }
+                    .foregroundColor(.black).frame(width: 300, height: 52).background(Capsule().fill(TUI.accent))
                 }
+                .buttonStyle(TuiPress())
+                .padding(.top, 4)
             }
         }
     }

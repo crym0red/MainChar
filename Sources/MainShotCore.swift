@@ -155,6 +155,8 @@ enum T {
     static let bg = Color(red: 0.10, green: 0.10, blue: 0.11)
     static let card = Color(red: 0.15, green: 0.15, blue: 0.17)
     static let sub = Color.white.opacity(0.6)
+    static let blue = Color(red: 0.27, green: 0.60, blue: 0.93)
+    static let card2 = Color(red: 0.20, green: 0.20, blue: 0.22)
 }
 
 enum GunSprites {

@@ -18,7 +18,7 @@ struct TacCos: Identifiable {
     let id: String
     let kind: String
     let label: String
-    let emoji: String
+    let sym: String
     let rgb: (CGFloat, CGFloat, CGFloat)
 }
 
@@ -28,27 +28,27 @@ enum TacSeason {
     static let xpPerTier = 120
 
     static let catalog: [TacCos] = [
-        TacCos(id: "fx_none", kind: "fx", label: "None", emoji: "", rgb: (0, 0, 0)),
-        TacCos(id: "fx_gold", kind: "fx", label: "Gold Rush", emoji: "\u{1FA99}", rgb: (0, 0, 0)),
-        TacCos(id: "fx_bolt", kind: "fx", label: "Lightning", emoji: "\u{26A1}\u{FE0F}", rgb: (0, 0, 0)),
-        TacCos(id: "fx_skull", kind: "fx", label: "Reaper", emoji: "\u{1F480}", rgb: (0, 0, 0)),
-        TacCos(id: "fx_fire", kind: "fx", label: "Inferno", emoji: "\u{1F525}", rgb: (0, 0, 0)),
-        TacCos(id: "fx_heart", kind: "fx", label: "Heartbreak", emoji: "\u{1F496}", rgb: (0, 0, 0)),
-        TacCos(id: "fx_star", kind: "fx", label: "Supernova", emoji: "\u{1F320}", rgb: (0, 0, 0)),
-        TacCos(id: "charm_none", kind: "charm", label: "None", emoji: "", rgb: (0, 0, 0)),
-        TacCos(id: "charm_clover", kind: "charm", label: "Lucky Clover", emoji: "\u{1F340}", rgb: (0, 0, 0)),
-        TacCos(id: "charm_pumpkin", kind: "charm", label: "Jack", emoji: "\u{1F383}", rgb: (0, 0, 0)),
-        TacCos(id: "charm_crown", kind: "charm", label: "Crown", emoji: "\u{1F451}", rgb: (0, 0, 0)),
-        TacCos(id: "charm_rocket", kind: "charm", label: "Rocket", emoji: "\u{1F680}", rgb: (0, 0, 0)),
-        TacCos(id: "charm_bunny", kind: "charm", label: "Bunny", emoji: "\u{1F430}", rgb: (0, 0, 0)),
-        TacCos(id: "gl_black", kind: "gl", label: "Tactical Black", emoji: "", rgb: (0.165, 0.153, 0.137)),
-        TacCos(id: "gl_tan", kind: "gl", label: "Desert Tan", emoji: "", rgb: (0.62, 0.5, 0.33)),
-        TacCos(id: "gl_red", kind: "gl", label: "Crimson", emoji: "", rgb: (0.6, 0.1, 0.1)),
-        TacCos(id: "gl_camo", kind: "gl", label: "Woodland", emoji: "", rgb: (0.25, 0.33, 0.17)),
-        TacCos(id: "gl_blue", kind: "gl", label: "Navy", emoji: "", rgb: (0.12, 0.2, 0.45)),
-        TacCos(id: "map_desert", kind: "map", label: "Desert Dust", emoji: "", rgb: (0, 0, 0)),
-        TacCos(id: "map_station", kind: "map", label: "Station (Night)", emoji: "", rgb: (0, 0, 0)),
-        TacCos(id: "map_grace", kind: "map", label: "Fallen Grace", emoji: "", rgb: (0, 0, 0))
+        TacCos(id: "fx_none", kind: "fx", label: "None", sym: "", rgb: (0, 0, 0)),
+        TacCos(id: "fx_gold", kind: "fx", label: "Gold Rush", sym: "dollarsign.circle.fill", rgb: (0, 0, 0)),
+        TacCos(id: "fx_bolt", kind: "fx", label: "Lightning", sym: "bolt.fill", rgb: (0, 0, 0)),
+        TacCos(id: "fx_skull", kind: "fx", label: "Reaper", sym: "skull.fill", rgb: (0, 0, 0)),
+        TacCos(id: "fx_fire", kind: "fx", label: "Inferno", sym: "flame.fill", rgb: (0, 0, 0)),
+        TacCos(id: "fx_heart", kind: "fx", label: "Heartbreak", sym: "heart.fill", rgb: (0, 0, 0)),
+        TacCos(id: "fx_star", kind: "fx", label: "Supernova", sym: "sparkles", rgb: (0, 0, 0)),
+        TacCos(id: "charm_none", kind: "charm", label: "None", sym: "", rgb: (0, 0, 0)),
+        TacCos(id: "charm_clover", kind: "charm", label: "Lucky Clover", sym: "leaf.fill", rgb: (0, 0, 0)),
+        TacCos(id: "charm_pumpkin", kind: "charm", label: "Jack", sym: "theatermasks.fill", rgb: (0, 0, 0)),
+        TacCos(id: "charm_crown", kind: "charm", label: "Crown", sym: "crown.fill", rgb: (0, 0, 0)),
+        TacCos(id: "charm_rocket", kind: "charm", label: "Rocket", sym: "paperplane.fill", rgb: (0, 0, 0)),
+        TacCos(id: "charm_bunny", kind: "charm", label: "Bunny", sym: "hare.fill", rgb: (0, 0, 0)),
+        TacCos(id: "gl_black", kind: "gl", label: "Tactical Black", sym: "", rgb: (0.165, 0.153, 0.137)),
+        TacCos(id: "gl_tan", kind: "gl", label: "Desert Tan", sym: "", rgb: (0.62, 0.5, 0.33)),
+        TacCos(id: "gl_red", kind: "gl", label: "Crimson", sym: "", rgb: (0.6, 0.1, 0.1)),
+        TacCos(id: "gl_camo", kind: "gl", label: "Woodland", sym: "", rgb: (0.25, 0.33, 0.17)),
+        TacCos(id: "gl_blue", kind: "gl", label: "Navy", sym: "", rgb: (0.12, 0.2, 0.45)),
+        TacCos(id: "map_desert", kind: "map", label: "Desert Dust", sym: "", rgb: (0, 0, 0)),
+        TacCos(id: "map_station", kind: "map", label: "Station (Night)", sym: "", rgb: (0, 0, 0)),
+        TacCos(id: "map_grace", kind: "map", label: "Fallen Grace", sym: "", rgb: (0, 0, 0))
     ]
     static func cos(_ id: String) -> TacCos { catalog.first { $0.id == id } ?? catalog[0] }
     static let baseOwned = ["fx_none", "charm_none", "gl_black", "map_desert"]
@@ -75,12 +75,6 @@ enum TacSeason {
         return "LEGEND"
     }
 
-    static let factions: [(String, (CGFloat, CGFloat, CGFloat))] = [
-        ("SWAT", (0.16, 0.2, 0.3)), ("GIGN", (0.12, 0.2, 0.42)), ("SPETSNAZ", (0.3, 0.34, 0.2)), ("SEAL", (0.2, 0.3, 0.4))
-    ]
-    static let enemyFactions: [(String, (CGFloat, CGFloat, CGFloat))] = [
-        ("ANARCHIST", (0.5, 0.15, 0.12)), ("GANGSTER", (0.35, 0.22, 0.4)), ("BALKANS", (0.45, 0.38, 0.22))
-    ]
     static let themes = ["map_desert", "map_station", "map_grace"]
 }
 
@@ -98,37 +92,71 @@ extension Game {
     func tacOwns(_ id: String) -> Bool { TacSeason.baseOwned.contains(id) || sx.owned.contains(id) }
 }
 
+struct CosIcon: View {
+    let c: TacCos
+    var size: CGFloat = 22
+    var body: some View {
+        if c.kind == "gl" {
+            Circle().fill(Color(red: c.rgb.0, green: c.rgb.1, blue: c.rgb.2)).frame(width: size, height: size)
+                .overlay(Circle().stroke(Color.white.opacity(0.35), lineWidth: 1))
+        } else if c.kind == "map" {
+            SF("map.fill").font(.system(size: size, weight: .semibold)).foregroundColor(.white)
+        } else {
+            SF(c.sym.isEmpty ? "nosign" : c.sym, "sparkles").font(.system(size: size, weight: .semibold))
+                .foregroundColor(c.sym.isEmpty ? .white.opacity(0.4) : TUI.gold)
+        }
+    }
+}
+
 struct TacSeasonView: View {
     @EnvironmentObject var game: Game
     @Environment(\.dismiss) private var dismiss
+    var startTab: Int = 0
     @State private var tab = 0
     @State private var drawMsg = ""
 
-    private let lime = Color(red: 0.8, green: 0.95, blue: 0.2)
+    private let lime = TUI.accent
 
     var body: some View {
         let x = game.sx
         let tier = TacSeason.tier(x.xp)
         let rating = game.s.ex.tac?.rating ?? 1000
         ZStack {
-            Color(red: 0.05, green: 0.06, blue: 0.1).ignoresSafeArea()
+            LinearGradient(colors: [Color(red: 0.07, green: 0.09, blue: 0.14), Color(red: 0.03, green: 0.04, blue: 0.07)], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
             VStack(spacing: 10) {
-                HStack {
-                    Button { dismiss() } label: { Image(systemName: "chevron.left").font(.system(size: 18, weight: .bold)).foregroundColor(.white) }
-                    VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 12) {
+                    Button { dismiss() } label: {
+                        SF("chevron.left").font(.system(size: 16, weight: .bold)).foregroundColor(.white)
+                            .frame(width: 36, height: 36).tuiGlass(18, fill: 0.4)
+                    }
+                    .buttonStyle(TuiPress())
+                    VStack(alignment: .leading, spacing: 1) {
                         Text("SEASON  \(TacSeason.name)").font(.jk(18, .heavy)).foregroundColor(.white)
-                        Text("Tier \(tier)/\(TacSeason.tiers)   \(TacSeason.league(rating))  \(rating)").font(.jk(12, .semibold)).foregroundColor(lime)
+                        HStack(spacing: 6) {
+                            Text("TIER \(tier)/\(TacSeason.tiers)").font(.jk(11, .heavy)).foregroundColor(lime)
+                            Text("\(TacSeason.league(rating))  \(rating)").font(.jk(11, .semibold)).foregroundColor(.white.opacity(0.65))
+                        }
                     }
                     Spacer()
-                    Text("\(game.s.ex.gems) gems").font(.jk(14, .heavy)).foregroundColor(.yellow)
+                    HStack(spacing: 6) {
+                        SF("diamond.fill").font(.system(size: 13)).foregroundColor(TUI.gold)
+                        Text("\(game.s.ex.gems)").font(.jk(14, .heavy)).foregroundColor(.white)
+                    }
+                    .padding(.horizontal, 12).frame(height: 34).tuiGlass(17, fill: 0.4)
                 }
                 .padding(.horizontal, 16).padding(.top, 8)
-                HStack(spacing: 0) {
-                    ForEach(Array(["BATTLE PASS", "LOCKER", "LUCKY DRAW"].enumerated()), id: \.offset) { i, n in
+                HStack(spacing: 6) {
+                    ForEach(Array([("BATTLE PASS", "rosette"), ("LOCKER", "tshirt.fill"), ("LUCKY DRAW", "gift.fill")].enumerated()), id: \.offset) { i, n in
                         Button { tab = i } label: {
-                            Text(n).font(.jk(12, .heavy)).foregroundColor(tab == i ? .black : .white.opacity(0.8))
-                                .frame(maxWidth: .infinity).frame(height: 34).background(tab == i ? lime : Color.white.opacity(0.08))
+                            HStack(spacing: 6) {
+                                SF(n.1, "star.fill").font(.system(size: 12, weight: .bold))
+                                Text(n.0).font(.jk(12, .heavy))
+                            }
+                            .foregroundColor(tab == i ? .black : .white.opacity(0.8))
+                            .frame(maxWidth: .infinity).frame(height: 34)
+                            .background(Capsule().fill(tab == i ? lime : Color.white.opacity(0.08)))
                         }
+                        .buttonStyle(TuiPress())
                     }
                 }
                 .padding(.horizontal, 16)
@@ -137,17 +165,13 @@ struct TacSeasonView: View {
             }
         }
         .statusBarHidden(true)
-    }
-
-    private func rewardLabel(_ r: TacSeason.Reward) -> String {
-        if let c = r.cos { let k = TacSeason.cos(c); return k.emoji.isEmpty ? k.label : k.emoji }
-        return "\(r.gems)"
+        .onAppear { tab = startTab }
     }
 
     private func passTab(_ x: TacSeasonData, _ tier: Int) -> some View {
         VStack(spacing: 8) {
             let into = x.xp - tier * TacSeason.xpPerTier
-            HStack {
+            HStack(spacing: 10) {
                 Capsule().fill(Color.white.opacity(0.15)).frame(height: 8)
                     .overlay(alignment: .leading) {
                         GeometryReader { g in Capsule().fill(lime).frame(width: g.size.width * CGFloat(tier >= TacSeason.tiers ? 1 : Double(into) / Double(TacSeason.xpPerTier))) }
@@ -160,10 +184,21 @@ struct TacSeasonView: View {
                             game.updateSX { $0.premium = true }
                         }
                     } label: {
-                        Text("PREMIUM 300").font(.jk(11, .heavy)).foregroundColor(.black).padding(.horizontal, 10).frame(height: 26).background(Color.yellow).clipShape(Capsule())
+                        HStack(spacing: 5) {
+                            SF("crown.fill", "star.fill").font(.system(size: 11, weight: .bold))
+                            Text("PREMIUM").font(.jk(11, .heavy))
+                            SF("diamond.fill").font(.system(size: 9))
+                            Text("300").font(.jk(11, .heavy))
+                        }
+                        .foregroundColor(.black).padding(.horizontal, 12).frame(height: 28).background(Capsule().fill(TUI.gold))
                     }
+                    .buttonStyle(TuiPress())
                 } else {
-                    Text("PREMIUM").font(.jk(11, .heavy)).foregroundColor(.yellow)
+                    HStack(spacing: 5) {
+                        SF("crown.fill", "star.fill").font(.system(size: 11, weight: .bold))
+                        Text("PREMIUM").font(.jk(11, .heavy))
+                    }
+                    .foregroundColor(TUI.gold)
                 }
             }
             .padding(.horizontal, 16)
@@ -173,8 +208,8 @@ struct TacSeasonView: View {
                         let reached = tier >= t
                         VStack(spacing: 6) {
                             Text("\(t)").font(.jk(12, .heavy)).foregroundColor(reached ? lime : .white.opacity(0.5))
-                            cell(TacSeason.reward(t, premium: true), locked: !x.premium, got: x.claimedP.contains(t), can: reached && x.premium && !x.claimedP.contains(t)) { claim(t, true) }
-                            cell(TacSeason.reward(t, premium: false), locked: false, got: x.claimed.contains(t), can: reached && !x.claimed.contains(t)) { claim(t, false) }
+                            cell(TacSeason.reward(t, premium: true), locked: !x.premium, got: x.claimedP.contains(t), can: reached && x.premium && !x.claimedP.contains(t), prem: true) { claim(t, true) }
+                            cell(TacSeason.reward(t, premium: false), locked: false, got: x.claimed.contains(t), can: reached && !x.claimed.contains(t), prem: false) { claim(t, false) }
                         }
                         .frame(width: 62)
                     }
@@ -185,19 +220,30 @@ struct TacSeasonView: View {
         }
     }
 
-    private func cell(_ r: TacSeason.Reward, locked: Bool, got: Bool, can: Bool, _ act: @escaping () -> Void) -> some View {
+    private func cell(_ r: TacSeason.Reward, locked: Bool, got: Bool, can: Bool, prem: Bool, _ act: @escaping () -> Void) -> some View {
         Button(action: act) {
-            VStack(spacing: 2) {
-                Text(rewardLabel(r)).font(.jk(r.cos != nil && TacSeason.cos(r.cos!).emoji.isEmpty ? 10 : 18, .heavy)).foregroundColor(.white).multilineTextAlignment(.center).minimumScaleFactor(0.6)
-                Text(got ? "CLAIMED" : (can ? "CLAIM" : (locked ? "LOCKED" : "")))
-                    .font(.jk(9, .heavy)).foregroundColor(can ? .black : .white.opacity(0.6))
-                    .padding(.horizontal, 4).background(can ? lime : Color.clear).clipShape(Capsule())
+            VStack(spacing: 3) {
+                if let cid = r.cos {
+                    let k = TacSeason.cos(cid)
+                    CosIcon(c: k, size: 20)
+                    Text(k.label).font(.jk(8, .bold)).foregroundColor(.white.opacity(0.85)).lineLimit(1).minimumScaleFactor(0.6)
+                } else {
+                    SF("diamond.fill").font(.system(size: 18)).foregroundColor(TUI.gold)
+                    Text("\(r.gems)").font(.jk(12, .heavy)).foregroundColor(.white)
+                }
+                HStack(spacing: 2) {
+                    if got { SF("checkmark", "circle.fill").font(.system(size: 8, weight: .black)) }
+                    else if locked { SF("lock.fill").font(.system(size: 8)) }
+                    Text(got ? "CLAIMED" : (can ? "CLAIM" : (locked ? "LOCKED" : "")))
+                }
+                .font(.jk(8, .heavy)).foregroundColor(can ? .black : .white.opacity(0.6))
+                .padding(.horizontal, 5).background(can ? lime : Color.clear).clipShape(Capsule())
             }
-            .frame(width: 58, height: 70)
-            .background(Color.white.opacity(got ? 0.04 : 0.1))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(can ? lime : Color.white.opacity(0.15), lineWidth: can ? 2 : 1))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .frame(width: 58, height: 72)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(prem ? TUI.gold.opacity(got ? 0.05 : 0.12) : Color.white.opacity(got ? 0.04 : 0.1)))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(can ? lime : Color.white.opacity(0.15), lineWidth: can ? 2 : 1))
         }
+        .buttonStyle(TuiPress())
         .disabled(!can)
     }
 
@@ -212,9 +258,13 @@ struct TacSeasonView: View {
 
     private func lockerTab(_ x: TacSeasonData) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(Array([("fx", "KILL EFFECT"), ("charm", "CHARM"), ("gl", "GLOVES"), ("map", "MAP")].enumerated()), id: \.offset) { _, grp in
-                    Text(grp.1).font(.jk(12, .heavy)).foregroundColor(lime)
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(Array([("fx", "KILL EFFECT", "sparkles"), ("charm", "CHARM", "key.fill"), ("gl", "GLOVES", "hand.raised.fill"), ("map", "MAP", "map.fill")].enumerated()), id: \.offset) { _, grp in
+                    HStack(spacing: 6) {
+                        SF(grp.2, "circle.fill").font(.system(size: 11, weight: .bold))
+                        Text(grp.1).font(.jk(12, .heavy))
+                    }
+                    .foregroundColor(lime)
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             ForEach(TacSeason.catalog.filter { $0.kind == grp.0 }) { c in
@@ -226,33 +276,21 @@ struct TacSeasonView: View {
                                         if grp.0 == "fx" { d.fx = c.id } else if grp.0 == "charm" { d.charm = c.id } else if grp.0 == "gl" { d.gloves = c.id } else { d.map = c.id }
                                     }
                                 } label: {
-                                    VStack(spacing: 4) {
-                                        if grp.0 == "gl" {
-                                            Circle().fill(Color(red: c.rgb.0, green: c.rgb.1, blue: c.rgb.2)).frame(width: 26, height: 26)
-                                        } else {
-                                            Text(c.emoji.isEmpty ? "\u{2205}" : c.emoji).font(.system(size: 22))
+                                    VStack(spacing: 5) {
+                                        ZStack {
+                                            CosIcon(c: c, size: 22)
+                                            if !own { SF("lock.fill").font(.system(size: 10)).foregroundColor(.white.opacity(0.8)).offset(x: 16, y: 12) }
                                         }
+                                        .frame(height: 26)
                                         Text(c.label).font(.jk(10, .bold)).foregroundColor(.white).lineLimit(1)
                                     }
-                                    .frame(width: 92, height: 62)
-                                    .background(Color.white.opacity(own ? 0.1 : 0.03))
-                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(sel ? lime : Color.white.opacity(0.12), lineWidth: sel ? 2 : 1))
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    .opacity(own ? 1 : 0.4)
+                                    .frame(width: 96, height: 66)
+                                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(own ? 0.1 : 0.03)))
+                                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(sel ? lime : Color.white.opacity(0.12), lineWidth: sel ? 2 : 1))
+                                    .opacity(own ? 1 : 0.45)
                                 }
+                                .buttonStyle(TuiPress())
                             }
-                        }
-                    }
-                }
-                Text("FACTION").font(.jk(12, .heavy)).foregroundColor(lime)
-                HStack(spacing: 8) {
-                    ForEach(0..<TacSeason.factions.count, id: \.self) { i in
-                        Button { game.updateSX { $0.faction = i } } label: {
-                            Text(TacSeason.factions[i].0).font(.jk(11, .heavy)).foregroundColor(.white)
-                                .frame(width: 92, height: 38)
-                                .background(Color(red: TacSeason.factions[i].1.0, green: TacSeason.factions[i].1.1, blue: TacSeason.factions[i].1.2))
-                                .overlay(RoundedRectangle(cornerRadius: 8).stroke(x.faction == i ? lime : Color.clear, lineWidth: 2))
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                     }
                 }
@@ -263,6 +301,7 @@ struct TacSeasonView: View {
 
     private func drawTab() -> some View {
         VStack(spacing: 14) {
+            SF("gift.fill").font(.system(size: 34)).foregroundColor(TUI.gold)
             Text("LUCKY DRAW").font(.jk(22, .heavy)).foregroundColor(.white)
             Text("Spend 40 gems for a random cosmetic you don't own yet.").font(.jk(12, .semibold)).foregroundColor(.white.opacity(0.7))
             Button {
@@ -271,16 +310,22 @@ struct TacSeasonView: View {
                 var st = game.s; st.ex.gems -= 40; game.s = st
                 if let c = pool.randomElement() {
                     game.updateSX { $0.owned.append(c.id) }
-                    drawMsg = "You got: \(c.emoji) \(c.label)"
+                    drawMsg = "You got: \(c.label)"
                 } else {
                     var s2 = game.s; s2.ex.gems += 20; game.s = s2
                     drawMsg = "Collection complete, 20 gems back"
                 }
             } label: {
-                Text("DRAW  40").font(.jk(18, .heavy)).foregroundColor(.black).frame(width: 200, height: 52).background(Color.yellow).clipShape(Capsule())
+                HStack(spacing: 8) {
+                    Text("DRAW").font(.jk(18, .heavy))
+                    SF("diamond.fill").font(.system(size: 13))
+                    Text("40").font(.jk(18, .heavy))
+                }
+                .foregroundColor(.black).frame(width: 210, height: 52).background(Capsule().fill(TUI.gold))
             }
+            .buttonStyle(TuiPress())
             Text(drawMsg).font(.jk(15, .bold)).foregroundColor(lime)
         }
-        .padding(.top, 30)
+        .padding(.top, 20)
     }
 }
