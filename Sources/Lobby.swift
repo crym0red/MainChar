@@ -45,6 +45,19 @@ struct LobbyView: View {
             OrientationLock.set(landscape: true)
             ensureBg()
         }
+        .onChange(of: nav.brPlay) { v in
+            if v {
+                bg?.view.isPlaying = false
+                bg?.view.scene = nil
+                bg = nil
+            } else {
+                OrientationLock.set(landscape: true)
+                ensureBg()
+            }
+        }
+        .background(Color.clear.fullScreenCover(isPresented: $nav.brPlay) {
+            BattleRoyalePlay().environmentObject(game).environmentObject(nav).preferredColorScheme(.dark)
+        })
         .onChange(of: nav.tacPlay) { v in
             if v != nil {
                 bg?.view.isPlaying = false
@@ -64,7 +77,7 @@ struct LobbyView: View {
     }
 
     private func ensureBg() {
-        guard bg == nil, nav.tacPlay == nil else { return }
+        guard bg == nil, nav.tacPlay == nil, !nav.brPlay else { return }
         let b = TacScene()
         b.build(TacticalEngine())
         bg = b
@@ -165,8 +178,8 @@ struct LobbyView: View {
             Button { diff = (diff + 1) % 3 } label: {
                 HStack {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("5V5 BOMB DEFUSAL").font(.jk(16, .heavy)).foregroundColor(.white)
-                        Text("Safehouse  |  \(diffNames[diff])  |  \(nav.tacFP ? "FIRST PERSON" : "3D")").font(.jk(12, .semibold)).foregroundColor(.white.opacity(0.8))
+                        Text(nav.lobbyMode == 1 ? "BATTLE ROYALE" : "5V5 BOMB DEFUSAL").font(.jk(16, .heavy)).foregroundColor(.white)
+                        Text(nav.lobbyMode == 1 ? "Port Ridge  |  30 players  |  FIRST PERSON" : "Safehouse  |  \(diffNames[diff])  |  \(nav.tacFP ? "FIRST PERSON" : "3D")").font(.jk(12, .semibold)).foregroundColor(.white.opacity(0.8))
                     }
                     Spacer()
                     Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold)).foregroundColor(.white.opacity(0.7))
@@ -175,9 +188,12 @@ struct LobbyView: View {
             }
             .buttonStyle(.plain)
             HStack(spacing: 0) {
-                ForEach(Array(["3D", "FIRST PERSON"].enumerated()), id: \.offset) { i, n in
-                    let on = (i == 1) == nav.tacFP
-                    Button { nav.tacFP = (i == 1) } label: {
+                ForEach(Array(["5V5 3D", "5V5 FP", "BR"].enumerated()), id: \.offset) { i, n in
+                    let on = (nav.lobbyMode == 1 ? 2 : (nav.tacFP ? 1 : 0)) == i
+                    Button {
+                        nav.lobbyMode = i == 2 ? 1 : 0
+                        if i < 2 { nav.tacFP = (i == 1) }
+                    } label: {
                         Text(n).font(.jk(12, .heavy)).foregroundColor(on ? .black : .white.opacity(0.8))
                             .frame(maxWidth: .infinity).frame(height: 32).background(on ? lime : Color.black.opacity(0.7))
                     }
@@ -185,7 +201,7 @@ struct LobbyView: View {
                 }
             }
             .frame(width: w)
-            Button { nav.tacPlay = diff } label: {
+            Button { if nav.lobbyMode == 1 { nav.brPlay = true } else { nav.tacPlay = diff } } label: {
                 VStack(spacing: 0) {
                     HStack {
                         Image(systemName: "play.fill").font(.system(size: 12)).foregroundColor(.black.opacity(0.7))

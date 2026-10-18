@@ -1530,70 +1530,27 @@ final class TacticalEngine {
     }
 
     private func drawViewGun(_ ctx: inout GraphicsContext, _ size: CGSize) {
-        let s = size.height / 390
-        let rec: CGFloat = me.flash > 0 ? 12 : 0
-        let moving = hypot(move.dx, move.dy)
-        let bob = CGFloat(sin(Double(time) * 9)) * 5 * moving
-        let dip: CGFloat = me.reloadT > 0 ? min(1, me.reloadT * 2.5) * 90 : 0
-        let skin = Color(red: 0.78, green: 0.58, blue: 0.44)
-        let glove = Color(red: 0.14, green: 0.15, blue: 0.17)
         let id = me.gun
+        let img = GunSprites.image(id)
+        let mz = GunSprites.muzzle(id)
+        let gw = min(size.width * 0.4, size.height * 1.5)
+        let gh = gw / 2
+        let rec: CGFloat = me.flash > 0 ? 1 : 0
+        let moving = hypot(move.dx, move.dy)
+        let bob = CGFloat(sin(Double(time) * 9)) * 6 * moving
+        let dip: CGFloat = me.reloadT > 0 ? min(1, me.reloadT * 2.5) * gh * 0.35 : 0
+        let spr = ctx.resolve(Image(uiImage: img))
+        let flashOn = me.flash > 0
         ctx.drawLayer { l in
-            l.translateBy(x: size.width * 0.68, y: size.height + 14 * s + dip * s + bob * s)
-            l.rotate(by: .degrees(me.reloadT > 0 ? -2 : -7))
-            l.scaleBy(x: s, y: s)
-            func box(_ r: CGRect, _ c: Color, _ rad: CGFloat = 4) {
-                l.fill(Path(roundedRect: r, cornerRadius: rad), with: .color(c))
-            }
-            func edge(_ r: CGRect, _ rad: CGFloat = 4) {
-                l.stroke(Path(roundedRect: r, cornerRadius: rad), with: .color(.white.opacity(0.18)), lineWidth: 1.5)
-            }
-            let r0 = rec
-            switch id {
-            case "shotgun":
-                box(CGRect(x: -13, y: -330 + r0, width: 12, height: 200), Color(white: 0.13), 3)
-                box(CGRect(x: 1, y: -320 + r0, width: 12, height: 190), Color(white: 0.16), 3)
-                box(CGRect(x: -26, y: -150 + r0, width: 52, height: 190), Color(white: 0.2), 8)
-                edge(CGRect(x: -26, y: -150 + r0, width: 52, height: 190), 8)
-                box(CGRect(x: -30, y: -250 + r0 + (me.reloadT > 0 ? 24 : 0), width: 60, height: 74), Color(red: 0.42, green: 0.27, blue: 0.14), 10)
-                box(CGRect(x: -2, y: -344 + r0, width: 4, height: 16), Color(white: 0.7), 1)
-                box(CGRect(x: -36, y: -240 + r0 + (me.reloadT > 0 ? 24 : 0), width: 22, height: 54), skin, 10)
-                box(CGRect(x: 14, y: -20 + r0, width: 46, height: 78), glove, 12)
-            case "smg":
-                box(CGRect(x: -8, y: -250 + r0, width: 16, height: 120), Color(white: 0.12), 3)
-                box(CGRect(x: -11, y: -262 + r0, width: 22, height: 22), Color(white: 0.22), 3)
-                box(CGRect(x: -30, y: -150 + r0, width: 60, height: 190), Color(white: 0.2), 9)
-                edge(CGRect(x: -30, y: -150 + r0, width: 60, height: 190), 9)
-                box(CGRect(x: -22, y: -118 + r0, width: 44, height: 8), Color(white: 0.1), 2)
-                box(CGRect(x: -14, y: 20 + r0, width: 26, height: 110), Color(white: 0.1), 5)
-                box(CGRect(x: -4, y: -170 + r0, width: 8, height: 22), Color(white: 0.55), 1)
-                box(CGRect(x: -34, y: -120 + r0, width: 26, height: 56), skin, 9)
-                box(CGRect(x: 16, y: -10 + r0, width: 46, height: 76), glove, 12)
-            case "pistol":
-                box(CGRect(x: -17, y: -210 + r0, width: 34, height: 160), Color(white: 0.24), 7)
-                edge(CGRect(x: -17, y: -210 + r0, width: 34, height: 160), 7)
-                box(CGRect(x: -6, y: -228 + r0, width: 12, height: 26), Color(white: 0.12), 3)
-                box(CGRect(x: -2.5, y: -200 + r0, width: 5, height: 10), Color(white: 0.7), 1)
-                box(CGRect(x: -12, y: -60 + r0, width: 30, height: 90), Color(white: 0.15), 8)
-                box(CGRect(x: -28, y: -40 + r0, width: 50, height: 90), glove, 14)
-                box(CGRect(x: 8, y: -20 + r0, width: 40, height: 70), skin, 12)
-            default:
-                box(CGRect(x: -8, y: -330 + r0, width: 16, height: 190), Color(white: 0.13), 3)
-                box(CGRect(x: -13, y: -346 + r0, width: 26, height: 20), Color(white: 0.2), 3)
-                box(CGRect(x: -24, y: -270 + r0, width: 48, height: 130), Color(white: 0.27), 6)
-                for i in 0..<5 { box(CGRect(x: -14, y: -258 + r0 + CGFloat(i) * 20, width: 28, height: 6), Color(white: 0.12), 2) }
-                box(CGRect(x: -32, y: -160 + r0, width: 64, height: 200), Color(white: 0.2), 10)
-                edge(CGRect(x: -32, y: -160 + r0, width: 64, height: 200), 10)
-                box(CGRect(x: -6, y: -190 + r0, width: 12, height: 50), Color(white: 0.36), 2)
-                box(CGRect(x: -3, y: -368 + r0, width: 6, height: 28), Color(white: 0.55), 1)
-                box(CGRect(x: 16, y: 10 + r0, width: 30, height: 90), Color(white: 0.1), 6)
-                box(CGRect(x: -36, y: -230 + r0, width: 30, height: 64), skin, 10)
-                box(CGRect(x: 20, y: -10 + r0, width: 46, height: 78), glove, 12)
-            }
-            if me.flash > 0 {
-                let tipY: CGFloat = id == "pistol" ? -240 : (id == "smg" ? -270 : -380)
-                l.fill(Path(ellipseIn: CGRect(x: -28, y: tipY - 18, width: 56, height: 56)), with: .color(.yellow.opacity(0.9)))
-                l.fill(Path(ellipseIn: CGRect(x: -14, y: tipY - 4, width: 28, height: 28)), with: .color(.white.opacity(0.95)))
+            l.translateBy(x: size.width * 0.93, y: size.height + 2 + dip + bob)
+            l.rotate(by: .degrees(me.reloadT > 0 ? 16 : 8))
+            l.translateBy(x: rec * 16, y: rec * 8)
+            let rect = CGRect(x: -gw, y: -gh, width: gw, height: gh)
+            l.draw(spr, in: rect)
+            if flashOn {
+                let p = CGPoint(x: rect.minX + mz.x * gw, y: rect.minY + mz.y * gh)
+                l.fill(Path(ellipseIn: CGRect(x: p.x - 44, y: p.y - 44, width: 88, height: 88)), with: .color(.yellow.opacity(0.85)))
+                l.fill(Path(ellipseIn: CGRect(x: p.x - 22, y: p.y - 22, width: 44, height: 44)), with: .color(.white.opacity(0.95)))
             }
         }
     }
@@ -2135,6 +2092,8 @@ struct TacticalPlay: View {
                             .frame(width: 38, height: 38).background(Color.black.opacity(0.55)).clipShape(Circle())
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: fpMode ? .leading : .center)
+                .padding(.leading, fpMode ? 200 : 0)
                 .padding(.bottom, 14)
             }
         }
