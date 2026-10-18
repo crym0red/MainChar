@@ -51,6 +51,7 @@ struct MainShotApp: App {
 final class Nav: ObservableObject {
     @Published var tacPlay: Int? = nil
     @Published var tacMode = 0
+    @Published var tacGun = "rifle"
 }
 
 struct Extras: Codable, Hashable {

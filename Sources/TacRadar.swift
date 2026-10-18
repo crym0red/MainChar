@@ -5,7 +5,17 @@ import UIKit
 enum TacRadar {
     static let k: CGFloat = 0.35
 
-    static let images: [UIImage] = (0..<TMap.nFloors).map { make($0) }
+    private static var cache: [UIImage] = []
+    private static var cacheKind = -1
+
+    /// map image for a floor of the currently loaded map (rebuilt when the map changes)
+    static func image(_ fl: Int) -> UIImage {
+        if cacheKind != TMap.kind || cache.isEmpty {
+            cache = (0..<TMap.nFloors).map { make($0) }
+            cacheKind = TMap.kind
+        }
+        return cache[fl]
+    }
 
     static func make(_ fl: Int) -> UIImage {
         let ox = TMap.origin(fl)
@@ -21,7 +31,7 @@ enum TacRadar {
             func col(_ r: CGFloat, _ gg: CGFloat, _ b: CGFloat, _ a: CGFloat = 1) -> CGColor { CGColor(red: r, green: gg, blue: b, alpha: a) }
             g.setFillColor(col(0.07, 0.075, 0.09))
             g.fill(CGRect(x: ox, y: 0, width: TMap.floorW, height: TMap.H))
-            let floors: [(CGFloat, CGFloat, CGFloat)] = [(0.55, 0.43, 0.3), (0.5, 0.47, 0.42), (0.42, 0.36, 0.3), (0.6, 0.55, 0.46), (0.4, 0.3, 0.22), (0.52, 0.5, 0.48)]
+            let floors: [(CGFloat, CGFloat, CGFloat)] = [(0.55, 0.43, 0.3), (0.5, 0.47, 0.42), (0.42, 0.36, 0.3), (0.6, 0.55, 0.46), (0.4, 0.3, 0.22), (0.52, 0.5, 0.48), (0.2, 0.36, 0.17), (0.38, 0.3, 0.2)]
             for rm in TMap.floorTiles where rm.fl == fl {
                 let f = floors[rm.mat % floors.count]
                 g.setFillColor(col(f.0, f.1, f.2))
@@ -47,7 +57,7 @@ enum TacRadar {
                 g.fill(CGRect(x: p.x, y: p.y, width: 10 + rnd() * 16, height: 8 + rnd() * 10))
             }
             // sites
-            for i in 0..<2 where here(TMap.site(i)) {
+            for i in 0..<2 where TMap.kind == 0 && here(TMap.site(i)) {
                 let r = TMap.site(i)
                 g.setFillColor(col(0.98, 0.8, 0.1, 0.22))
                 g.fill(r)
@@ -65,7 +75,7 @@ enum TacRadar {
             for pr in TMap.props where here(pr.r) {
                 g.setFillColor(col(0, 0, 0, 0.35))
                 g.fill(pr.r.offsetBy(dx: 7, dy: 9))
-                let c: (CGFloat, CGFloat, CGFloat) = pr.k == .car ? (0.6, 0.2, 0.15) : (pr.k == .sandbag ? (0.7, 0.6, 0.4) : (pr.k == .barrel ? (0.35, 0.28, 0.2) : (0.5, 0.36, 0.2)))
+                let c: (CGFloat, CGFloat, CGFloat) = pr.k == .tree ? (0.1, 0.27, 0.1) : (pr.k == .rock ? (0.45, 0.46, 0.48) : pr.k == .car ? (0.6, 0.2, 0.15) : (pr.k == .sandbag ? (0.7, 0.6, 0.4) : (pr.k == .barrel ? (0.35, 0.28, 0.2) : (0.5, 0.36, 0.2))))
                 g.setFillColor(col(c.0, c.1, c.2))
                 g.fill(pr.r)
                 g.setStrokeColor(col(0, 0, 0, 0.5))

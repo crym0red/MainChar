@@ -51,7 +51,7 @@ func tPointSeg(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
 
 // MARK: - Map
 
-enum PropKind { case bed, couch, table, counter, crate, car, shelf, barrel, sandbag, tv, plant }
+enum PropKind { case bed, couch, table, counter, crate, car, shelf, barrel, sandbag, tv, plant, tree, rock }
 
 struct TProp {
     let r: CGRect
@@ -73,11 +73,19 @@ enum TNav {
     static let cell: CGFloat = 40
     static let cols = Int(TMap.totalW / cell) + 1
     static let rows = Int(TMap.H / cell) + 1
-    static let floorSolids: [[Int]] = {
+    static var floorSolids: [[Int]] = TNav.makeFloorSolids()
+
+    static func makeFloorSolids() -> [[Int]] {
         var f: [[Int]] = [[], [], []]
         for (k, r) in TMap.origBase.enumerated() { f[TMap.floorOfX(r.midX)].append(k) }
         return f
-    }()
+    }
+
+    /// the active map changed: rebuild the solid index and the whole blocked grid
+    static func reload() {
+        floorSolids = makeFloorSolids()
+        rebuild()
+    }
 
     static func cellBlocked(_ c: Int, _ r: Int) -> Bool {
         let p = CGPoint(x: CGFloat(c) * cell + cell / 2, y: CGFloat(r) * cell + cell / 2)
@@ -259,6 +267,7 @@ final class TPlayer {
     var altGun = "pistol"
     var altMag = 15
     var altSpare = 99
+    var goalT: CGFloat = 0
 
     init(id: Int, team: Int, name: String, handle: String, emoji: String, isPlayer: Bool) {
         self.id = id; self.team = team; self.name = name; self.handle = handle; self.emoji = emoji; self.isPlayer = isPlayer
@@ -385,6 +394,21 @@ final class TacticalEngine {
     var cpZones: [CGRect] { [TMap.site(0), TMap.site(1), TMap.hubZone] }
     var gameMode = 0
     var killTarget = 30
+    struct Loot { var pos: CGPoint; var id: String; var taken: Bool }
+    var loot: [Loot] = []
+    var stormT: CGFloat = 0
+    var stormRad: CGFloat = 1800
+    var stormC = CGPoint(x: 1500, y: 900)
+    var stormStage = 0
+    var stormShrinking = false
+    var stormCountdown: CGFloat = 40
+    var stormHitT: CGFloat = 0
+    private let stormR: [CGFloat] = [1800, 1050, 640, 360, 170, 50]
+    private var stormCs: [CGPoint] = []
+    var brPlace = 0
+    var brEndT: CGFloat = 3
+    var brAlive: Int { players.filter { $0.alive }.count }
+    var stormDps: CGFloat { [1.5, 3, 5, 8, 12, 16][min(stormStage, 5)] }
     struct Tag { var pos: CGPoint; var team: Int; var life: CGFloat }
     var tags: [Tag] = []
     var fast = false
@@ -402,6 +426,7 @@ final class TacticalEngine {
     var kick: CGFloat = 0
     var moving: Bool { hypot(move.dx, move.dy) > 0.1 }
     var myGun = "pistol"
+    var lastKiller = -1
     var kills: Int { me.kills }
 
     private let react: [CGFloat] = [0.55, 0.33, 0.18]
@@ -411,11 +436,14 @@ final class TacticalEngine {
     func setup(gun: String, diff: Int, mode: Int = 0) {
         self.diff = diff
         gameMode = mode
+        TMap.load(mode == 6 ? 1 : 0)
         tags = []
         myGun = gun
-        let names: [(String, String, String)] = TacRoster.pick(9)
+        let nb = mode == 6 ? 19 : 9
+        var names: [(String, String, String)] = TacRoster.pick(nb)
+        while names.count < nb { let k = names.count + 1; names.append(("Recruit \(k)", "recruit\(k)", "")) }
         players = [TPlayer(id: 0, team: 0, name: TacProfile.name, handle: "you", emoji: "", isPlayer: true)]
-        for i in 0..<9 {
+        for i in 0..<nb {
             let bp = TPlayer(id: i + 1, team: i < 4 ? 0 : 1, name: names[i].0, handle: names[i].1, emoji: names[i].2, isPlayer: false)
             bp.rank = TacRoster.rank(of: names[i].1)
             players.append(bp)
@@ -426,6 +454,7 @@ final class TacticalEngine {
             for p in players { p.team = p.id }
             scores = Array(repeating: 0, count: 10)
         }
+        if mode == 6 { for p in players { p.team = p.id } }
         round = 0
         phase = 0
         over = false
@@ -459,6 +488,7 @@ final class TacticalEngine {
         packs = TMap.packPos.map { Pack(pos: $0, taken: false) }
         var ai = 0, di = 0
         var defBots = 0
+        let brSpawns = TMap.spawns.shuffled()
         cpProg = [0, 0, 0]
         cpT = 1.5
         for p in players {
@@ -476,7 +506,7 @@ final class TacticalEngine {
             p.smokes = 1
             p.flashes = 1
             if p.isPlayer { scoped = false; pitch = 0 }
-            if gameMode != 0 { p.armor = 100; p.armorKind = 1 }
+            if gameMode != 0 && gameMode != 6 { p.armor = 100; p.armorKind = 1 }
             p.blind = 0
             p.pingCd = 0
             p.knife = false
@@ -485,8 +515,9 @@ final class TacticalEngine {
             p.cover = nil
             p.noiseT = 0
             let atk = p.team == atkTeam
-            let spot = atk ? TMap.atkSpawn[ai % 5] : TMap.defSpawn[di % 5]
+            var spot = atk ? TMap.atkSpawn[ai % 5] : TMap.defSpawn[di % 5]
             if atk { ai += 1 } else { di += 1 }
+            if gameMode == 6 { spot = brSpawns[p.id % brSpawns.count] }
             p.pos = spot
             p.aim = TMap.aimAtCenter(spot)
             p.respawn = 0
@@ -499,12 +530,14 @@ final class TacticalEngine {
             } else {
                 p.gun = p.isPlayer ? myGun : gunPick()
                 if gameMode == 3 { p.gun = TWeapons.ladder[0]; p.ladder = 0 }
+                if gameMode == 6 { p.gun = "pistol"; p.armor = 0; p.armorKind = 0; p.nades = 0; p.smokes = 0; p.flashes = 0 }
                 p.mag = TGuns.get(p.gun).mag
                 p.spare = TWeapons.isPistol(p.gun) ? 99 : 2
                 if p.isPlayer {
                     p.altGun = p.gun == "pistol" ? "eagle" : "pistol"
                     p.altMag = TGuns.get(p.altGun).mag
                     p.altSpare = 99
+                    if gameMode == 6 { p.altGun = "pistol"; p.altMag = 15; p.altSpare = 99 }
                 }
             }
             p.role = 0
@@ -519,7 +552,7 @@ final class TacticalEngine {
             atkTeam = 0
             banner = TWeapons.modeNames[gameMode]
             tags = []
-            for p in players { respawnPlayer(p) }
+            if gameMode == 6 { brStart() } else { for p in players { respawnPlayer(p) } }
         } else {
             timer = 6
             buyT = 16
@@ -577,7 +610,7 @@ final class TacticalEngine {
         }
         if phase == 0 {
             timer -= dt
-            if timer <= 0 { phase = 1; timer = gameMode == 0 ? 100 : 240; banner = "GO"; bannerT = 1 }
+            if timer <= 0 { phase = 1; timer = gameMode == 0 ? 100 : (gameMode == 6 ? 99999 : 240); banner = gameMode == 6 ? "DROP IN" : "GO"; bannerT = 1 }
             for p in players where !p.isPlayer { botLook(p, dt) }
             return
         }
@@ -751,6 +784,7 @@ final class TacticalEngine {
     }
 
     private func dmTick(_ dt: CGFloat) {
+        if gameMode == 6 { brTick(dt); return }
         for p in players where !p.alive && p.respawn > 0 {
             p.respawn -= dt
             if p.respawn <= 0 { respawnPlayer(p) }
@@ -1084,13 +1118,15 @@ final class TacticalEngine {
             victim.hp = 0
             victim.alive = false
             let killer = players.first { $0.id == owner }
+            if victim.isPlayer { lastKiller = owner }
             if let k = killer, k.team != victim.team {
                 k.kills += 1
                 if gameMode == 0 { k.money = min(16000, k.money + 300) }
                 if k.isPlayer { fxT = 1; fxId = killFx; fxSerial += 1 }
             }
             if gameMode != 0 {
-                victim.respawn = 3
+                victim.respawn = gameMode == 6 ? 0 : 3
+                if gameMode == 6 && victim.isPlayer { brPlace = players.filter { $0.alive }.count + 1; brEndT = 3 }
                 if gameMode == 1, let k = killer, k.team != victim.team { scores[k.team] += 1 }
                 if gameMode == 2 { tags.append(Tag(pos: victim.pos, team: victim.team, life: 25)) }
                 if gameMode == 3, let k = killer, k.team != victim.team {
@@ -1099,7 +1135,7 @@ final class TacticalEngine {
                     if k.ladder < TWeapons.ladder.count { setGun(k, TWeapons.ladder[k.ladder]) }
                 }
             }
-            let kn = killer?.name ?? "?"
+            let kn = killer?.name ?? (owner == -1 ? "The Storm" : "?")
             feed.append(Feed(text: "\(kn)  >  \(victim.name)", life: 5, mine: killer?.isPlayer == true || victim.isPlayer, k: kn, v: victim.name, kTeam: killer?.team ?? 0, gun: knifeKill ? "knife" : (killer?.gun ?? "pistol"), head: knifeKill ? false : amt >= 45))
             if feed.count > 4 { feed.removeFirst() }
             pop(victim.pos, "X", .red)
@@ -1264,6 +1300,7 @@ final class TacticalEngine {
     }
 
     private func objective(_ p: TPlayer) -> CGPoint {
+        if gameMode == 6 { return brGoal(p) }
         if gameMode == 5 {
             let zs = cpZones
             let notMine = (0..<3).filter { !(p.team == 0 ? cpProg[$0] >= 1 : cpProg[$0] <= -1) }
@@ -1467,7 +1504,7 @@ final class TacticalEngine {
         let th = -CGFloat.pi / 2 - focus.aim
         let ct = cos(th), st = sin(th)
         let circle = Path(ellipseIn: CGRect(x: cx - R, y: cy - R, width: R * 2, height: R * 2))
-        ctx.fill(circle, with: .color(Color(red: 0.04, green: 0.05, blue: 0.07)))
+        ctx.fill(circle, with: .color(Color.black.opacity(0.78)))
         func P(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
             let dx = (x - focus.pos.x) * s, dy = (y - focus.pos.y) * s
             return CGPoint(x: cx + dx * ct - dy * st, y: cy + dx * st + dy * ct)
@@ -1481,12 +1518,13 @@ final class TacticalEngine {
         var g = ctx
         g.clip(to: circle)
         var mg = g
+        mg.opacity = 0.7
         mg.translateBy(x: cx, y: cy)
         mg.rotate(by: .radians(Double(th)))
         mg.scaleBy(x: s, y: s)
         mg.translateBy(x: -focus.pos.x, y: -focus.pos.y)
         let rf = TMap.floorOf(focus.pos)
-        mg.draw(Image(uiImage: TacRadar.images[rf]), in: CGRect(x: TMap.origin(rf), y: 0, width: TMap.floorW, height: TMap.H))
+        mg.draw(Image(uiImage: TacRadar.image(rf)), in: CGRect(x: TMap.origin(rf), y: 0, width: TMap.floorW, height: TMap.H))
         // destroyed walls / props: paint the floor back over them so the radar matches the real geometry
         for k in TMap.brokenAll where TMap.floorOfX(TMap.origBase[k].midX) == rf {
             mg.fill(Path(TMap.origBase[k]), with: .color(Color(red: 0.5, green: 0.46, blue: 0.4)))
@@ -1518,6 +1556,20 @@ final class TacticalEngine {
         for sm in smokeClouds {
             let c = P(sm.pos.x, sm.pos.y)
             g.fill(Path(ellipseIn: CGRect(x: c.x - sm.r * s, y: c.y - sm.r * s, width: sm.r * 2 * s, height: sm.r * 2 * s)), with: .color(.white.opacity(0.4)))
+        }
+        if gameMode == 6 {
+            let oc = P(stormC.x + TMap.origin(rf), stormC.y)
+            let rr = stormRad * s
+            var sp = Path(CGRect(x: cx - 400, y: cy - 400, width: 800, height: 800))
+            sp.addEllipse(in: CGRect(x: oc.x - rr, y: oc.y - rr, width: rr * 2, height: rr * 2))
+            g.fill(sp, with: .color(Color(red: 0.62, green: 0.2, blue: 0.95).opacity(0.34)), style: FillStyle(eoFill: true))
+            g.stroke(Path(ellipseIn: CGRect(x: oc.x - rr, y: oc.y - rr, width: rr * 2, height: rr * 2)), with: .color(Color(red: 0.85, green: 0.6, blue: 1).opacity(0.9)), lineWidth: 1.5)
+            for l in loot where !l.taken && TMap.floorOf(l.pos) == rf {
+                let c = P(l.pos.x, l.pos.y)
+                if hypot(c.x - cx, c.y - cy) > R - 4 { continue }
+                let tier: Color = (l.id == "g:awp" || l.id == "g:ak" || l.id == "g:m4" || l.id == "armor:3") ? TUI.gold : (l.id.hasPrefix("g:") || l.id.hasPrefix("armor") ? TUI.blue : (l.id == "med" ? TUI.green : Color.white.opacity(0.7)))
+                g.fill(Path(ellipseIn: CGRect(x: c.x - 2, y: c.y - 2, width: 4, height: 4)), with: .color(tier))
+            }
         }
         // view cone
         var cone = Path()
@@ -1578,6 +1630,7 @@ final class TacticalEngine {
     var allyAlive: Int { players.filter { $0.team == me.team && $0.alive }.count }
     var enemyAlive: Int { players.filter { $0.team != me.team && $0.alive }.count }
     var objectiveText: String {
+        if gameMode == 6 { return "Last one alive wins  ·  \(brAlive) left" }
         if gameMode == 1 { return "First to \(killTarget) kills" }
         if gameMode == 2 { return "Collect enemy tags, deny yours" }
         if gameMode == 3 { return "Arms Race  \(min(me.ladder + 1, TWeapons.ladder.count))/\(TWeapons.ladder.count)  \(TGuns.get(me.gun).name)" }
@@ -1587,11 +1640,196 @@ final class TacticalEngine {
     }
 }
 
+// MARK: - Battle royale
+
+extension TacticalEngine {
+    func brStart() {
+        loot = TMap.lootSpots.map { Loot(pos: $0.0, id: $0.1, taken: false) }
+        stormT = 0
+        stormHitT = 0
+        brPlace = 0
+        brEndT = 3
+        let c0 = CGPoint(x: 1500, y: 900)
+        let cf = CGPoint(x: 1500 + CGFloat.random(in: -250...250), y: 760 + CGFloat.random(in: -200...200))
+        let n = stormR.count - 1
+        stormCs = (0...n).map { i in
+            CGPoint(x: c0.x + (cf.x - c0.x) * CGFloat(i) / CGFloat(n), y: c0.y + (cf.y - c0.y) * CGFloat(i) / CGFloat(n))
+        }
+        updateStorm()
+    }
+
+    /// storm schedule: every stage holds 40s, then shrinks for 25s toward the next circle
+    func updateStorm() {
+        guard stormCs.count == stormR.count else { return }
+        let hold: CGFloat = 40, shrink: CGFloat = 25
+        var t = stormT
+        var s = 0
+        while s < stormR.count - 1 && t >= hold + shrink { t -= hold + shrink; s += 1 }
+        stormStage = s
+        if s >= stormR.count - 1 {
+            stormRad = stormR[s]
+            stormC = stormCs[s]
+            stormShrinking = false
+            stormCountdown = 0
+            return
+        }
+        if t < hold {
+            stormRad = stormR[s]
+            stormC = stormCs[s]
+            stormShrinking = false
+            stormCountdown = hold - t
+        } else {
+            let k = (t - hold) / shrink
+            stormRad = stormR[s] + (stormR[s + 1] - stormR[s]) * k
+            stormC = CGPoint(x: stormCs[s].x + (stormCs[s + 1].x - stormCs[s].x) * k, y: stormCs[s].y + (stormCs[s + 1].y - stormCs[s].y) * k)
+            stormShrinking = true
+            stormCountdown = hold + shrink - t
+        }
+    }
+
+    func stormOutside(_ pos: CGPoint) -> Bool {
+        let px = pos.x - TMap.origin(TMap.floorOf(pos))
+        return hypot(px - stormC.x, pos.y - stormC.y) > stormRad
+    }
+
+    func brTick(_ dt: CGFloat) {
+        stormT += dt
+        updateStorm()
+        stormHitT -= dt
+        if stormHitT <= 0 {
+            stormHitT = 0.5
+            for p in players where p.alive && stormOutside(p.pos) { damage(p, stormDps * 0.5, by: -1) }
+        }
+        for i in loot.indices where !loot[i].taken {
+            let lp = loot[i].pos
+            let lf = TMap.floorOf(lp)
+            for p in players where p.alive && TMap.floorOf(p.pos) == lf && tDist(p.pos, lp) < 28 {
+                if lootUse(p, loot[i].id, apply: true) { loot[i].taken = true; break }
+            }
+        }
+        let n = brAlive
+        if !me.alive {
+            brEndT -= dt
+            if brEndT <= 0 { phase = 4; over = true; won = false; banner = "ELIMINATED"; bannerT = 3 }
+        } else if n <= 1 {
+            phase = 4; over = true; won = true; banner = "VICTORY ROYALE"; bannerT = 3
+        }
+    }
+
+    /// picks a pickup up (apply) or just says whether this player would take it
+    @discardableResult
+    func lootUse(_ p: TPlayer, _ id: String, apply: Bool) -> Bool {
+        let parts = id.split(separator: ":").map(String.init)
+        let kind = parts[0]
+        let arg = parts.count > 1 ? parts[1] : ""
+        switch kind {
+        case "med":
+            guard p.hp < 90 else { return false }
+            if apply { p.hp = min(100, p.hp + 45); if p.isPlayer { pop(p.pos, "+45", .green) } }
+            return true
+        case "ammo":
+            guard !TWeapons.isPistol(p.gun), p.spare < 4 else { return false }
+            if apply { p.spare = min(6, p.spare + 2); if p.isPlayer { pop(p.pos, "AMMO", .yellow) } }
+            return true
+        case "nade":
+            guard p.nades < 3 else { return false }
+            if apply { p.nades += 1; if p.isPlayer { pop(p.pos, "GRENADE", .white) } }
+            return true
+        case "armor":
+            let k = Int(arg) ?? 1
+            guard p.armorKind < k || p.armor < 30 else { return false }
+            if apply { p.armorKind = k; p.armor = k >= 3 ? 150 : (k == 2 ? 100 : 60); if p.isPlayer { pop(p.pos, "ARMOR", .blue) } }
+            return true
+        case "g":
+            let np = TWeapons.w(arg).price
+            if TWeapons.isPistol(arg) {
+                guard TWeapons.isPistol(p.gun), np > TWeapons.w(p.gun).price else { return false }
+                if apply { setGun(p, arg); if p.isPlayer { pop(p.pos, TGuns.get(arg).name.uppercased(), .yellow) } }
+                return true
+            }
+            guard TWeapons.isPistol(p.gun) || np > TWeapons.w(p.gun).price else { return false }
+            if apply {
+                if TWeapons.isPistol(p.gun) { p.altGun = p.gun; p.altMag = p.mag; p.altSpare = 99 }
+                setGun(p, arg)
+                if p.isPlayer { pop(p.pos, TGuns.get(arg).name.uppercased(), .yellow) }
+            }
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func lootValue(_ id: String) -> CGFloat {
+        switch id {
+        case "g:awp": return 450
+        case "g:ak", "g:m4", "armor:3": return 400
+        case "armor:2": return 300
+        case "g:p90", "g:pump", "g:rifle", "g:shotgun": return 250
+        case "g:smg", "g:mp7": return 180
+        case "med": return 200
+        case "armor:1": return 150
+        case "ammo": return 120
+        case "nade": return 80
+        default: return 60
+        }
+    }
+
+    /// where a battle-royale bot wants to be: inside the zone first, then gear, then the next fight
+    func brGoal(_ p: TPlayer) -> CGPoint {
+        if p.roam != .zero && p.goalT > time && tDist(p.pos, p.roam) > 40 { return p.roam }
+        p.goalT = time + CGFloat.random(in: 2.5...4.5)
+        let fl = TMap.floorOf(p.pos)
+        let plan = CGPoint(x: p.pos.x - TMap.origin(fl), y: p.pos.y)
+        let inside = hypot(plan.x - stormC.x, plan.y - stormC.y) < stormRad - 80
+        var nextR = stormRad, nextC = stormC
+        if stormStage < stormR.count - 1, stormCs.count == stormR.count { nextR = stormR[stormStage + 1]; nextC = stormCs[stormStage + 1] }
+        let outsideNext = hypot(plan.x - nextC.x, plan.y - nextC.y) > nextR - 60
+        var dest = p.roam
+        if !inside || ((stormShrinking || stormCountdown < 25) && outsideNext) {
+            // run for the safe circle on the surface (stairs are routed automatically)
+            let a = CGFloat(p.id) * 2.4
+            dest = CGPoint(x: nextC.x + cos(a) * nextR * 0.45 + TMap.origin(1), y: nextC.y + sin(a) * nextR * 0.45)
+        } else {
+            var bestLoot: CGPoint? = nil
+            var bs = CGFloat.greatestFiniteMagnitude
+            for l in loot where !l.taken {
+                if !lootUse(p, l.id, apply: false) { continue }
+                let lf = TMap.floorOf(l.pos)
+                let lp = CGPoint(x: l.pos.x - TMap.origin(lf), y: l.pos.y)
+                if hypot(lp.x - stormC.x, lp.y - stormC.y) > stormRad - 40 { continue }
+                let d = hypot(lp.x - plan.x, lp.y - plan.y) + CGFloat(abs(lf - fl)) * 600
+                let s = d - lootValue(l.id)
+                if d < 1500 && s < bs { bs = s; bestLoot = l.pos }
+            }
+            if let b = bestLoot {
+                dest = b
+            } else if Int.random(in: 0..<100) < 35, let en = players.filter({ $0.alive && $0.id != p.id }).min(by: { tDist($0.pos, p.pos) < tDist($1.pos, p.pos) }) {
+                dest = en.pos
+            } else {
+                let rs = TMap.rooms.filter { r in
+                    let rf = r.fl
+                    let c = CGPoint(x: r.r.midX - TMap.origin(rf), y: r.r.midY)
+                    return hypot(c.x - stormC.x, c.y - stormC.y) < stormRad - 40
+                }
+                if let r = rs.randomElement() {
+                    dest = CGPoint(x: r.r.midX + CGFloat.random(in: -60...60), y: r.r.midY + CGFloat.random(in: -60...60))
+                } else {
+                    dest = CGPoint(x: stormC.x + TMap.origin(1), y: stormC.y)
+                }
+            }
+        }
+        p.roam = dest
+        return dest
+    }
+}
+
 // MARK: - Play view
 
 struct TacticalPlay: View {
     @EnvironmentObject var game: Game
+    @EnvironmentObject var nav: Nav
     @Environment(\.dismiss) private var dismiss
+    @State private var showLoadout = false
     var diff: Int
     var modeId = 0
     @State private var engine = TacticalEngine()
@@ -1637,7 +1875,6 @@ struct TacticalPlay: View {
             engine.view3D = true
             engine.autoAim = true
             autoOn = true
-            Task.detached(priority: .utility) { _ = TacRadar.images }
             let sxd = game.sx
             engine.killFx = sxd.fx
             engine.charm = sxd.charm
@@ -1649,7 +1886,8 @@ struct TacticalPlay: View {
             } else {
                 TwViewModel.gloveColor = mine.gloves == 0 ? mine.skin : mine.gloveCol
             }
-            engine.setup(gun: "rifle", diff: diff, mode: modeId)
+            engine.setup(gun: nav.tacGun, diff: diff, mode: modeId)
+            _ = TacRadar.image(0)
             let b = TacScene()
             b.fpMode = true
             b.build(engine)
@@ -2037,10 +2275,14 @@ struct TacticalPlay: View {
                 let W = geo.size.width, H = geo.size.height
                 ZStack(alignment: .topLeading) {
                     HudVignette(e: e)
+                    if e.gameMode == 6 { HudStormTint(e: e) }
                     // top-left: settings; the radar is drawn by the canvas
                     Button { e.paused = true } label: { vbtn("gearshape.fill", 34) }
                         .buttonStyle(TuiPress())
                         .position(x: 180, y: 84)
+                    Button { e.banner = "GG!"; e.bannerT = 1.5 } label: { vbtn("bubble.left.and.bubble.right.fill", 34) }
+                        .buttonStyle(TuiPress())
+                        .position(x: 224, y: 84)
                     let hf: TPlayer = e.me.alive ? e.me : (e.players.first { $0.team == e.me.team && $0.alive } ?? e.me)
                     let hfl = TMap.floorOf(hf.pos)
                     HudFloorStack(floor: hfl).position(x: 198, y: 150)
@@ -2050,7 +2292,9 @@ struct TacticalPlay: View {
                     HudScoreboard(e: e).frame(width: W).padding(.top, 2)
 
                     // top-right: kill feed
-                    HudFeed(e: e).padding(.trailing, 16).padding(.top, 4).frame(width: W, alignment: .trailing)
+                    HudFeed(e: e).padding(.trailing, 16).padding(.top, 84).frame(width: W, alignment: .trailing)
+                    if e.me.alive { HudCSWeapon(e: e).padding(.trailing, 18).padding(.top, 6).frame(width: W, alignment: .trailing) }
+                    HudCSVitals(e: e).padding(.leading, 14).padding(.top, 8)
 
                     if e.me.alive {
                         Button { e.scoped.toggle() } label: { vbtn("scope", 44, on: e.scoped) }
@@ -2124,6 +2368,12 @@ struct TacticalPlay: View {
             ZStack {
                 if engine.paused && !engine.over { pauseView }
                 if engine.over { overView }
+                if !engine.me.alive && !engine.over && !engine.paused && engine.gameMode != 6 && engine.gameMode != 0 && engine.me.respawn > 0 {
+                    CSKillcam(e: engine) { showLoadout = true; engine.paused = true }.ignoresSafeArea()
+                }
+                if showLoadout {
+                    CSLoadout(gun: $nav.tacGun, ok: { engine.myGun = nav.tacGun; showLoadout = false; engine.paused = false; engine.last = nil }, battle: {}).background(Color.black.opacity(0.4)).ignoresSafeArea()
+                }
             }
         }
     }
@@ -2193,20 +2443,25 @@ struct TacticalPlay: View {
 
     private var overView: some View {
         let e = engine
-        let gems = (e.won ? 25 : 8) + e.kills * 2 + e.scores[0] * 3
+        let gems = (e.won ? 25 : 8) + e.kills * 2 + e.scores[0] * 3 + (e.gameMode == 6 ? max(0, 20 - e.brPlace) : 0)
         let xp = 40 + e.kills * 10 + (e.won ? 60 : 0)
         let col = e.won ? TUI.green : TUI.red
         return ZStack {
             Color.black.opacity(0.78).ignoresSafeArea()
             VStack(spacing: 12) {
                 SF(e.won ? "trophy.fill" : "xmark.octagon.fill", "star.fill").font(.system(size: 34)).foregroundColor(col)
-                Text(e.won ? "VICTORY" : "DEFEAT").font(.jk(38, .heavy)).tracking(3).foregroundColor(col)
-                HStack(spacing: 14) {
-                    Text("\(e.scores[0])").foregroundColor(TUI.blue)
-                    Text(":").foregroundColor(.white.opacity(0.5))
-                    Text("\(e.rivalScore)").foregroundColor(TUI.orange)
+                Text(e.gameMode == 6 ? (e.won ? "VICTORY ROYALE" : "ELIMINATED") : (e.won ? "VICTORY" : "DEFEAT")).font(.jk(38, .heavy)).tracking(3).foregroundColor(col)
+                if e.gameMode == 6 {
+                    Text(e.won ? "LAST ONE STANDING" : "PLACED #\(e.brPlace) OF 20")
+                        .font(.system(size: 24, weight: .heavy, design: .rounded)).foregroundColor(.white)
+                } else {
+                    HStack(spacing: 14) {
+                        Text("\(e.scores[0])").foregroundColor(TUI.blue)
+                        Text(":").foregroundColor(.white.opacity(0.5))
+                        Text("\(e.rivalScore)").foregroundColor(TUI.orange)
+                    }
+                    .font(.system(size: 30, weight: .heavy, design: .rounded))
                 }
-                .font(.system(size: 30, weight: .heavy, design: .rounded))
                 HStack(spacing: 10) {
                     resultTile("scope", "\(e.kills)", "KILLS", TUI.gold)
                     resultTile("diamond.fill", "+\(gems)", "GEMS", TUI.accent)
