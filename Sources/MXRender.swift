@@ -194,6 +194,7 @@ final class MXView: UIView, MTKViewDelegate {
     var antialiasingMode: MXAntialiasing = .multisampling4X
     var rendersContinuously = true
     var allowsCameraControl = false
+    var isPlaying: Bool { get { !mtk.isPaused } set { mtk.isPaused = !newValue } }
     var preferredFramesPerSecond = 60 { didSet { mtk.preferredFramesPerSecond = preferredFramesPerSecond } }
     /// called once per frame before drawing (used for simple procedural animation)
     var preRender: ((Double) -> Void)?
