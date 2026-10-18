@@ -448,6 +448,9 @@ final class TPlayer {
     var spare = 2
     var nades = 1
     var smokes = 1
+    var flashes = 1
+    var armor: CGFloat = 100
+    var blind: CGFloat = 0
     var pingCd: CGFloat = 0
     var reloadT: CGFloat = 0
     var fireCd: CGFloat = 0
@@ -567,6 +570,9 @@ final class TacticalEngine {
     var actHeld = false
     var wantNade = false
     var wantSmoke = false
+    var wantFlash = false
+    var scoped = false
+    var pitch: CGFloat = 0
     var fp = false
     var view3D = true
     var project: ((CGPoint, CGFloat) -> CGPoint?)? = nil
@@ -580,6 +586,9 @@ final class TacticalEngine {
     var time: CGFloat = 0
     var spotT: CGFloat = 0
     var shake: CGFloat = 0
+    var recoil: CGFloat = 0
+    var kick: CGFloat = 0
+    var moving: Bool { hypot(move.dx, move.dy) > 0.1 }
     var myGun = "pistol"
     var kills: Int { me.kills }
 
@@ -642,6 +651,10 @@ final class TacticalEngine {
             p.seenEver = false
             p.nades = 1
             p.smokes = 1
+            p.flashes = 1
+            if p.isPlayer { scoped = false; pitch = 0 }
+            p.armor = 100
+            p.blind = 0
             p.pingCd = 0
             p.crouch = false
             p.hiding = false
@@ -682,6 +695,8 @@ final class TacticalEngine {
         bannerT = max(0, bannerT - dt)
         hitT = max(0, hitT - dt)
         shake = max(0, shake - dt * 30)
+        recoil = max(0, recoil - dt * 2.4)
+        kick = max(0, kick - dt * (22 + kick * 3))
         for i in feed.indices { feed[i].life -= dt }
         feed.removeAll { $0.life <= 0 }
         for i in booms.indices { booms[i].life -= dt }
@@ -692,7 +707,7 @@ final class TacticalEngine {
         pings.removeAll { $0.life <= 0 }
         for i in pops.indices { pops[i].life -= dt * 1.1 }
         pops.removeAll { $0.life <= 0 }
-        for p in players { p.flash = max(0, p.flash - dt); p.hurt = max(0, p.hurt - dt); p.noiseT = max(0, p.noiseT - dt) }
+        for p in players { p.flash = max(0, p.flash - dt); p.hurt = max(0, p.hurt - dt); p.blind = max(0, p.blind - dt); p.noiseT = max(0, p.noiseT - dt) }
 
         if phase == 3 {
             timer -= dt
@@ -880,7 +895,7 @@ final class TacticalEngine {
         let p = me
         guard p.alive else { return }
         if p.crouch && !coverNear(p) { p.crouch = false }
-        let sp: CGFloat = p.crouch ? 88 : 170
+        let sp: CGFloat = (p.crouch ? 88 : 170) * (scoped ? 0.6 : 1)
         var mv = move
         let tgt = autoAim ? pickTarget(p) : nil
         autoTarget = tgt?.id ?? -1
@@ -916,6 +931,7 @@ final class TacticalEngine {
             if p.mag > 0 { shoot(p, 0) } else { startReload(p) }
         }
         if wantNade { wantNade = false; throwNade(p, p.aim, 420) }
+        if wantFlash { wantFlash = false; throwNade(p, p.aim, 400, flash: true) }
         if wantSmoke { wantSmoke = false; throwNade(p, p.aim, 380, smoke: true) }
         if actHeld {
             if p.team == atkTeam && !planted && TMap.site(atkSite).contains(p.pos) && move == .zero { planting = true }
@@ -963,6 +979,14 @@ final class TacticalEngine {
         let spd: CGFloat = 1100
         var muzzle: CGFloat = 20
         var sprd = g.spread + err
+        if p.isPlayer {
+            sprd += recoil * 0.045 + (moving ? 0.03 : 0) + (p.crouch ? -0.004 : 0)
+            if scoped { sprd *= 0.35 }
+            sprd = max(0.002, sprd)
+            p.aim += CGFloat.random(in: -0.0035...0.0035) * (0.4 + recoil)
+            recoil = min(1.2, recoil + 0.13)
+            kick = min(38, kick + 6 + recoil * 4)
+        }
         if p.isPlayer && p.crouch {
             let bx = cos(p.aim), by = sin(p.aim)
             for r in TMap.solid where r.minX > -5000 {
@@ -970,6 +994,7 @@ final class TacticalEngine {
             }
             if muzzle > 20 { sprd *= 2.6 }
         }
+        if p.blind > 0 { sprd += p.isPlayer ? 0.05 : 0.35 }
         p.noiseT = 1.5
         for _ in 0..<g.pellets {
             let a = p.aim + CGFloat.random(in: -sprd...sprd)
@@ -983,15 +1008,17 @@ final class TacticalEngine {
         if p.isPlayer { shake = max(shake, g.pellets > 1 ? 4 : 1.5) }
     }
 
-    private func throwNade(_ p: TPlayer, _ ang: CGFloat, _ speed: CGFloat, smoke: Bool = false) {
-        guard p.alive, (smoke ? p.smokes > 0 : p.nades > 0) else { return }
-        if smoke { p.smokes -= 1 } else { p.nades -= 1 }
+    private func throwNade(_ p: TPlayer, _ ang: CGFloat, _ speed: CGFloat, smoke: Bool = false, flash: Bool = false) {
+        guard p.alive, (flash ? p.flashes > 0 : (smoke ? p.smokes > 0 : p.nades > 0)) else { return }
+        if flash { p.flashes -= 1 } else if smoke { p.smokes -= 1 } else { p.nades -= 1 }
         nades.append(Nade(pos: CGPoint(x: p.pos.x + cos(ang) * 20, y: p.pos.y + sin(ang) * 20),
-                          vel: CGVector(dx: cos(ang) * speed, dy: sin(ang) * speed), fuse: 1.5, owner: p.id, team: p.team, kind: smoke ? 1 : 0))
+                          vel: CGVector(dx: cos(ang) * speed, dy: sin(ang) * speed), fuse: 1.5, owner: p.id, team: p.team, kind: flash ? 2 : (smoke ? 1 : 0)))
     }
 
     private func damage(_ victim: TPlayer, _ amt: CGFloat, by owner: Int) {
         guard victim.alive else { return }
+        var amt = amt
+        if victim.armor > 0 { let ab = min(victim.armor, amt * 0.5); victim.armor -= ab; amt -= ab * 0.8 }
         victim.hp -= victim.crouch ? amt * 0.7 : amt
         victim.hurt = 0.25
         if owner == 0 && victim.team != me.team { hitT = 0.2 }
@@ -1064,7 +1091,16 @@ final class TacticalEngine {
             n.pos = np
             n.vel.dx *= pow(0.5, dt)
             n.vel.dy *= pow(0.5, dt)
-            if n.fuse <= 0 && n.kind == 1 {
+            if n.fuse <= 0 && n.kind == 2 {
+                booms.append(Boom(pos: n.pos, life: 0.25, r: 60))
+                for v in players where v.alive {
+                    let d = tDist(v.pos, n.pos)
+                    guard d < 320, TMap.los(n.pos, v.pos) else { continue }
+                    let toN = atan2(n.pos.y - v.pos.y, n.pos.x - v.pos.x)
+                    let facing = abs(tAngDiff(toN, v.aim)) < 1.5
+                    v.blind = max(v.blind, (facing ? 3.2 : 0.8) * (1 - d / 400))
+                }
+            } else if n.fuse <= 0 && n.kind == 1 {
                 smokeClouds.append(Smoke(pos: n.pos, life: 10, r: 85))
             } else if n.fuse <= 0 {
                 booms.append(Boom(pos: n.pos, life: 0.45, r: 110))
@@ -2011,6 +2047,7 @@ struct TacticalPlay: View {
     @State private var bridge: TacScene? = nil
     private var fp: Bool { mode == 1 }
     @State private var lastLook: CGFloat = 0
+    @State private var lastLookY: CGFloat = 0
     @State private var lookOn = false
     @State private var baseYaw: CGFloat = 0
     @State private var lastDrag = CGSize.zero
@@ -2087,8 +2124,11 @@ struct TacticalPlay: View {
                         .gesture(DragGesture(minimumDistance: 0)
                             .onChanged { v in
                                 if fp {
-                                    engine.lookDelta += (v.translation.width - lastLook) * 0.008
+                                    let sens: CGFloat = engine.scoped ? 0.0035 : 0.008
+                                    engine.lookDelta += (v.translation.width - lastLook) * sens
                                     lastLook = v.translation.width
+                                    engine.pitch = max(-0.5, min(0.5, engine.pitch - (v.translation.height - lastLookY) * sens * 0.6))
+                                    lastLookY = v.translation.height
                                     return
                                 }
                                 rStart = v.startLocation
@@ -2097,7 +2137,7 @@ struct TacticalPlay: View {
                                 if hypot(dx, dy) > 8 { engine.aimIn = atan2(dy, dx) - (bridge?.yaw ?? 0) }
                                 engine.firing = true
                             }
-                            .onEnded { _ in rStart = nil; lastLook = 0; engine.aimIn = nil; engine.firing = false })
+                            .onEnded { _ in rStart = nil; lastLook = 0; lastLookY = 0; engine.aimIn = nil; engine.firing = false })
                 }
                 if lookOn {
                     Color.clear.contentShape(Rectangle())
@@ -2123,7 +2163,7 @@ struct TacticalPlay: View {
                         Spacer()
                         HStack {
                             Spacer()
-                            fireButton.padding(.trailing, 36).padding(.bottom, 56)
+                            fireButton.padding(.trailing, 72).padding(.bottom, 62)
                         }
                     }
                 }
@@ -2137,9 +2177,9 @@ struct TacticalPlay: View {
     }
 
     private var fireButton: some View {
-        Circle().fill(Color.red.opacity(0.45)).frame(width: 78, height: 78)
-            .overlay(Circle().stroke(Color.red.opacity(0.7), lineWidth: 3))
-            .overlay(Text("FIRE").font(.jk(13, .heavy)).foregroundColor(.white))
+        Circle().fill(Color.black.opacity(0.35)).frame(width: 84, height: 84)
+            .overlay(Circle().stroke(Color.white.opacity(0.7), lineWidth: 2.5))
+            .overlay(Image(systemName: "scope").font(.system(size: 34, weight: .light)).foregroundColor(.white.opacity(0.95)))
             .gesture(DragGesture(minimumDistance: 0).onChanged { _ in engine.firing = true }.onEnded { _ in engine.firing = false })
     }
 
@@ -2175,7 +2215,163 @@ struct TacticalPlay: View {
         }
     }
 
-    private var hud: some View {
+    @ViewBuilder private var hud: some View {
+        if fp { fpHud } else { tdHud }
+    }
+
+    private func roundBtn(_ icon: String, _ size: CGFloat, on: Bool = false, dim: Bool = false) -> some View {
+        Image(systemName: icon).font(.system(size: size * 0.42, weight: .bold))
+            .foregroundColor(on ? .black : .white.opacity(dim ? 0.35 : 0.95))
+            .frame(width: size, height: size)
+            .background(on ? Color.yellow : Color.black.opacity(0.45))
+            .clipShape(Circle())
+            .overlay(Circle().stroke(Color.white.opacity(0.55), lineWidth: 1.5))
+    }
+
+    private func teamBox(_ list: [TPlayer], _ col: Color) -> some View {
+        HStack(spacing: 2) {
+            ForEach(list, id: \.id) { p in
+                Image(systemName: p.alive ? "person.fill" : "xmark")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundColor(p.alive ? .white : .white.opacity(0.35))
+                    .frame(width: 26, height: 24)
+                    .background(p.alive ? col : col.opacity(0.25))
+                    .overlay(alignment: .bottom) {
+                        Rectangle().fill(Color.white.opacity(0.9)).frame(width: 26 * max(0, p.alive ? p.hp / 100 : 0), height: 2)
+                            .frame(width: 26, alignment: .leading)
+                    }
+            }
+        }
+    }
+
+    private var fpHud: some View {
+        TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+            let e = engine
+            let blue = Color(red: 0.2, green: 0.55, blue: 0.95)
+            let orange = Color(red: 0.95, green: 0.6, blue: 0.1)
+            let allies = e.players.filter { $0.team == e.me.team }
+            let foes = e.players.filter { $0.team != e.me.team }
+            let t = Int(max(0, e.timer))
+            let g = TGuns.get(e.me.gun)
+            ZStack {
+                // top-left: HP / kills + pause
+                VStack {
+                    HStack(spacing: 8) {
+                        Image(systemName: "cross.fill").font(.system(size: 12, weight: .black)).foregroundColor(.white)
+                        Text("\(Int(max(0, e.me.hp)))").font(.jk(15, .heavy)).foregroundColor(e.me.hp < 35 ? .red : .white)
+                        Image(systemName: "shield.fill").font(.system(size: 12, weight: .black)).foregroundColor(.white.opacity(0.85))
+                        Text("\(Int(max(0, e.me.armor)))").font(.jk(15, .heavy)).foregroundColor(.white)
+                        Image(systemName: "star.fill").font(.system(size: 11, weight: .black)).foregroundColor(.yellow)
+                        Text("\(e.me.kills)").font(.jk(15, .heavy)).foregroundColor(.white)
+                        Button { e.paused = true } label: {
+                            Image(systemName: "pause.fill").font(.system(size: 11, weight: .bold)).foregroundColor(.white)
+                                .frame(width: 22, height: 20).background(Color.black.opacity(0.5)).clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+                    }
+                    .padding(.leading, 12).padding(.top, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Spacer()
+                }
+                // top-center: scoreboard
+                VStack(spacing: 3) {
+                    HStack(spacing: 4) {
+                        teamBox(allies, blue)
+                        VStack(spacing: 0) {
+                            Text(String(format: "%02d:%02d", t / 60, t % 60)).font(.system(size: 17, weight: .heavy, design: .monospaced))
+                                .foregroundColor(e.planted ? .red : Color(red: 1, green: 0.2, blue: 0.2))
+                                .padding(.horizontal, 8).background(Color.black.opacity(0.75))
+                            HStack(spacing: 8) {
+                                Text("\(e.scores[0])").foregroundColor(blue)
+                                Text("\(e.scores[1])").foregroundColor(orange)
+                            }
+                            .font(.jk(14, .heavy)).padding(.horizontal, 12).background(Color.black.opacity(0.6))
+                        }
+                        teamBox(foes, orange)
+                    }
+                    Text(e.objectiveText).font(.jk(11, .semibold)).foregroundColor(.white.opacity(0.9)).shadow(radius: 3)
+                    if e.bannerT > 0 {
+                        Text(e.banner).font(.jk(24, .heavy)).foregroundColor(.white).shadow(radius: 6).multilineTextAlignment(.center)
+                            .padding(.top, 20).opacity(Double(min(1, e.bannerT)))
+                    }
+                    if e.plantProg > 0 || e.defuseProg > 0 {
+                        let pr = e.plantProg > 0 ? e.plantProg / 3 : e.defuseProg / 4
+                        VStack(spacing: 3) {
+                            Text(e.plantProg > 0 ? "PLANTING" : "DEFUSING").font(.jk(11, .heavy)).foregroundColor(.white)
+                            Capsule().fill(Color.white.opacity(0.25)).frame(width: 150, height: 7)
+                                .overlay(alignment: .leading) { Capsule().fill(Color.yellow).frame(width: 150 * min(1, pr), height: 7) }
+                        }
+                        .padding(.top, 60)
+                    }
+                    Spacer()
+                }
+                .padding(.top, 4).frame(maxWidth: .infinity)
+                // top-right: weapon, ammo, feed
+                VStack {
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text(g.name.uppercased()).font(.jk(12, .heavy)).foregroundColor(.white.opacity(0.9))
+                        HStack(alignment: .lastTextBaseline, spacing: 3) {
+                            Text(e.me.reloadT > 0 ? "RELOAD" : "\(e.me.mag)").font(.jk(24, .heavy)).foregroundColor(e.me.mag == 0 ? .red : .white)
+                            Text("/ \(e.me.gun == "pistol" ? "∞" : "\(e.me.spare * g.mag)")").font(.jk(13, .bold)).foregroundColor(.white.opacity(0.7))
+                        }
+                        ForEach(Array(e.feed.enumerated()), id: \.offset) { _, f in
+                            Text(f.text).font(.jk(10, .bold)).foregroundColor(f.mine ? .yellow : .white.opacity(0.85))
+                                .padding(.horizontal, 6).padding(.vertical, 2).background(Color.black.opacity(0.5)).clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+                    }
+                    .padding(.trailing, 14).padding(.top, 4)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    Spacer()
+                }
+                // bottom-right: button cluster (fire button lives in controls)
+                VStack {
+                    Spacer()
+                    HStack(alignment: .bottom, spacing: 10) {
+                        Spacer()
+                        if e.me.alive {
+                            HStack(alignment: .bottom, spacing: 10) {
+                                Button { e.wantReload = true } label: { roundBtn("arrow.triangle.2.circlepath", 44) }
+                                Button { e.toggleCover() } label: { roundBtn("figure.stand", 44, on: e.me.crouch) }
+                                Button { e.scoped.toggle() } label: { roundBtn("scope", 44, on: e.scoped) }
+                            }
+                            .padding(.trailing, 112)
+                            VStack(spacing: 10) {
+                                Button { e.wantSmoke = true } label: { roundBtn("smoke.fill", 44, dim: e.me.smokes == 0) }
+                                Button { e.wantNade = true } label: { roundBtn("circle.hexagongrid.fill", 44, dim: e.me.nades == 0) }
+                                Button { e.wantFlash = true } label: { roundBtn("bolt.fill", 44, dim: e.me.flashes == 0) }
+                            }
+                            .padding(.trailing, 2)
+                        } else {
+                            Button { e.fast.toggle() } label: {
+                                Text(e.fast ? "Normal speed" : "Skip ahead").font(.jk(13, .bold)).foregroundColor(.white)
+                                    .padding(.horizontal, 14).frame(height: 38).background(Color.black.opacity(0.55)).clipShape(Capsule())
+                            }
+                        }
+                    }
+                    .padding(.trailing, 12).padding(.bottom, 14)
+                }
+                // bottom-center: contextual
+                VStack {
+                    Spacer()
+                    HStack(spacing: 10) {
+                        if let di = e.nearestDoor() {
+                            Button { e.toggleDoor() } label: {
+                                Text(TMap.doorWant[di] || TMap.doorOpen[di] > 0.5 ? "CLOSE DOOR" : "OPEN DOOR").font(.jk(12, .heavy)).foregroundColor(.black)
+                                    .padding(.horizontal, 12).frame(height: 40).background(Color.yellow).clipShape(Capsule())
+                            }
+                        }
+                        if e.meInSite || e.meNearBomb {
+                            Text(e.meInSite ? "HOLD PLANT" : "HOLD DEFUSE").font(.jk(12, .heavy)).foregroundColor(.black)
+                                .padding(.horizontal, 14).frame(height: 44).background(Color.yellow).clipShape(Capsule())
+                                .gesture(DragGesture(minimumDistance: 0).onChanged { _ in e.actHeld = true }.onEnded { _ in e.actHeld = false })
+                        }
+                    }
+                    .padding(.bottom, 18)
+                }
+            }
+        }
+    }
+
+    private var tdHud: some View {
         TimelineView(.periodic(from: .now, by: 0.1)) { _ in
             let e = engine
             let allies = e.players.filter { $0.team == e.me.team }
