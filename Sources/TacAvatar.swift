@@ -66,7 +66,7 @@ enum TacAvatar {
         pick(&l.hair, r.int(13))
         pick(&l.hairStyle, hairStyleList[r.int(hairStyleList.count)])
         pick(&l.top, r.int(12))
-        pick(&l.outfit, r.int(14))
+        pick(&l.outfit, r.int(16))
         pick(&l.eyes, r.int(3))
         pick(&l.eyeColor, r.int(9))
         pick(&l.brow, r.int(5))
@@ -146,31 +146,35 @@ enum TacAvatar {
 
     @MainActor private static var faceCache: [String: UIImage] = [:]
 
-    /// Renders the face-only portrait asynchronously and drops it on the material when ready.
-    static func applyFace(_ mat: MXMaterial, style s: TwStyle) {
+    /// The cropped face-only portrait for a style (cached).
+    @MainActor static func faceImage(_ s: TwStyle) -> UIImage? {
         let look = s.look
         let key = s.key
-        Task { @MainActor in
-            let ck = key + "|" + ((try? JSONEncoder().encode(look)).flatMap { String(data: $0, encoding: .utf8) } ?? "")
-            if let c = faceCache[ck] { mat.diffuse.contents = c; return }
-            var l = look
-            l.anim = 0
-            l.frame = 0
-            let r = ImageRenderer(content: PortraitAvatar(key: key, size: 256, look: l, faceOnly: true))
-            r.scale = 1
-            r.isOpaque = false
-            if var img = r.uiImage {
-                // crop to the head so it fills the flat front of the 3D head
-                if let cg = img.cgImage {
-                    let W = CGFloat(cg.width), H = CGFloat(cg.height)
-                    if let cr = cg.cropping(to: CGRect(x: 0.24 * W, y: 0.19 * H, width: 0.52 * W, height: 0.52 * H)) {
-                        img = UIImage(cgImage: cr)
-                    }
-                }
-                if faceCache.count > 60 { faceCache.removeAll() }
-                faceCache[ck] = img
-                mat.diffuse.contents = img
+        let ck = key + "|" + ((try? JSONEncoder().encode(look)).flatMap { String(data: $0, encoding: .utf8) } ?? "")
+        if let c = faceCache[ck] { return c }
+        var l = look
+        l.anim = 0
+        l.frame = 0
+        let r = ImageRenderer(content: PortraitAvatar(key: key, size: 256, look: l, faceOnly: true))
+        r.scale = 1
+        r.isOpaque = false
+        guard var img = r.uiImage else { return nil }
+        // crop to the head so it fills the flat front of the 3D head
+        if let cg = img.cgImage {
+            let W = CGFloat(cg.width), H = CGFloat(cg.height)
+            if let cr = cg.cropping(to: CGRect(x: 0.24 * W, y: 0.19 * H, width: 0.52 * W, height: 0.52 * H)) {
+                img = UIImage(cgImage: cr)
             }
+        }
+        if faceCache.count > 160 { faceCache.removeAll() }
+        faceCache[ck] = img
+        return img
+    }
+
+    /// Renders the face-only portrait asynchronously and drops it on the material when ready.
+    static func applyFace(_ mat: MXMaterial, style s: TwStyle) {
+        Task { @MainActor in
+            if let img = faceImage(s) { mat.diffuse.contents = img }
         }
     }
 }

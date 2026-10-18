@@ -511,12 +511,17 @@ final class MXRenderer {
 
     /// returns the view-projection matrix used for the frame
     func render(view mtk: MTKView, scene: MXScene, camNode: MXNode, camera: MXCamera, samples reqSamples: Int) -> simd_float4x4? {
-        guard let dev = gpu.device, let queue = gpu.queue, let drawable = mtk.currentDrawable else { return nil }
-        let W = drawable.texture.width, H = drawable.texture.height
+        guard let drawable = mtk.currentDrawable else { return nil }
+        return renderCore(target: drawable.texture, drawable: drawable, scene: scene, camNode: camNode, camera: camera, samples: reqSamples, wait: false)
+    }
+
+    func renderCore(target: MTLTexture, drawable: CAMetalDrawable?, scene: MXScene, camNode: MXNode, camera: MXCamera, samples reqSamples: Int, wait: Bool) -> simd_float4x4? {
+        guard let dev = gpu.device, let queue = gpu.queue else { return nil }
+        let W = target.width, H = target.height
         if W < 8 || H < 8 { return nil }
         let samples = (reqSamples > 1 && dev.supportsTextureSampleCount(reqSamples)) ? reqSamples : 1
         guard let opaquePipe = gpu.opaquePipe(samples: samples), let blendPipe = gpu.blendedPipe(samples: samples),
-              let skyPipe = gpu.skyPipe(samples: samples), let compPipe = gpu.compositePipe(format: drawable.texture.pixelFormat) else { return nil }
+              let skyPipe = gpu.skyPipe(samples: samples), let compPipe = gpu.compositePipe(format: target.pixelFormat) else { return nil }
         ensureTargets(W, H, samples)
         guard let hdr = hdr, let depthTex = msaaDepth, let cmd = queue.makeCommandBuffer() else { return nil }
 
@@ -747,7 +752,7 @@ final class MXRenderer {
 
         // ---- composite to the drawable
         let cd = MTLRenderPassDescriptor()
-        cd.colorAttachments[0].texture = drawable.texture
+        cd.colorAttachments[0].texture = target
         cd.colorAttachments[0].loadAction = .dontCare
         cd.colorAttachments[0].storeAction = .store
         if let ce = cmd.makeRenderCommandEncoder(descriptor: cd) {
@@ -761,8 +766,34 @@ final class MXRenderer {
             ce.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
             ce.endEncoding()
         }
-        cmd.present(drawable)
+        if let d = drawable { cmd.present(d) }
         cmd.commit()
+        if wait { cmd.waitUntilCompleted() }
         return vp
+    }
+}
+
+
+// MARK: - offscreen snapshots (used for 3D item thumbnails)
+
+final class MXOffscreen {
+    private let renderer = MXRenderer()
+
+    /// Renders the scene into a transparent square image.
+    func image(scene: MXScene, camNode: MXNode, size: Int, samples: Int = 4) -> UIImage? {
+        guard let dev = MXGPU.shared.device, let cam = camNode.camera, MXGPU.shared.error == nil else { return nil }
+        let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: size, height: size, mipmapped: false)
+        td.usage = [.renderTarget, .shaderRead]
+        td.storageMode = .shared
+        guard let tex = dev.makeTexture(descriptor: td) else { return nil }
+        guard renderer.renderCore(target: tex, drawable: nil, scene: scene, camNode: camNode, camera: cam, samples: samples, wait: true) != nil else { return nil }
+        let bpr = size * 4
+        var buf = [UInt8](repeating: 0, count: bpr * size)
+        tex.getBytes(&buf, bytesPerRow: bpr, from: MTLRegionMake2D(0, 0, size, size), mipmapLevel: 0)
+        let info = CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue
+        guard let ctx = CGContext(data: &buf, width: size, height: size, bitsPerComponent: 8, bytesPerRow: bpr,
+                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: info),
+              let cg = ctx.makeImage() else { return nil }
+        return UIImage(cgImage: cg, scale: 1, orientation: .up)
     }
 }

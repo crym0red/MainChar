@@ -113,6 +113,27 @@ enum TwRig {
                            elements: [MXGeometryElement(indices: idx, primitiveType: .triangles)])
     }
 
+    /// Tapered limb segment between two points (radius r0 at `a`, r1 at `b`).
+    static func limb(_ a: (CGFloat, CGFloat, CGFloat), _ b: (CGFloat, CGFloat, CGFloat), _ r0: CGFloat, _ r1: CGFloat, _ m: MXMaterial) -> MXNode {
+        let dx = Float(b.0 - a.0), dy = Float(b.1 - a.1), dz = Float(b.2 - a.2)
+        let len = max(0.01, sqrt(dx * dx + dy * dy + dz * dz))
+        let g = MXCone(topRadius: r1, bottomRadius: r0, height: CGFloat(len))
+        g.radialSegmentCount = 14
+        g.materials = [m]
+        let n = MXNode(geometry: g)
+        n.position = MXVector3(Float(a.0 + b.0) / 2, Float(a.1 + b.1) / 2, Float(a.2 + b.2) / 2)
+        let ux = dx / len, uy = dy / len, uz = dz / len
+        let axx = uz, axz = -ux
+        let al = sqrt(axx * axx + axz * axz)
+        if al < 1e-5 {
+            n.orientation = uy > 0 ? MXVector4(0, 0, 0, 1) : MXVector4(1, 0, 0, 0)
+        } else {
+            let w = sqrt(max(0, (1 + uy) / 2)), sn = sqrt(max(0, (1 - uy) / 2))
+            n.orientation = MXVector4(axx / al * sn, 0, axz / al * sn, w)
+        }
+        return n
+    }
+
     static func cone(_ r: CGFloat, _ h: CGFloat, _ c: UIColor) -> MXNode {
         let g = MXCone(topRadius: 0, bottomRadius: r, height: h)
         g.radialSegmentCount = 16
@@ -238,7 +259,7 @@ enum TwRig {
     /// team: coloured shoulder markers so allies and enemies read at a glance.
     /// style: the player's own designed avatar (face, outfit, build, hair, hats ...).
     /// rank: 0 = regular player, 1 = staff (hi-vis vest, cap, lanyard), 2 = admin (black suit, tie).
-    static func soldier(team: UIColor, style st: TwStyle, rank: Int) -> TwSoldier {
+    static func soldier(team: UIColor, style st: TwStyle, rank: Int, onlyGun: String? = nil, asyncFace: Bool = true) -> TwSoldier {
         let root = MXNode()
         let admin = rank == 2, staff = rank == 1
         let bw: CGFloat = [0.85, 1.0, 1.12, 1.3][max(0, min(3, st.build))]
@@ -249,32 +270,47 @@ enum TwRig {
         let pantsCol: UIColor = admin ? col(0.07, 0.07, 0.09) : (staff ? col(0.1, 0.13, 0.22) : st.pants)
         let top: UIColor = admin ? col(0.08, 0.08, 0.1) : (staff ? col(0.08, 0.45, 0.5) : st.top)
         let tank = !admin && !staff && st.outfit == 7
-        let sleeveM: MXMaterial = tank ? mat(skin) : mat(top)
+        let combat = !admin && !staff && st.outfit == 14
+        let sleeveM: MXMaterial = tank ? mat(skin) : (combat ? camoMat(top, "uni\(top.hashValue)") : mat(top))
         let vestC = st.vest
         let plateC = col(0.22, 0.23, 0.2)
         let bootC: UIColor = admin ? col(0.04, 0.04, 0.05) : st.shoes
         let shorts = !admin && !staff && st.pantsStyle == 3
 
-        // ---- legs
+        let dy: CGFloat = 6.5
+        let bodyGrp = MXNode()
+        bodyGrp.position = MXVector3(0, Float(dy), 0)
+        bodyGrp.scale = MXVector3(1, 1, 0.9)
+        root.addChildNode(bodyGrp)
+        let headGrp = MXNode()
+        let hsc: CGFloat = 0.8
+        headGrp.position = MXVector3(Float(0.4 - hsc * 0.4), Float(35.5 + dy - hsc * 35.5), 0)
+        headGrp.scale = MXVector3(Float(hsc), Float(hsc), Float(hsc))
+        root.addChildNode(headGrp)
+
+        // ---- legs: tapered thigh + shin with a knee and a proper boot
         var legs: [MXNode] = []
-        for z in [-3.5, 3.5] as [CGFloat] {
+        let pantM = mat(pantsCol), skinM = mat(skin)
+        for z in [-3.7, 3.7] as [CGFloat] {
             let hip = MXNode()
-            hip.position = MXVector3(0, 16, Float(z * bw))
-            if shorts {
-                hip.addChildNode(at(cap(3.0, 8.5, pantsCol), 0, -4.2, 0))
-                hip.addChildNode(at(cap(2.2, 8.5, skin), 0, -10.2, 0))
-            } else {
-                hip.addChildNode(at(cap(3.0, 15, pantsCol), 0, -7.5, 0))
-                if !admin && !staff {
-                    if st.pantsStyle == 0 {
-                        hip.addChildNode(at(box(2.0, 5, 3.4, pantsCol.withAlphaComponent(1)), 2.6, -9, 0))
-                    } else if st.pantsStyle == 2 {
-                        hip.addChildNode(at(box(1.8, 3.4, 4.6, col(0.12, 0.12, 0.14)), 2.4, -9.8, 0))
-                    }
+            hip.position = MXVector3(0, 23.5, Float(z * bw))
+            let thighM = shorts ? pantM : pantM
+            hip.addChildNode(limb((0, 0, 0), (0.5, -10.6, 0), 3.5, 2.8, thighM))
+            hip.addChildNode(at(ball(3.4, pantsCol), 0, 0, 0))
+            hip.addChildNode(at(ball(2.8, shorts ? skin : pantsCol), 0.5, -10.8, 0))
+            hip.addChildNode(limb((0.5, -10.8, 0), (0, -20.2, 0), 2.7, shorts ? 2.1 : 2.3, shorts ? skinM : pantM))
+            if !shorts && !admin && !staff {
+                if st.pantsStyle == 0 {
+                    hip.addChildNode(at(box(1.4, 4.2, 3.0, pantsCol), 3.0, -6.5, 0))
+                } else if st.pantsStyle == 2 {
+                    hip.addChildNode(at(box(1.4, 3.6, 4.0, col(0.12, 0.12, 0.14)), 2.9, -11.0, 0))
                 }
             }
-            let boot = ball(3, bootC); boot.scale = MXVector3(1.7, 0.8, 1.05)
-            hip.addChildNode(at(boot, 1.6, -14.4, 0))
+            hip.addChildNode(at(cyl(2.55, 4.2, bootC), 0, -19.6, 0))
+            let boot = ball(3, bootC); boot.scale = MXVector3(1.75, 0.72, 1.0)
+            hip.addChildNode(at(boot, 1.9, -21.2, 0))
+            let sole = box(8.4, 0.9, 5.2, col(0.06, 0.06, 0.07))
+            hip.addChildNode(at(sole, 1.9, -22.6, 0))
             root.addChildNode(hip)
             legs.append(hip)
         }
@@ -282,24 +318,29 @@ enum TwRig {
         // ---- torso + shoulders
         let sm = MXMaterial()
         sm.diffuse.contents = top
+        if combat {
+            sm.diffuse.contents = camoMat(top, "uni\(top.hashValue)").diffuse.contents
+            sm.diffuse.wrapS = .repeat; sm.diffuse.wrapT = .repeat
+            sm.diffuse.contentsTransform = MXMatrix4MakeScale(3, 2, 1)
+        }
         let tg = MXSphere(radius: 1)
         tg.segmentCount = 24
         tg.materials = [sm]
         let torso = MXNode(geometry: tg)
         torso.scale = MXVector3(4.6, 8.4, Float(7.4 * bw))
-        root.addChildNode(at(torso, 0, 23.8, 0))
+        bodyGrp.addChildNode(at(torso, 0, 23.8, 0))
         for z in [-7.6, 7.6] as [CGFloat] {
-            root.addChildNode(at(ball(3, tank ? skin : top), 0, 29.4, z * bw))
-            root.addChildNode(at(box(2.4, 1.0, 3.4, team, glow: true), 0, 32.3, z * bw))   // team marker
+            bodyGrp.addChildNode(at(ball(3, tank ? skin : top), 0, 29.4, z * bw))
+            bodyGrp.addChildNode(at(box(2.4, 1.0, 3.4, team, glow: true), 0, 32.3, z * bw))   // team marker
         }
-        root.addChildNode(at(box(8, 2, 14.5 * bw, admin ? col(0.04, 0.04, 0.05) : col(0.1, 0.1, 0.08)), 0, 17.6, 0))   // belt
+        bodyGrp.addChildNode(at(box(8, 2, 14.5 * bw, admin ? col(0.04, 0.04, 0.05) : col(0.1, 0.1, 0.08)), 0, 17.6, 0))   // belt
         let turtle = !admin && !staff && st.outfit == 3
-        root.addChildNode(at(cyl(turtle ? 3.1 : 2.6, 3, turtle ? top : skin), 0.2, 31.6, 0))
+        bodyGrp.addChildNode(at(cyl(turtle ? 3.1 : 2.6, 3, turtle ? top : skin), 0.2, 31.6, 0))
 
         // ---- clothing details (scaled with the build)
         let roleN = MXNode()
         roleN.scale = MXVector3(1, 1, Float(bw))
-        root.addChildNode(roleN)
+        bodyGrp.addChildNode(roleN)
         if admin {
             roleN.addChildNode(at(box(0.9, 5.6, 3.8, col(0.95, 0.95, 0.97)), 4.72, 26.6, 0))
             roleN.addChildNode(at(box(0.7, 6.2, 1.1, col(0.8, 0.08, 0.1)), 5.12, 26.2, 0))
@@ -343,6 +384,16 @@ enum TwRig {
                 }
             case 10:  // armor tee
                 roleN.addChildNode(at(box(1.3, 7.2, 9.4, col(0.23, 0.25, 0.3)), 4.95, 25.6, 0))
+            case 14:  // combat uniform: chest pockets, collar, shoulder patch
+                for z in [-3.6, 3.6] as [CGFloat] { roleN.addChildNode(at(box(1.0, 2.8, 3.2, top.withAlphaComponent(1)), 4.85, 26.2, z)) }
+                roleN.addChildNode(at(box(0.5, 1.6, 2.6, team, glow: true), 0.2, 33.6, 7.4))
+            case 15:  // plate carrier
+                let plate = ball(1, vestC); plate.scale = MXVector3(5.3, 6.4, 6.9)
+                roleN.addChildNode(at(plate, 0.4, 26.6, 0))
+                let back = ball(1, vestC); back.scale = MXVector3(4.2, 6.2, 6.6)
+                roleN.addChildNode(at(back, -1.2, 26.8, 0))
+                for z in [-3.4, 0.0, 3.4] as [CGFloat] { roleN.addChildNode(at(box(1.8, 2.8, 2.8, col(0.2, 0.2, 0.16)), 5.4, 21.4, z)) }
+                for z in [-4.2, 4.2] as [CGFloat] { roleN.addChildNode(at(box(1.0, 5.0, 1.8, col(0.14, 0.14, 0.12)), 0.6, 33.2, z)) }
             case 11:  // lab coat
                 roleN.addChildNode(at(box(9.8, 11.5, 15.4, col(0.95, 0.95, 0.97)), 0, 23.6, 0))
             default: break
@@ -373,7 +424,7 @@ enum TwRig {
         kev.addChildNode(at(box(4, 12, 9, col(0.24, 0.26, 0.2)), -6.2, 24, 0))
         kev.addChildNode(at(box(2.4, 2.4, 14, col(0.12, 0.12, 0.1)), 1.2, 21.2, 0))
         kev.isHidden = true
-        root.addChildNode(kev)
+        bodyGrp.addChildNode(kev)
 
         let heavy = MXNode()
         heavy.scale = MXVector3(1, 1, Float(bw))
@@ -383,7 +434,7 @@ enum TwRig {
         heavy.addChildNode(at(box(0.5, 0.9, 10, col(1, 0.75, 0.2), glow: true), 6.8, 30, 0))
         heavy.addChildNode(at(box(0.5, 0.9, 10, col(1, 0.75, 0.2), glow: true), 6.8, 22.4, 0))
         heavy.isHidden = true
-        root.addChildNode(heavy)
+        bodyGrp.addChildNode(heavy)
 
         // ---- head: round, with the illustrated face wrapped over the front
         let hg = MXSphere(radius: 4.6)
@@ -391,7 +442,7 @@ enum TwRig {
         hg.materials = [mat(skin)]
         let headN = MXNode(geometry: hg)
         headN.scale = MXVector3(0.95, 1.12, 0.92)
-        root.addChildNode(at(headN, 0.4, 35.5, 0))
+        headGrp.addChildNode(at(headN, 0.4, 35.5, 0))
 
         let faceMat = MXMaterial()
         faceMat.isDoubleSided = true
@@ -399,8 +450,8 @@ enum TwRig {
         let fpN = MXNode(geometry: facePatch(rx: 4.6 * 0.95 * 1.012, ry: 4.6 * 1.12 * 1.012, rz: 4.6 * 0.92 * 1.012, span: 10.5))
         fpN.geometry?.materials = [faceMat]
         fpN.castsShadow = false
-        root.addChildNode(at(fpN, 0.4, 35.5, 0))
-        TacAvatar.applyFace(faceMat, style: st)
+        headGrp.addChildNode(at(fpN, 0.4, 35.5, 0))
+        if asyncFace { TacAvatar.applyFace(faceMat, style: st) }
 
         // ---- hair + hats (hidden together when a helmet is worn)
         let hat = MXNode()
@@ -413,7 +464,7 @@ enum TwRig {
             hat.addChildNode(hair3D(st.hairStyle, st.hairCol))
             if !admin && st.hat != 0 { hat.addChildNode(hat3D(st.hat, st.hatCol)) }
         }
-        root.addChildNode(hat)
+        headGrp.addChildNode(hat)
 
         let helm = MXNode()
         helm.addChildNode(at(box(1.2, 1.6, 8.6, col(0.04, 0.04, 0.05)), 5.0, 36.6, 0))
@@ -423,33 +474,39 @@ enum TwRig {
         helm.addChildNode(at(helmet, 0.2, 38.0, 0))
         helm.addChildNode(at(box(2.4, 1.4, 7.5, col(0.05, 0.05, 0.07)), 4.4, 36.4, 0))
         helm.isHidden = true
-        root.addChildNode(helm)
+        headGrp.addChildNode(helm)
 
-        // ---- arms + hands
-        let az = Float(min(bw, 1.12))
-        let rArm = cap(2.0, 12, col(0.3, 0.3, 0.22)); rArm.geometry?.materials = [sleeveM]
-        rArm.eulerAngles = MXVector3(0, -0.2, Float.pi / 2 - 0.1)
-        root.addChildNode(at(rArm, 6.5, 26.5, CGFloat(6 * az)))
-        let lArm = cap(2.0, 16, col(0.3, 0.3, 0.22)); lArm.geometry?.materials = [sleeveM]
-        lArm.eulerAngles = MXVector3(0, 0.35, Float.pi / 2 - 0.08)
-        root.addChildNode(at(lArm, 8.2, 26.5, -4.6 * CGFloat(az)))
-        for (hx, hy, hz) in [(12.2, 26.0, 4.8), (15.5, 26.0, -1.4)] as [(CGFloat, CGFloat, CGFloat)] {
+        // ---- arms + hands: shoulder -> elbow -> hand, both on the weapon
+        let az = CGFloat(min(bw, 1.12))
+        let zs: CGFloat = 6.5 * az
+        let gy: CGFloat = 26.5 + dy + 0.5
+        let sleeves = sleeveM
+        let handR: (CGFloat, CGFloat, CGFloat) = (12.2, gy - 0.5, 4.8)
+        let handL: (CGFloat, CGFloat, CGFloat) = (15.5, gy - 0.5, -1.4)
+        let shR: (CGFloat, CGFloat, CGFloat) = (0, 35.6, zs), elR: (CGFloat, CGFloat, CGFloat) = (4.2, 30.4, zs + 0.4)
+        let shL: (CGFloat, CGFloat, CGFloat) = (0, 35.6, -zs), elL: (CGFloat, CGFloat, CGFloat) = (7.2, 31.0, -zs + 1.6)
+        for (sh, el, hd) in [(shR, elR, handR), (shL, elL, handL)] {
+            root.addChildNode(limb(sh, el, 2.7, 2.2, sleeves))
+            root.addChildNode(at(ball(2.25, tank ? skin : top), el.0, el.1, el.2))
+            root.addChildNode(limb(el, hd, 2.2, 1.7, sleeves))
+        }
+        for (hx, hy, hz) in [handR, handL] {
             if admin {
                 root.addChildNode(at(ball(1.9, col(0.92, 0.92, 0.94)), hx, hy, hz))
             } else if st.gloves == 2 {
-                root.addChildNode(at(ball(2.15, st.gloveCol), hx, hy, hz))
+                root.addChildNode(at(ball(2.1, st.gloveCol), hx, hy, hz))
             } else {
-                root.addChildNode(at(ball(1.9, skin), hx, hy, hz))
-                if st.gloves == 1 { root.addChildNode(at(cyl(1.9, 1.2, st.gloveCol), hx - 1.3, hy, hz)) }
+                root.addChildNode(at(ball(1.85, skin), hx, hy, hz))
+                if st.gloves == 1 { root.addChildNode(at(cyl(1.85, 1.2, st.gloveCol), hx - 1.3, hy, hz)) }
             }
         }
 
         // ---- weapon: one detailed model per gun id
         let holder = MXNode()
-        holder.position = MXVector3(10, 26.5, 1.8)
+        holder.position = MXVector3(10, Float(gy), 1.8)
         var variants: [MXNode] = []
         for (k, w) in TWeapons.all.enumerated() {
-            let gm = TwGunLib.worldGun(w.id)
+            let gm = (onlyGun == nil || w.id == onlyGun) ? TwGunLib.worldGun(w.id) : MXNode()
             gm.isHidden = k != 0
             holder.addChildNode(gm)
             variants.append(gm)
@@ -463,7 +520,7 @@ enum TwRig {
         let face = MXNode()
         face.isHidden = true
         root.addChildNode(face)
-        root.scale = MXVector3(1.25, 1.25 * hs, 1.25)
+        root.scale = MXVector3(1.1, 1.1 * hs, 1.1)
         return TwSoldier(root: root, legL: legs[0], legR: legs[1], holder: holder, variants: variants, flash: fl, shirt: sm, face: face, faceMat: faceMat, kev: kev, helm: helm, heavy: heavy, hat: hat)
     }
 }

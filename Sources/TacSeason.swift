@@ -114,6 +114,9 @@ struct TacSeasonView: View {
     var startTab: Int = 0
     @State private var tab = 0
     @State private var drawMsg = ""
+    @State private var spinning = false
+    @State private var carouselPos: Double = 0
+    @State private var dragX: CGFloat = 0
 
     private let lime = TUI.accent
 
@@ -299,33 +302,107 @@ struct TacSeasonView: View {
         }
     }
 
+    private var drawItems: [TacCos] { TacSeason.catalog.filter { !$0.id.hasSuffix("_none") } }
+
+    private func rarity(_ c: TacCos) -> (String, Color) {
+        if TacSeason.premCos.contains(c.id) { return ("EPIC", Color(red: 0.75, green: 0.45, blue: 1)) }
+        if TacSeason.freeCos.contains(c.id) { return ("RARE", TUI.blue) }
+        return ("COMMON", Color.white.opacity(0.6))
+    }
+
+    private func drawCell(_ c: TacCos, w: CGFloat) -> some View {
+        let r = rarity(c)
+        let owned = game.tacOwns(c.id)
+        return VStack(spacing: 6) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(r.1.opacity(0.16))
+                CosIcon(c: c, size: 34)
+            }
+            .frame(width: w - 14, height: 66)
+            Text(c.label).font(.jk(11, .heavy)).foregroundColor(.white).lineLimit(1).minimumScaleFactor(0.7)
+            Text(owned ? "OWNED" : r.0).font(.jk(9, .heavy)).foregroundColor(owned ? .white.opacity(0.35) : r.1)
+        }
+        .frame(width: w, height: 112)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.06)))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(r.1.opacity(0.45), lineWidth: 1))
+        .opacity(owned ? 0.55 : 1)
+    }
+
+    private func spinDraw() {
+        guard !spinning else { return }
+        let pool = drawItems.filter { !game.tacOwns($0.id) }
+        guard game.s.ex.gems >= 40 else { drawMsg = "Not enough gems"; return }
+        guard let win = pool.randomElement(), let wi = drawItems.firstIndex(where: { $0.id == win.id }) else {
+            drawMsg = "Collection complete"
+            return
+        }
+        var st = game.s; st.ex.gems -= 40; game.s = st
+        spinning = true
+        drawMsg = ""
+        let n = drawItems.count
+        let base = (Int(carouselPos.rounded()) / n + 1) * n
+        let target = Double(base + n * 6 + wi)
+        withAnimation(.timingCurve(0.12, 0.62, 0.08, 1.0, duration: 4.2)) { carouselPos = target }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.4) {
+            game.updateSX { $0.owned.append(win.id) }
+            drawMsg = "You got: \(win.label)"
+            spinning = false
+            // park the strip back near the start so the offset stays small
+            var tx = Transaction(); tx.disablesAnimations = true
+            withTransaction(tx) { carouselPos = Double(n * 2 + wi) }
+        }
+    }
+
     private func drawTab() -> some View {
-        VStack(spacing: 14) {
-            SF("gift.fill").font(.system(size: 34)).foregroundColor(TUI.gold)
-            Text("LUCKY DRAW").font(.jk(22, .heavy)).foregroundColor(.white)
-            Text("Spend 40 gems for a random cosmetic you don't own yet.").font(.jk(12, .semibold)).foregroundColor(.white.opacity(0.7))
-            Button {
-                let pool = TacSeason.catalog.filter { !game.tacOwns($0.id) }
-                guard game.s.ex.gems >= 40 else { drawMsg = "Not enough gems"; return }
-                var st = game.s; st.ex.gems -= 40; game.s = st
-                if let c = pool.randomElement() {
-                    game.updateSX { $0.owned.append(c.id) }
-                    drawMsg = "You got: \(c.label)"
-                } else {
-                    var s2 = game.s; s2.ex.gems += 20; game.s = s2
-                    drawMsg = "Collection complete, 20 gems back"
+        let items = drawItems
+        let n = max(1, items.count)
+        let cw: CGFloat = 104, gap: CGFloat = 8
+        let step = cw + gap
+        return VStack(spacing: 12) {
+            HStack(spacing: 8) {
+                SF("gift.fill").font(.system(size: 18)).foregroundColor(TUI.gold)
+                Text("LUCKY DRAW").font(.jk(20, .heavy)).foregroundColor(.white)
+            }
+            GeometryReader { geo in
+                let W = geo.size.width
+                ZStack {
+                    HStack(spacing: gap) {
+                        ForEach(0..<(n * 14), id: \.self) { k in drawCell(items[k % n], w: cw) }
+                    }
+                    .offset(x: W / 2 - cw / 2 - CGFloat(carouselPos) * step + dragX)
+                    .frame(width: W, alignment: .leading)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(TUI.accent, lineWidth: 3)
+                        .frame(width: cw + 8, height: 120).allowsHitTesting(false)
+                    Image(systemName: "arrowtriangle.down.fill").font(.system(size: 14)).foregroundColor(TUI.accent)
+                        .offset(y: -70).allowsHitTesting(false)
                 }
-            } label: {
+                .frame(width: W, height: 130)
+                .clipped()
+                .contentShape(Rectangle())
+                .gesture(DragGesture()
+                    .onChanged { v in if !spinning { dragX = v.translation.width } }
+                    .onEnded { v in
+                        guard !spinning else { return }
+                        let moved = Double(-v.predictedEndTranslation.width / step)
+                        let t = (carouselPos + moved).rounded()
+                        withAnimation(.easeOut(duration: 0.35)) { carouselPos = t; dragX = 0 }
+                    })
+            }
+            .frame(height: 130)
+            Text("Spend 40 gems for a random cosmetic you don't own yet.").font(.jk(12, .semibold)).foregroundColor(.white.opacity(0.7))
+            Button { spinDraw() } label: {
                 HStack(spacing: 8) {
-                    Text("DRAW").font(.jk(18, .heavy))
+                    Text(spinning ? "..." : "DRAW").font(.jk(18, .heavy))
                     SF("diamond.fill").font(.system(size: 13))
                     Text("40").font(.jk(18, .heavy))
                 }
-                .foregroundColor(.black).frame(width: 210, height: 52).background(Capsule().fill(TUI.gold))
+                .foregroundColor(.black).frame(width: 210, height: 50).background(Capsule().fill(TUI.gold))
+                .opacity(spinning ? 0.6 : 1)
             }
             .buttonStyle(TuiPress())
-            Text(drawMsg).font(.jk(15, .bold)).foregroundColor(lime)
+            Text(drawMsg).font(.jk(15, .bold)).foregroundColor(lime).frame(height: 20)
         }
-        .padding(.top, 20)
+        .padding(.top, 8)
+        .onAppear { if carouselPos < 1 { carouselPos = Double(n * 2) } }
     }
 }

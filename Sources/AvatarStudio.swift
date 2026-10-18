@@ -5,8 +5,19 @@ struct AvatarStudioView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var look = AvatarLook()
     @State private var tab = 0
+    @State private var manualShot: AvatarShot? = nil
 
     private let tabs = ["Skin", "Face", "Hair", "Beard", "Outfit", "Body", "Hats", "Paint", "Eyewear", "Jewelry", "Mask"]
+    private let tabIcons = ["drop.fill", "face.smiling", "scissors", "mustache.fill", "tshirt.fill", "figure.stand", "graduationcap.fill", "paintbrush.fill", "eyeglasses", "sparkles", "theatermasks.fill"]
+    private var tabShot: AvatarShot {
+        switch tabs[tab] {
+        case "Skin", "Body": return .full
+        case "Outfit": return .upper
+        case "Hair": return .hair
+        default: return .head
+        }
+    }
+    private var shot: AvatarShot { manualShot ?? tabShot }
     private let buildNames = ["Slim", "Average", "Athletic", "Heavy"]
     private let heightNames = ["Short", "Average", "Tall"]
     private let pantsStyleNames = ["Cargo", "Jeans", "Tactical", "Shorts"]
@@ -20,7 +31,7 @@ struct AvatarStudioView: View {
     private let noseNames = ["Line", "Button", "Wide", "Pointed"]
     private let mouthNames = ["Smile", "Flat", "Smirk", "Grin"]
     private let beardNames = ["None", "Stubble", "Mustache", "Goatee", "Full beard", "Soul patch", "Handlebar", "Chinstrap"]
-    private let outfitNames = ["Tee", "Hoodie", "Collar", "Turtle", "Jacket", "Jersey", "Suit", "Tank", "Overalls", "Hawaiian", "Armor", "Lab coat", "Varsity", "Kimono"]
+    private let outfitNames = ["Tee", "Hoodie", "Collar", "Turtle", "Jacket", "Jersey", "Suit", "Tank", "Overalls", "Hawaiian", "Armor", "Lab coat", "Varsity", "Kimono", "Combat", "Carrier"]
     private let neckNames = ["None", "Scarf", "Bow tie", "Bandana"]
     private let hatNames = ["None", "Beanie", "Cap", "Crown", "Party", "Cowboy", "Band", "Halo", "Bunny", "Cat", "Top hat", "Wizard", "Horns", "Pirate", "Santa", "Chef", "Flowers", "Antenna", "Headset", "Bucket", "Viking", "Grad cap"]
     private let paintNames = ["None", "Stripes", "Stars", "Bolt", "Tiger", "Clown", "Cyber", "Hearts", "Skull", "Bandit", "Galaxy", "Flames", "Tears", "Whiskers", "Rainbow", "Full skull", "Eye black", "Butterfly"]
@@ -40,7 +51,7 @@ struct AvatarStudioView: View {
     private let blushNames = ["Soft", "None", "Strong"]
 
     private var key: String { TacAvatar.myKey }
-    private let cols = [GridItem(.adaptive(minimum: 72), spacing: 12)]
+    private let cols = [GridItem(.adaptive(minimum: 84), spacing: 10)]
 
     private func col(_ v: UInt32) -> Color {
         Color(red: Double((v >> 16) & 255) / 255, green: Double((v >> 8) & 255) / 255, blue: Double(v & 255) / 255)
@@ -54,12 +65,20 @@ struct AvatarStudioView: View {
         return l
     }
 
-    private func tile(_ label: String, _ v: AvatarLook, on: Bool, _ tap: @escaping () -> Void) -> some View {
+    private func tile(_ label: String, _ v: AvatarLook, shot ts: AvatarShot = .head, on: Bool, _ tap: @escaping () -> Void) -> some View {
         Button(action: tap) {
-            VStack(spacing: 6) {
-                PortraitAvatar(key: key, size: 64, look: v)
-                    .overlay(Circle().stroke(on ? T.blue : Color.clear, lineWidth: 3).padding(-3))
-                Text(label).font(.jk(12, .semibold)).foregroundColor(on ? Color.white : T.sub).lineLimit(1)
+            VStack(spacing: 5) {
+                ZStack(alignment: .topTrailing) {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(LinearGradient(colors: [Color(red: 0.17, green: 0.2, blue: 0.3), Color(red: 0.09, green: 0.1, blue: 0.16)], startPoint: .top, endPoint: .bottom))
+                    AvatarThumb(key: key, look: v, shot: ts).padding(3)
+                    if on {
+                        SF("checkmark.circle.fill").font(.system(size: 17)).foregroundColor(TUI.accent).background(Circle().fill(Color.black).padding(2)).padding(5)
+                    }
+                }
+                .frame(height: 84)
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(on ? TUI.accent : Color.white.opacity(0.08), lineWidth: on ? 2.5 : 1))
+                Text(label).font(.jk(11, .semibold)).foregroundColor(on ? Color.white : T.sub).lineLimit(1)
             }
             .frame(maxWidth: .infinity)
         }
@@ -135,7 +154,7 @@ struct AvatarStudioView: View {
         l.streak = Int.random(in: 0..<4) == 0 ? Int.random(in: 0..<13) : nil
         l.hairAcc = Int.random(in: 0..<5) == 0 ? Int.random(in: 1...4) : 0
         l.top = Int.random(in: 0..<12)
-        l.outfit = Int.random(in: 0..<14)
+        l.outfit = Int.random(in: 0..<16)
         l.neck = Int.random(in: 0..<5) == 0 ? Int.random(in: 1...3) : 0
         l.eyes = Int.random(in: 0..<3)
         l.eyeColor = Int.random(in: 0..<9)
@@ -178,28 +197,49 @@ struct AvatarStudioView: View {
         dismiss()
     }
 
-    var body: some View {
-        HStack(spacing: 0) {
-            VStack(spacing: 8) {
-                HStack(spacing: 8) {
+    private func shotButton(_ icon: String, _ sh: AvatarShot) -> some View {
+        Button { manualShot = sh } label: {
+            SF(icon).font(.system(size: 15, weight: .bold))
+                .foregroundColor(shot == sh ? TUI.ink : .white)
+                .frame(width: 38, height: 38)
+                .background(Circle().fill(shot == sh ? TUI.accent : Color.black.opacity(0.5)))
+                .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var stagePanel: some View {
+        ZStack {
+            AvatarStageView(style: TacAvatar.style(key, look), shot: shot)
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+            VStack {
+                HStack(alignment: .top) {
                     Button { dismiss() } label: {
-                        Image(systemName: "chevron.left").font(.system(size: 17, weight: .bold)).foregroundColor(.white)
-                            .frame(width: 38, height: 38).background(Circle().fill(T.card2))
+                        SF("chevron.left").font(.system(size: 16, weight: .bold)).foregroundColor(.white)
+                            .frame(width: 40, height: 40).background(Circle().fill(Color.black.opacity(0.5)))
+                            .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 1))
                     }
-                    Text("Avatar").font(.jk(22, .heavy))
                     Spacer()
+                    VStack(spacing: 8) {
+                        shotButton("figure.stand", .full)
+                        shotButton("person.crop.square.fill", .upper)
+                        shotButton("face.smiling", .head)
+                        shotButton("scissors", .hair)
+                        shotButton("arrow.uturn.backward", .back)
+                    }
                 }
-                AvatarSoldierPreview(style: TacAvatar.style(key, look))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.05)))
+                Spacer()
                 HStack(spacing: 8) {
                     Button { randomize() } label: {
-                        Label("Random", systemImage: "dice.fill").font(.jk(13, .bold)).foregroundColor(.white)
-                            .frame(maxWidth: .infinity).padding(.vertical, 9).background(T.card2).clipShape(Capsule())
+                        Label("Random", systemImage: "dice.fill").font(.jk(12, .bold)).foregroundColor(.white)
+                            .frame(maxWidth: .infinity).padding(.vertical, 9).background(Capsule().fill(Color.black.opacity(0.55)))
+                            .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 1))
                     }
                     Button { look = TacAvatar.full(key, nil) } label: {
-                        Label("Reset", systemImage: "arrow.counterclockwise").font(.jk(13, .bold)).foregroundColor(.white)
-                            .frame(maxWidth: .infinity).padding(.vertical, 9).background(T.card2).clipShape(Capsule())
+                        Label("Reset", systemImage: "arrow.counterclockwise").font(.jk(12, .bold)).foregroundColor(.white)
+                            .frame(maxWidth: .infinity).padding(.vertical, 9).background(Capsule().fill(Color.black.opacity(0.55)))
+                            .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 1))
                     }
                 }
                 Button(action: save) {
@@ -208,29 +248,48 @@ struct AvatarStudioView: View {
                 }
                 .buttonStyle(TuiPress())
             }
-            .padding(12).frame(width: 250)
+            .padding(12)
+        }
+    }
 
-            VStack(spacing: 0) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(0..<tabs.count, id: \.self) { i in
-                            Button { tab = i } label: {
-                                Text(tabs[i]).font(.jk(14, .semibold)).foregroundColor(tab == i ? Color.white : T.sub)
-                                    .padding(.horizontal, 15).padding(.vertical, 8)
-                                    .background(tab == i ? T.blue : T.card2).clipShape(Capsule())
-                            }
+    private var tabRail: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(0..<tabs.count, id: \.self) { i in
+                    Button { tab = i; manualShot = nil } label: {
+                        VStack(spacing: 4) {
+                            SF(tabIcons[i]).font(.system(size: 17, weight: .semibold))
+                            Text(tabs[i]).font(.jk(10, .bold))
                         }
+                        .foregroundColor(tab == i ? TUI.ink : T.sub)
+                        .frame(width: 62, height: 50)
+                        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(tab == i ? TUI.accent : T.card2))
                     }
-                    .padding(.horizontal, 12)
+                    .buttonStyle(.plain)
                 }
-                .padding(.vertical, 10)
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 10) {
-                        content
+            }
+            .padding(.horizontal, 12)
+        }
+        .padding(.vertical, 10)
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            HStack(spacing: 0) {
+                stagePanel
+                    .padding(12)
+                    .frame(width: min(400, geo.size.width * 0.42))
+                VStack(spacing: 0) {
+                    tabRail
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 10) {
+                            content
+                        }
+                        .padding(14).padding(.bottom, 24)
                     }
-                    .padding(14).padding(.bottom, 24)
+                    .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(T.card.opacity(0.55)))
+                    .padding(.trailing, 10).padding(.bottom, 10)
                 }
-                .background(T.card.opacity(0.5))
             }
         }
         .background(T.bg.ignoresSafeArea())
@@ -256,21 +315,41 @@ struct AvatarStudioView: View {
     private var bodyTab: some View {
         VStack(alignment: .leading, spacing: 10) {
             section("Build")
-            chips(buildNames, look.build ?? 1) { look.build = $0 }
+            LazyVGrid(columns: cols, spacing: 10) {
+                ForEach(0..<buildNames.count, id: \.self) { i in
+                    tile(buildNames[i], variant { $0.build = i }, shot: .full, on: (look.build ?? 1) == i) { look.build = i }
+                }
+            }
             section("Height")
-            chips(heightNames, look.height ?? 1) { look.height = $0 }
+            LazyVGrid(columns: cols, spacing: 10) {
+                ForEach(0..<heightNames.count, id: \.self) { i in
+                    tile(heightNames[i], variant { $0.height = i }, shot: .full, on: (look.height ?? 1) == i) { look.height = i }
+                }
+            }
             section("Pants")
-            chips(pantsStyleNames, look.pantsStyle ?? 0) { look.pantsStyle = $0 }
+            LazyVGrid(columns: cols, spacing: 10) {
+                ForEach(0..<pantsStyleNames.count, id: \.self) { i in
+                    tile(pantsStyleNames[i], variant { $0.pantsStyle = i }, shot: .legs, on: (look.pantsStyle ?? 0) == i) { look.pantsStyle = i }
+                }
+            }
             palette(TacAvatar.pantsCols, look.pants ?? 0) { look.pants = $0 }
             section("Shoes")
             palette(TacAvatar.shoeCols, look.shoes ?? 0) { look.shoes = $0 }
             section("Gloves")
-            chips(gloveNames, look.gloves ?? 0) { look.gloves = $0 }
+            LazyVGrid(columns: cols, spacing: 10) {
+                ForEach(0..<gloveNames.count, id: \.self) { i in
+                    tile(gloveNames[i], variant { $0.gloves = i }, shot: .upper, on: (look.gloves ?? 0) == i) { look.gloves = i }
+                }
+            }
             palette(PortraitAvatar.paints, look.gloveCol ?? 0) { look.gloveCol = $0 }
             section("Armor colour")
             palette(TacAvatar.vestCols, look.vestCol ?? 0) { look.vestCol = $0 }
             section("Backpack")
-            chips(packNames, look.pack ?? 0) { look.pack = $0 }
+            LazyVGrid(columns: cols, spacing: 10) {
+                ForEach(0..<packNames.count, id: \.self) { i in
+                    tile(packNames[i], variant { $0.pack = i }, shot: .back, on: (look.pack ?? 0) == i) { look.pack = i }
+                }
+            }
             palette(TacAvatar.vestCols, look.packCol ?? 0) { look.packCol = $0 }
         }
     }
@@ -331,7 +410,7 @@ struct AvatarStudioView: View {
             LazyVGrid(columns: cols, spacing: 14) {
                 ForEach(0..<hairStyles.count, id: \.self) { i in
                     let st = hairStyles[i]
-                    tile(hairNames[i], variant { $0.hairStyle = st }, on: look.hairStyle == st) { look.hairStyle = st }
+                    tile(hairNames[i], variant { $0.hairStyle = st }, shot: .hair, on: look.hairStyle == st) { look.hairStyle = st }
                 }
             }
             section("Colour")
@@ -365,7 +444,7 @@ struct AvatarStudioView: View {
             section("Clothes")
             LazyVGrid(columns: cols, spacing: 14) {
                 ForEach(0..<outfitNames.count, id: \.self) { i in
-                    tile(outfitNames[i], variant { $0.outfit = i }, on: look.outfit == i) { look.outfit = i }
+                    tile(outfitNames[i], variant { $0.outfit = i }, shot: .upper, on: look.outfit == i) { look.outfit = i }
                 }
             }
             section("Colour")
