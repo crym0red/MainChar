@@ -62,51 +62,100 @@ struct TRoom {
     let mat: Int
 }
 
+enum WallMat { case brick, concrete, wood, glass }
+
 enum TMap {
-    static let W: CGFloat = 1700
+    static let floorW: CGFloat = 1700
+    static let off: CGFloat = 1800
+    static let W: CGFloat = 3500
     static let H: CGFloat = 1200
     static let th: CGFloat = 14
+    static let wallH: CGFloat = 80
+    static let eyeH: CGFloat = 54
 
-    static let layout: (walls: [CGRect], doors: [CGRect]) = {
+    static func floorOf(_ p: CGPoint) -> Int { p.x >= off ? 1 : 0 }
+
+    static func propH(_ k: PropKind) -> CGFloat {
+        switch k {
+        case .bed: return 22
+        case .couch: return 34
+        case .table: return 29
+        case .counter: return 40
+        case .crate: return 38
+        case .car: return 44
+        case .shelf: return 66
+        case .barrel: return 34
+        case .sandbag: return 18
+        case .tv: return 40
+        case .plant: return 44
+        }
+    }
+
+    static func propMat(_ k: PropKind) -> WallMat {
+        switch k {
+        case .counter, .car, .barrel, .sandbag: return .concrete
+        case .tv: return .glass
+        default: return .wood
+        }
+    }
+
+    static let layout: (walls: [CGRect], mats: [WallMat], doors: [CGRect]) = {
         var w: [CGRect] = []
+        var m: [WallMat] = []
         var d: [CGRect] = []
+        var ox: CGFloat = 0
         let t: CGFloat = 14
-        func hw(_ y: CGFloat, _ x1: CGFloat, _ x2: CGFloat, _ gaps: [(CGFloat, CGFloat)] = []) {
+        func hw(_ y: CGFloat, _ x1: CGFloat, _ x2: CGFloat, _ mt: WallMat, _ gaps: [(CGFloat, CGFloat)] = []) {
             var cur = x1
             for g in gaps.sorted(by: { $0.0 < $1.0 }) {
-                if g.0 > cur { w.append(CGRect(x: cur, y: y - t / 2, width: g.0 - cur, height: t)) }
-                d.append(CGRect(x: g.0, y: y - t / 2, width: g.1 - g.0, height: t))
+                if g.0 > cur { w.append(CGRect(x: ox + cur, y: y - t / 2, width: g.0 - cur, height: t)); m.append(mt) }
+                d.append(CGRect(x: ox + g.0, y: y - t / 2, width: g.1 - g.0, height: t))
                 cur = g.1
             }
-            if cur < x2 { w.append(CGRect(x: cur, y: y - t / 2, width: x2 - cur, height: t)) }
+            if cur < x2 { w.append(CGRect(x: ox + cur, y: y - t / 2, width: x2 - cur, height: t)); m.append(mt) }
         }
-        func vw(_ x: CGFloat, _ y1: CGFloat, _ y2: CGFloat, _ gaps: [(CGFloat, CGFloat)] = []) {
+        func vw(_ x: CGFloat, _ y1: CGFloat, _ y2: CGFloat, _ mt: WallMat, _ gaps: [(CGFloat, CGFloat)] = []) {
             var cur = y1
             for g in gaps.sorted(by: { $0.0 < $1.0 }) {
-                if g.0 > cur { w.append(CGRect(x: x - t / 2, y: cur, width: t, height: g.0 - cur)) }
-                d.append(CGRect(x: x - t / 2, y: g.0, width: t, height: g.1 - g.0))
+                if g.0 > cur { w.append(CGRect(x: ox + x - t / 2, y: cur, width: t, height: g.0 - cur)); m.append(mt) }
+                d.append(CGRect(x: ox + x - t / 2, y: g.0, width: t, height: g.1 - g.0))
                 cur = g.1
             }
-            if cur < y2 { w.append(CGRect(x: x - t / 2, y: cur, width: t, height: y2 - cur)) }
+            if cur < y2 { w.append(CGRect(x: ox + x - t / 2, y: cur, width: t, height: y2 - cur)); m.append(mt) }
         }
         let bw: CGFloat = 1700
         let bh: CGFloat = 1200
-        hw(0, 0, bw)
-        hw(bh, 0, bw)
-        vw(0, 0, bh)
-        vw(bw, 0, bh)
-        vw(560, 0, bh, [(200, 300), (700, 800), (1000, 1100)])
-        vw(1140, 0, bh, [(150, 250), (800, 900)])
-        vw(1260, 0, bh, [(350, 450), (950, 1050)])
-        hw(600, 0, 560, [(220, 320)])
-        hw(600, 560, 1140, [(700, 800)])
-        hw(600, 1260, bw, [(1350, 1450)])
-        vw(300, 0, 150)
-        hw(850, 1480, bw)
-        return (w, d)
+        // ground floor
+        ox = 0
+        hw(0, 0, bw, .brick)
+        hw(bh, 0, bw, .brick)
+        vw(0, 0, bh, .brick)
+        vw(bw, 0, bh, .brick)
+        vw(560, 0, bh, .concrete, [(200, 300), (700, 800), (1000, 1100)])
+        vw(1140, 0, bh, .wood, [(150, 250), (800, 900)])
+        vw(1260, 0, bh, .glass, [(350, 450), (950, 1050)])
+        hw(600, 0, 560, .wood, [(220, 320)])
+        hw(600, 560, 1140, .wood, [(700, 800)])
+        hw(600, 1260, bw, .wood, [(1350, 1450)])
+        vw(300, 0, 150, .wood)
+        hw(850, 1480, bw, .glass)
+        // upper floor
+        ox = TMap.off
+        hw(0, 0, bw, .brick)
+        hw(bh, 0, bw, .brick)
+        vw(0, 0, bh, .brick)
+        vw(bw, 0, bh, .brick)
+        vw(560, 0, bh, .wood, [(250, 350), (750, 850)])
+        vw(1140, 0, bh, .glass, [(100, 200), (700, 800)])
+        vw(1260, 0, bh, .wood, [(400, 500), (900, 1000)])
+        hw(600, 0, 560, .wood, [(180, 280)])
+        hw(600, 560, 1140, .glass, [(650, 750)])
+        hw(600, 1260, bw, .concrete, [(1300, 1400)])
+        return (w, m, d)
     }()
 
     static let walls: [CGRect] = layout.walls
+    static let wallMats: [WallMat] = layout.mats
     static let doors: [CGRect] = layout.doors
 
     static let rooms: [TRoom] = [
@@ -116,7 +165,14 @@ enum TMap {
         TRoom(name: "Study", r: CGRect(x: 1260, y: 0, width: 440, height: 600), mat: 4),
         TRoom(name: "Garage", r: CGRect(x: 0, y: 600, width: 560, height: 600), mat: 1),
         TRoom(name: "Kitchen", r: CGRect(x: 560, y: 600, width: 580, height: 600), mat: 3),
-        TRoom(name: "Game Room", r: CGRect(x: 1260, y: 600, width: 440, height: 600), mat: 2)
+        TRoom(name: "Game Room", r: CGRect(x: 1260, y: 600, width: 440, height: 600), mat: 2),
+        TRoom(name: "Office", r: CGRect(x: off, y: 0, width: 560, height: 600), mat: 4),
+        TRoom(name: "Lounge", r: CGRect(x: off + 560, y: 0, width: 580, height: 600), mat: 2),
+        TRoom(name: "Upper Hall", r: CGRect(x: off + 1140, y: 0, width: 120, height: 1200), mat: 5),
+        TRoom(name: "Server Room", r: CGRect(x: off + 1260, y: 0, width: 440, height: 600), mat: 1),
+        TRoom(name: "Storage", r: CGRect(x: off, y: 600, width: 560, height: 600), mat: 1),
+        TRoom(name: "Balcony", r: CGRect(x: off + 560, y: 600, width: 580, height: 600), mat: 3),
+        TRoom(name: "Gym", r: CGRect(x: off + 1260, y: 600, width: 440, height: 600), mat: 2)
     ]
 
     static func roomName(_ p: CGPoint) -> String {
@@ -124,72 +180,101 @@ enum TMap {
         return "Outside"
     }
 
-    static let props: [TProp] = [
-        TProp(r: CGRect(x: 30, y: 40, width: 110, height: 150), k: .bed),
-        TProp(r: CGRect(x: 150, y: 40, width: 40, height: 40), k: .table),
-        TProp(r: CGRect(x: 440, y: 40, width: 90, height: 40), k: .shelf),
-        TProp(r: CGRect(x: 30, y: 430, width: 60, height: 140), k: .shelf),
-        TProp(r: CGRect(x: 200, y: 385, width: 60, height: 50), k: .couch),
-        TProp(r: CGRect(x: 440, y: 500, width: 100, height: 60), k: .table),
-        TProp(r: CGRect(x: 470, y: 360, width: 80, height: 22), k: .sandbag),
-        TProp(r: CGRect(x: 620, y: 40, width: 160, height: 60), k: .couch),
-        TProp(r: CGRect(x: 700, y: 330, width: 120, height: 70), k: .table),
-        TProp(r: CGRect(x: 980, y: 330, width: 60, height: 150), k: .couch),
-        TProp(r: CGRect(x: 900, y: 20, width: 140, height: 40), k: .tv),
-        TProp(r: CGRect(x: 880, y: 260, width: 50, height: 50), k: .plant),
-        TProp(r: CGRect(x: 1090, y: 300, width: 30, height: 160), k: .shelf),
-        TProp(r: CGRect(x: 590, y: 480, width: 120, height: 40), k: .counter),
-        TProp(r: CGRect(x: 1280, y: 40, width: 30, height: 200), k: .shelf),
-        TProp(r: CGRect(x: 1450, y: 260, width: 150, height: 60), k: .table),
-        TProp(r: CGRect(x: 1620, y: 400, width: 60, height: 120), k: .shelf),
-        TProp(r: CGRect(x: 1300, y: 500, width: 60, height: 60), k: .crate),
-        TProp(r: CGRect(x: 20, y: 640, width: 170, height: 40), k: .counter),
-        TProp(r: CGRect(x: 30, y: 780, width: 40, height: 40), k: .barrel),
-        TProp(r: CGRect(x: 300, y: 880, width: 160, height: 80), k: .car),
-        TProp(r: CGRect(x: 420, y: 620, width: 70, height: 60), k: .crate),
-        TProp(r: CGRect(x: 510, y: 880, width: 30, height: 100), k: .shelf),
-        TProp(r: CGRect(x: 600, y: 1140, width: 300, height: 40), k: .counter),
-        TProp(r: CGRect(x: 740, y: 870, width: 140, height: 44), k: .counter),
-        TProp(r: CGRect(x: 1080, y: 1100, width: 50, height: 80), k: .shelf),
-        TProp(r: CGRect(x: 980, y: 1000, width: 80, height: 60), k: .crate),
-        TProp(r: CGRect(x: 900, y: 640, width: 100, height: 50), k: .counter),
-        TProp(r: CGRect(x: 1000, y: 700, width: 40, height: 40), k: .plant),
-        TProp(r: CGRect(x: 950, y: 1010, width: 22, height: 80), k: .sandbag),
-        TProp(r: CGRect(x: 1500, y: 680, width: 160, height: 90), k: .table),
-        TProp(r: CGRect(x: 1290, y: 700, width: 40, height: 120), k: .couch),
-        TProp(r: CGRect(x: 1520, y: 880, width: 150, height: 50), k: .couch),
-        TProp(r: CGRect(x: 1620, y: 1100, width: 60, height: 80), k: .shelf),
-        TProp(r: CGRect(x: 1400, y: 1050, width: 70, height: 70), k: .crate)
-    ]
+    static let props: [TProp] = {
+        var l: [TProp] = [
+            TProp(r: CGRect(x: 30, y: 40, width: 110, height: 150), k: .bed),
+            TProp(r: CGRect(x: 150, y: 40, width: 40, height: 40), k: .table),
+            TProp(r: CGRect(x: 440, y: 40, width: 90, height: 40), k: .shelf),
+            TProp(r: CGRect(x: 30, y: 430, width: 60, height: 140), k: .shelf),
+            TProp(r: CGRect(x: 200, y: 385, width: 60, height: 50), k: .couch),
+            TProp(r: CGRect(x: 440, y: 500, width: 100, height: 60), k: .table),
+            TProp(r: CGRect(x: 470, y: 360, width: 80, height: 22), k: .sandbag),
+            TProp(r: CGRect(x: 700, y: 40, width: 120, height: 60), k: .couch),
+            TProp(r: CGRect(x: 700, y: 330, width: 120, height: 70), k: .table),
+            TProp(r: CGRect(x: 980, y: 330, width: 60, height: 150), k: .couch),
+            TProp(r: CGRect(x: 900, y: 20, width: 140, height: 40), k: .tv),
+            TProp(r: CGRect(x: 880, y: 260, width: 50, height: 50), k: .plant),
+            TProp(r: CGRect(x: 1090, y: 300, width: 30, height: 160), k: .shelf),
+            TProp(r: CGRect(x: 590, y: 480, width: 120, height: 40), k: .counter),
+            TProp(r: CGRect(x: 1280, y: 40, width: 30, height: 200), k: .shelf),
+            TProp(r: CGRect(x: 1450, y: 260, width: 150, height: 60), k: .table),
+            TProp(r: CGRect(x: 1620, y: 400, width: 60, height: 120), k: .shelf),
+            TProp(r: CGRect(x: 1300, y: 500, width: 60, height: 60), k: .crate),
+            TProp(r: CGRect(x: 20, y: 640, width: 170, height: 40), k: .counter),
+            TProp(r: CGRect(x: 30, y: 780, width: 40, height: 40), k: .barrel),
+            TProp(r: CGRect(x: 300, y: 880, width: 160, height: 80), k: .car),
+            TProp(r: CGRect(x: 420, y: 620, width: 70, height: 60), k: .crate),
+            TProp(r: CGRect(x: 510, y: 880, width: 30, height: 100), k: .shelf),
+            TProp(r: CGRect(x: 600, y: 1140, width: 300, height: 40), k: .counter),
+            TProp(r: CGRect(x: 740, y: 870, width: 140, height: 44), k: .counter),
+            TProp(r: CGRect(x: 1080, y: 1100, width: 50, height: 80), k: .shelf),
+            TProp(r: CGRect(x: 980, y: 1000, width: 80, height: 60), k: .crate),
+            TProp(r: CGRect(x: 900, y: 640, width: 100, height: 50), k: .counter),
+            TProp(r: CGRect(x: 1000, y: 700, width: 40, height: 40), k: .plant),
+            TProp(r: CGRect(x: 950, y: 1010, width: 22, height: 80), k: .sandbag),
+            TProp(r: CGRect(x: 1500, y: 680, width: 160, height: 90), k: .table),
+            TProp(r: CGRect(x: 1290, y: 700, width: 40, height: 120), k: .couch),
+            TProp(r: CGRect(x: 1520, y: 880, width: 150, height: 50), k: .couch),
+            TProp(r: CGRect(x: 1620, y: 1100, width: 60, height: 80), k: .shelf),
+            TProp(r: CGRect(x: 1400, y: 1050, width: 70, height: 70), k: .crate)
+        ]
+        let up: [(CGFloat, CGFloat, CGFloat, CGFloat, PropKind)] = [
+            (60, 60, 160, 70, .table), (20, 300, 40, 160, .shelf), (300, 420, 150, 50, .couch), (430, 250, 60, 60, .crate),
+            (700, 40, 150, 60, .couch), (900, 20, 140, 40, .tv), (760, 300, 110, 70, .table), (1000, 380, 60, 140, .couch), (640, 520, 40, 40, .plant),
+            (1300, 60, 40, 200, .shelf), (1430, 60, 40, 200, .shelf), (1560, 60, 40, 200, .shelf), (1500, 420, 70, 70, .crate),
+            (60, 700, 70, 70, .crate), (340, 700, 70, 70, .crate), (460, 900, 40, 40, .barrel), (20, 1000, 40, 160, .shelf), (240, 950, 100, 22, .sandbag), (100, 1100, 70, 70, .crate),
+            (980, 900, 22, 100, .sandbag), (600, 1140, 300, 40, .counter), (1080, 640, 40, 40, .plant), (1000, 1050, 70, 70, .crate), (800, 700, 140, 44, .counter),
+            (1300, 700, 100, 60, .table), (1560, 900, 70, 70, .crate), (1290, 1000, 40, 120, .couch), (1620, 1100, 60, 80, .shelf), (1600, 640, 40, 40, .barrel), (1400, 1100, 200, 40, .counter)
+        ]
+        for u in up { l.append(TProp(r: CGRect(x: TMap.off + u.0, y: u.1, width: u.2, height: u.3), k: u.4)) }
+        return l
+    }()
 
     static let rugs: [(CGRect, Color)] = [
         (CGRect(x: 640, y: 190, width: 300, height: 240), Color(red: 0.42, green: 0.22, blue: 0.3)),
         (CGRect(x: 1160, y: 0, width: 80, height: 1200), Color(red: 0.38, green: 0.14, blue: 0.16)),
         (CGRect(x: 1320, y: 850, width: 180, height: 140), Color(red: 0.2, green: 0.35, blue: 0.42)),
         (CGRect(x: 1380, y: 150, width: 220, height: 90), Color(red: 0.35, green: 0.2, blue: 0.14)),
-        (CGRect(x: 60, y: 240, width: 90, height: 120), Color(red: 0.4, green: 0.3, blue: 0.4))
+        (CGRect(x: 60, y: 240, width: 90, height: 120), Color(red: 0.4, green: 0.3, blue: 0.4)),
+        (CGRect(x: off + 1160, y: 0, width: 80, height: 1200), Color(red: 0.14, green: 0.22, blue: 0.38)),
+        (CGRect(x: off + 760, y: 120, width: 260, height: 160), Color(red: 0.22, green: 0.3, blue: 0.24)),
+        (CGRect(x: off + 1340, y: 740, width: 220, height: 140), Color(red: 0.3, green: 0.16, blue: 0.2))
     ]
 
-    static let packPos: [CGPoint] = [CGPoint(x: 870, y: 540), CGPoint(x: 1200, y: 600), CGPoint(x: 440, y: 1040)]
+    static let packPos: [CGPoint] = [CGPoint(x: 870, y: 540), CGPoint(x: 1200, y: 600), CGPoint(x: 440, y: 1040), CGPoint(x: off + 1200, y: 300), CGPoint(x: off + 880, y: 780)]
+
+    static let stairs: [CGRect] = [CGRect(x: 1160, y: 1040, width: 80, height: 140), CGRect(x: 575, y: 130, width: 70, height: 110)]
+
+    static func stairRect(_ i: Int, floor: Int) -> CGRect { floor == 0 ? stairs[i] : stairs[i].offsetBy(dx: off, dy: 0) }
+
+    static func stairAt(_ p: CGPoint) -> (Int, Int)? {
+        for i in stairs.indices {
+            if stairs[i].contains(p) { return (i, 0) }
+            if stairRect(i, floor: 1).contains(p) { return (i, 1) }
+        }
+        return nil
+    }
 
     static let solid: [CGRect] = layout.walls + props.map { $0.r }
     static let solidKind: [PropKind?] = layout.walls.map { _ -> PropKind? in nil } + props.map { Optional($0.k) }
+    static let solidMat: [WallMat] = layout.mats + props.map { TMap.propMat($0.k) }
     static let siteA = CGRect(x: 170, y: 170, width: 230, height: 170)
-    static let siteB = CGRect(x: 690, y: 830, width: 240, height: 170)
+    static let siteB = CGRect(x: off + 690, y: 830, width: 240, height: 170)
     static let atkSpawn: [CGPoint] = [CGPoint(x: 90, y: 1130), CGPoint(x: 160, y: 1130), CGPoint(x: 230, y: 1130), CGPoint(x: 90, y: 1060), CGPoint(x: 160, y: 1060)]
     static let defSpawn: [CGPoint] = [CGPoint(x: 1610, y: 70), CGPoint(x: 1540, y: 70), CGPoint(x: 1470, y: 70), CGPoint(x: 1610, y: 140), CGPoint(x: 1540, y: 140)]
 
     static func site(_ i: Int) -> CGRect { i == 0 ? siteA : siteB }
 
     static func los(_ a: CGPoint, _ b: CGPoint) -> Bool {
-        for r in solid where tSegT(a, b, r) != nil { return false }
+        if floorOf(a) != floorOf(b) { return false }
+        for k in solid.indices where solidMat[k] != .glass && tSegT(a, b, solid[k]) != nil { return false }
         return true
     }
 
     static func rayDist(_ from: CGPoint, _ ang: CGFloat, _ maxD: CGFloat) -> CGFloat {
         let b = CGPoint(x: from.x + cos(ang) * maxD, y: from.y + sin(ang) * maxD)
         var best: CGFloat = 1
-        for r in solid { if let t = tSegT(from, b, r), t < best { best = t } }
+        for k in solid.indices where solidMat[k] != .glass { if let t = tSegT(from, b, solid[k]), t < best { best = t } }
         return maxD * best
     }
 
@@ -363,6 +448,7 @@ final class TPlayer {
     var site = 0
     var spotted = false
     var seenEver = false
+    var onStair = false
 
     init(id: Int, team: Int, name: String, handle: String, emoji: String, isPlayer: Bool) {
         self.id = id; self.team = team; self.name = name; self.handle = handle; self.emoji = emoji; self.isPlayer = isPlayer
@@ -377,6 +463,8 @@ final class TacticalEngine {
         var life: CGFloat
         var owner: Int
         var team: Int
+        var inK = -1
+        var pens = 0
     }
     struct Nade {
         var pos: CGPoint
@@ -448,6 +536,8 @@ final class TacticalEngine {
     var diff = 1
     var move = CGVector.zero
     var aimIn: CGFloat? = nil
+    var autoAim = true
+    var autoTarget = -1
     var firing = false
     var actHeld = false
     var wantNade = false
@@ -531,7 +621,7 @@ final class TacticalEngine {
             let spot = atk ? TMap.atkSpawn[ai % 5] : TMap.defSpawn[di % 5]
             if atk { ai += 1 } else { di += 1 }
             p.pos = spot
-            p.aim = atan2(TMap.H / 2 - spot.y, TMap.W / 2 - spot.x)
+            p.aim = atan2(TMap.H / 2 - spot.y, TMap.floorW / 2 - spot.x)
             p.gun = p.isPlayer ? myGun : gunPick()
             p.mag = Guns.get(p.gun).mag
             p.spare = p.gun == "pistol" ? 99 : 2
@@ -607,6 +697,7 @@ final class TacticalEngine {
             }
         }
         moveProjectiles(dt)
+        for p in players where p.alive { stairCheck(p) }
         // spotting
         spotT -= dt
         if spotT <= 0 {
@@ -682,12 +773,28 @@ final class TacticalEngine {
         guard p.alive else { return }
         let sp: CGFloat = 170
         var mv = move
+        let tgt = autoAim ? pickTarget(p) : nil
+        autoTarget = tgt?.id ?? -1
+        var aligned = false
         if fp {
+            let manual = abs(lookDelta) > 0.0005
             p.aim += lookDelta
             lookDelta = 0
             let fx = cos(p.aim), fy = sin(p.aim)
             mv = CGVector(dx: fx * (-move.dy) - fy * move.dx, dy: fy * (-move.dy) + fx * move.dx)
+            if let e = tgt {
+                let want = atan2(e.pos.y - p.pos.y, e.pos.x - p.pos.x)
+                if !manual { p.aim = turnToward(p.aim, want, 9 * dt) }
+                aligned = abs(angWrap(want - p.aim)) < 0.09
+            }
         } else if let a = aimIn { p.aim = a }
+        else if let e = tgt {
+            let want = atan2(e.pos.y - p.pos.y, e.pos.x - p.pos.x)
+            p.aim = turnToward(p.aim, want, 13 * dt)
+            aligned = abs(angWrap(want - p.aim)) < 0.09
+        } else if hypot(mv.dx, mv.dy) > 0.2 {
+            p.aim = turnToward(p.aim, atan2(mv.dy, mv.dx), 9 * dt)
+        }
         p.pos.x += mv.dx * sp * dt
         p.pos.y += mv.dy * sp * dt
         TMap.push(&p.pos, 14)
@@ -696,7 +803,7 @@ final class TacticalEngine {
         if p.reloadT > 0 {
             p.reloadT -= dt
             if p.reloadT <= 0 { finishReload(p) }
-        } else if firing && p.fireCd <= 0 && !actHeld {
+        } else if (firing || aligned) && p.fireCd <= 0 && !actHeld {
             if p.mag > 0 { shoot(p, 0) } else { startReload(p) }
         }
         if wantNade { wantNade = false; throwNade(p, p.aim, 420) }
@@ -705,6 +812,30 @@ final class TacticalEngine {
             if p.team == atkTeam && !planted && TMap.site(atkSite).contains(p.pos) && move == .zero { planting = true }
             if p.team != atkTeam && planted && tDist(p.pos, bombPos) < 46 && move == .zero { defusing = true }
         }
+    }
+
+    private func angWrap(_ x: CGFloat) -> CGFloat {
+        var d = x
+        while d > .pi { d -= 2 * .pi }
+        while d < -.pi { d += 2 * .pi }
+        return d
+    }
+
+    private func turnToward(_ cur: CGFloat, _ want: CGFloat, _ maxStep: CGFloat) -> CGFloat {
+        let d = angWrap(want - cur)
+        let s = min(abs(d), maxStep)
+        return cur + (d < 0 ? -s : s)
+    }
+
+    private func pickTarget(_ p: TPlayer) -> TPlayer? {
+        let range = Guns.get(p.gun).range
+        var best: TPlayer? = nil
+        var bd: CGFloat = .greatestFiniteMagnitude
+        for e in players where e.alive && e.team != p.team {
+            let d = tDist(p.pos, e.pos)
+            if d < range && d < bd && see(p.pos, e.pos) { bd = d; best = e }
+        }
+        return best
     }
 
     func startReload(_ p: TPlayer) {
@@ -775,8 +906,22 @@ final class TacticalEngine {
             b.life -= dt
             if b.life <= 0 { continue }
             var dead = false
-            for r in TMap.solid where tSegT(old, b.pos, r) != nil { dead = true; break }
+            var hitK = -1
+            for k in TMap.solid.indices where tSegT(old, b.pos, TMap.solid[k]) != nil {
+                let mt = TMap.solidMat[k]
+                if mt == .brick || mt == .concrete { dead = true; break }
+                hitK = k
+            }
             if dead { continue }
+            if hitK >= 0 {
+                if hitK != b.inK {
+                    let glass = TMap.solidMat[hitK] == .glass
+                    b.inK = hitK
+                    b.pens += 1
+                    b.dmg *= glass ? 0.92 : 0.55
+                    if !glass && (b.pens > 2 || b.dmg < 6) { continue }
+                }
+            } else { b.inK = -1 }
             for v in players where v.alive && v.team != b.team {
                 if tPointSeg(v.pos, old, b.pos) < 15 {
                     damage(v, b.dmg, by: b.owner)
@@ -821,6 +966,36 @@ final class TacticalEngine {
         let d = objective(p)
         let a = atan2(d.y - p.pos.y, d.x - p.pos.x)
         p.aim += max(-3 * dt, min(3 * dt, tAngDiff(a, p.aim)))
+    }
+
+    private func stairCheck(_ p: TPlayer) {
+        if let s = TMap.stairAt(p.pos) {
+            if !p.onStair {
+                let r = TMap.stairRect(s.0, floor: s.1 == 0 ? 1 : 0)
+                p.pos = CGPoint(x: r.midX, y: r.midY)
+                p.onStair = true
+                p.path = []
+                p.pathT = 0
+                p.targetID = -1
+                if p.isPlayer { pop(p.pos, s.1 == 0 ? "UPSTAIRS" : "DOWNSTAIRS", .white) }
+            }
+        } else {
+            p.onStair = false
+        }
+    }
+
+    private func routed(_ p: TPlayer, _ dest: CGPoint) -> CGPoint {
+        let pf = TMap.floorOf(p.pos)
+        if pf == TMap.floorOf(dest) { return dest }
+        var best = CGPoint.zero
+        var bd = CGFloat.greatestFiniteMagnitude
+        for i in TMap.stairs.indices {
+            let here = TMap.stairRect(i, floor: pf)
+            let there = TMap.stairRect(i, floor: 1 - pf)
+            let c = tDist(p.pos, CGPoint(x: here.midX, y: here.midY)) + tDist(CGPoint(x: there.midX, y: there.midY), dest)
+            if c < bd { bd = c; best = CGPoint(x: here.midX, y: here.midY) }
+        }
+        return best
     }
 
     private func objective(_ p: TPlayer) -> CGPoint {
@@ -908,6 +1083,7 @@ final class TacticalEngine {
             if !atk && planted && tDist(p.pos, bombPos) < 40 { defusing = true }
         }
         // movement
+        dest = routed(p, dest)
         let atDest = tDist(p.pos, dest) < 26
         if atDest {
             if p.targetID < 0 { p.aim += sin(time * 1.3 + CGFloat(p.id)) * dt * 0.8 }
@@ -1098,6 +1274,15 @@ final class TacticalEngine {
         }
     }
 
+    private func fpWallColor(_ m: WallMat) -> (CGFloat, CGFloat, CGFloat) {
+        switch m {
+        case .brick: return (0.56, 0.3, 0.25)
+        case .concrete: return (0.6, 0.62, 0.66)
+        case .wood: return (0.55, 0.4, 0.25)
+        case .glass: return (0.5, 0.78, 0.92)
+        }
+    }
+
     private func fpHeight(_ k: PropKind?) -> CGFloat {
         guard let kk = k else { return 1 }
         switch kk {
@@ -1185,22 +1370,37 @@ final class TacticalEngine {
             let co = cos(off)
             for h in hits {
                 let perp = max(8, h.0 * co)
-                let wallPx = H * 0.6 / perp * 100
+                let u = H * 0.72 / perp
                 let kind = TMap.solidKind[h.1]
-                let ratio = fpHeight(kind)
-                let bottom = hz + wallPx / 2
-                let top = bottom - wallPx * ratio
+                let mt = TMap.solidMat[h.1]
+                let hgt: CGFloat = kind == nil ? TMap.wallH : TMap.propH(kind!)
+                let bottom = hz + TMap.eyeH * u
+                let top = bottom - hgt * u
                 var sh = max(0.22, min(1, 1.25 - perp / 950))
                 if h.2 == 1 { sh *= 0.78 }
-                let c = fpColor(kind)
+                let c = kind == nil ? fpWallColor(mt) : fpColor(kind)
                 let col = Color(red: Double(c.0 * sh), green: Double(c.1 * sh), blue: Double(c.2 * sh))
-                ctx.fill(Path(CGRect(x: CGFloat(i) * cw, y: top, width: cw + 0.6, height: bottom - top)), with: .color(col))
-                if ratio < 1 {
-                    let hi = Color(red: Double(min(1, c.0 * sh * 1.3)), green: Double(min(1, c.1 * sh * 1.3)), blue: Double(min(1, c.2 * sh * 1.3)))
-                    ctx.fill(Path(CGRect(x: CGFloat(i) * cw, y: top, width: cw + 0.6, height: max(2, wallPx * 0.05))), with: .color(hi))
+                let rect = CGRect(x: CGFloat(i) * cw, y: top, width: cw + 0.6, height: bottom - top)
+                if mt == .glass {
+                    ctx.fill(Path(rect), with: .color(col.opacity(0.3)))
+                    ctx.fill(Path(CGRect(x: rect.minX, y: top, width: rect.width, height: 2)), with: .color(.white.opacity(0.55)))
+                    ctx.fill(Path(CGRect(x: rect.minX, y: bottom - 2, width: rect.width, height: 2)), with: .color(.white.opacity(0.35)))
+                    continue
                 }
+                ctx.fill(Path(rect), with: .color(col))
+                if kind == nil && mt == .brick {
+                    let rows = max(1, Int((bottom - top) / max(4, 9 * u)))
+                    for rr in 1..<(rows + 1) {
+                        let yy = top + CGFloat(rr) * (bottom - top) / CGFloat(rows + 1)
+                        ctx.fill(Path(CGRect(x: rect.minX, y: yy, width: rect.width, height: 1)), with: .color(.black.opacity(0.22)))
+                    }
+                } else if kind == nil && mt == .wood {
+                    ctx.fill(Path(CGRect(x: rect.minX, y: top, width: rect.width, height: 2)), with: .color(.black.opacity(0.3)))
+                }
+                let hi = Color(red: Double(min(1, c.0 * sh * 1.3)), green: Double(min(1, c.1 * sh * 1.3)), blue: Double(min(1, c.2 * sh * 1.3)))
+                ctx.fill(Path(CGRect(x: rect.minX, y: top, width: rect.width, height: max(2, hgt * u * 0.05))), with: .color(hi))
             }
-            if let nearest = hits.last { z[i] = nearest.0 * co }
+            if let nearest = hits.last(where: { TMap.solidMat[$0.1] != .glass }) { z[i] = nearest.0 * co }
         }
         // billboards
         var bills: [FPBill] = []
@@ -1248,8 +1448,8 @@ final class TacticalEngine {
         }
         bills.sort { $0.perp > $1.perp }
         for s in bills {
-            let u = H * 0.6 / s.perp
-            let floorY = hz + 50 * u
+            let u = H * 0.72 / s.perp
+            let floorY = hz + TMap.eyeH * u
             let half: CGFloat = (s.kind == 1 ? s.r : 14) * u
             let c0 = max(0, Int((s.sx - half) / cw))
             let c1 = min(n - 1, Int((s.sx + half) / cw))
@@ -1265,8 +1465,8 @@ final class TacticalEngine {
                     let ally = p.team == me.team
                     let col: Color = ally ? Color(red: 0.25, green: 0.6, blue: 1) : Color(red: 1, green: 0.25, blue: 0.3)
                     l.fill(Path(ellipseIn: CGRect(x: s.sx - 14 * u, y: floorY - 4 * u, width: 28 * u, height: 8 * u)), with: .color(.black.opacity(0.35)))
-                    l.fill(Path(roundedRect: CGRect(x: s.sx - 12 * u, y: floorY - 52 * u, width: 24 * u, height: 52 * u), cornerRadius: 6 * u), with: .color(col.opacity(0.85)))
-                    let head = CGRect(x: s.sx - 10 * u, y: floorY - 72 * u, width: 20 * u, height: 20 * u)
+                    l.fill(Path(roundedRect: CGRect(x: s.sx - 12 * u, y: floorY - 56 * u, width: 24 * u, height: 56 * u), cornerRadius: 6 * u), with: .color(col.opacity(0.85)))
+                    let head = CGRect(x: s.sx - 11 * u, y: floorY - 80 * u, width: 22 * u, height: 22 * u)
                     if let img = sprites[p.handle] {
                         let im = l.resolve(Image(uiImage: img))
                         l.drawLayer { l2 in
@@ -1319,31 +1519,82 @@ final class TacticalEngine {
             ctx.stroke(hm, with: .color(.red), lineWidth: 3)
         }
         // viewmodel
-        if me.alive {
-            let rec: CGFloat = me.flash > 0 ? 10 : 0
-            ctx.drawLayer { l in
-                l.translateBy(x: W / 2 + 120, y: H)
-                l.rotate(by: .degrees(-12))
-                l.fill(Path(roundedRect: CGRect(x: -16, y: -120 + rec, width: 32, height: 150), cornerRadius: 6), with: .color(Color(white: 0.2)))
-                l.stroke(Path(roundedRect: CGRect(x: -16, y: -120 + rec, width: 32, height: 150), cornerRadius: 6), with: .color(.white.opacity(0.25)), lineWidth: 1.5)
-                l.fill(Path(CGRect(x: -3, y: -130 + rec, width: 6, height: 14)), with: .color(Color(white: 0.5)))
-                if me.flash > 0 {
-                    l.fill(Path(ellipseIn: CGRect(x: -20, y: -150, width: 40, height: 40)), with: .color(.yellow.opacity(0.85)))
-                }
-            }
-        }
+        if me.alive { drawViewGun(&ctx, size) }
         drawMinimap(&ctx)
-        let mx = 12 + pos.x * 0.085
-        let my = 110 + pos.y * 0.085
-        var dir = Path()
-        dir.move(to: CGPoint(x: mx, y: my))
-        dir.addLine(to: CGPoint(x: mx + cos(ang) * 12, y: my + sin(ang) * 12))
-        ctx.stroke(dir, with: .color(.white), lineWidth: 1.5)
         if me.hurt > 0 {
             ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color.red.opacity(Double(me.hurt) * 0.45)))
         }
         if !me.alive {
             ctx.draw(Text("SPECTATING " + focus.name.uppercased()).font(.system(size: 12, weight: .heavy)).foregroundColor(.white.opacity(0.7)), at: CGPoint(x: size.width / 2, y: size.height - 70))
+        }
+    }
+
+    private func drawViewGun(_ ctx: inout GraphicsContext, _ size: CGSize) {
+        let s = size.height / 390
+        let rec: CGFloat = me.flash > 0 ? 12 : 0
+        let moving = hypot(move.dx, move.dy)
+        let bob = CGFloat(sin(Double(time) * 9)) * 5 * moving
+        let dip: CGFloat = me.reloadT > 0 ? min(1, me.reloadT * 2.5) * 90 : 0
+        let skin = Color(red: 0.78, green: 0.58, blue: 0.44)
+        let glove = Color(red: 0.14, green: 0.15, blue: 0.17)
+        let id = me.gun
+        ctx.drawLayer { l in
+            l.translateBy(x: size.width * 0.68, y: size.height + 14 * s + dip * s + bob * s)
+            l.rotate(by: .degrees(me.reloadT > 0 ? -2 : -7))
+            l.scaleBy(x: s, y: s)
+            func box(_ r: CGRect, _ c: Color, _ rad: CGFloat = 4) {
+                l.fill(Path(roundedRect: r, cornerRadius: rad), with: .color(c))
+            }
+            func edge(_ r: CGRect, _ rad: CGFloat = 4) {
+                l.stroke(Path(roundedRect: r, cornerRadius: rad), with: .color(.white.opacity(0.18)), lineWidth: 1.5)
+            }
+            let r0 = rec
+            switch id {
+            case "shotgun":
+                box(CGRect(x: -13, y: -330 + r0, width: 12, height: 200), Color(white: 0.13), 3)
+                box(CGRect(x: 1, y: -320 + r0, width: 12, height: 190), Color(white: 0.16), 3)
+                box(CGRect(x: -26, y: -150 + r0, width: 52, height: 190), Color(white: 0.2), 8)
+                edge(CGRect(x: -26, y: -150 + r0, width: 52, height: 190), 8)
+                box(CGRect(x: -30, y: -250 + r0 + (me.reloadT > 0 ? 24 : 0), width: 60, height: 74), Color(red: 0.42, green: 0.27, blue: 0.14), 10)
+                box(CGRect(x: -2, y: -344 + r0, width: 4, height: 16), Color(white: 0.7), 1)
+                box(CGRect(x: -36, y: -240 + r0 + (me.reloadT > 0 ? 24 : 0), width: 22, height: 54), skin, 10)
+                box(CGRect(x: 14, y: -20 + r0, width: 46, height: 78), glove, 12)
+            case "smg":
+                box(CGRect(x: -8, y: -250 + r0, width: 16, height: 120), Color(white: 0.12), 3)
+                box(CGRect(x: -11, y: -262 + r0, width: 22, height: 22), Color(white: 0.22), 3)
+                box(CGRect(x: -30, y: -150 + r0, width: 60, height: 190), Color(white: 0.2), 9)
+                edge(CGRect(x: -30, y: -150 + r0, width: 60, height: 190), 9)
+                box(CGRect(x: -22, y: -118 + r0, width: 44, height: 8), Color(white: 0.1), 2)
+                box(CGRect(x: -14, y: 20 + r0, width: 26, height: 110), Color(white: 0.1), 5)
+                box(CGRect(x: -4, y: -170 + r0, width: 8, height: 22), Color(white: 0.55), 1)
+                box(CGRect(x: -34, y: -120 + r0, width: 26, height: 56), skin, 9)
+                box(CGRect(x: 16, y: -10 + r0, width: 46, height: 76), glove, 12)
+            case "pistol":
+                box(CGRect(x: -17, y: -210 + r0, width: 34, height: 160), Color(white: 0.24), 7)
+                edge(CGRect(x: -17, y: -210 + r0, width: 34, height: 160), 7)
+                box(CGRect(x: -6, y: -228 + r0, width: 12, height: 26), Color(white: 0.12), 3)
+                box(CGRect(x: -2.5, y: -200 + r0, width: 5, height: 10), Color(white: 0.7), 1)
+                box(CGRect(x: -12, y: -60 + r0, width: 30, height: 90), Color(white: 0.15), 8)
+                box(CGRect(x: -28, y: -40 + r0, width: 50, height: 90), glove, 14)
+                box(CGRect(x: 8, y: -20 + r0, width: 40, height: 70), skin, 12)
+            default:
+                box(CGRect(x: -8, y: -330 + r0, width: 16, height: 190), Color(white: 0.13), 3)
+                box(CGRect(x: -13, y: -346 + r0, width: 26, height: 20), Color(white: 0.2), 3)
+                box(CGRect(x: -24, y: -270 + r0, width: 48, height: 130), Color(white: 0.27), 6)
+                for i in 0..<5 { box(CGRect(x: -14, y: -258 + r0 + CGFloat(i) * 20, width: 28, height: 6), Color(white: 0.12), 2) }
+                box(CGRect(x: -32, y: -160 + r0, width: 64, height: 200), Color(white: 0.2), 10)
+                edge(CGRect(x: -32, y: -160 + r0, width: 64, height: 200), 10)
+                box(CGRect(x: -6, y: -190 + r0, width: 12, height: 50), Color(white: 0.36), 2)
+                box(CGRect(x: -3, y: -368 + r0, width: 6, height: 28), Color(white: 0.55), 1)
+                box(CGRect(x: 16, y: 10 + r0, width: 30, height: 90), Color(white: 0.1), 6)
+                box(CGRect(x: -36, y: -230 + r0, width: 30, height: 64), skin, 10)
+                box(CGRect(x: 20, y: -10 + r0, width: 46, height: 78), glove, 12)
+            }
+            if me.flash > 0 {
+                let tipY: CGFloat = id == "pistol" ? -240 : (id == "smg" ? -270 : -380)
+                l.fill(Path(ellipseIn: CGRect(x: -28, y: tipY - 18, width: 56, height: 56)), with: .color(.yellow.opacity(0.9)))
+                l.fill(Path(ellipseIn: CGRect(x: -14, y: tipY - 4, width: 28, height: 28)), with: .color(.white.opacity(0.95)))
+            }
         }
     }
 
@@ -1530,24 +1781,107 @@ final class TacticalEngine {
     func drawMinimapPublic(_ ctx: inout GraphicsContext) { drawMinimap(&ctx) }
 
     private func drawMinimap(_ ctx: inout GraphicsContext) {
-        let s: CGFloat = 0.085
-        let ox: CGFloat = 12, oy: CGFloat = 110
-        let back = CGRect(x: ox - 4, y: oy - 4, width: TMap.W * s + 8, height: TMap.H * s + 8)
-        ctx.fill(Path(roundedRect: back, cornerRadius: 8), with: .color(.black.opacity(0.55)))
-        for r in TMap.walls {
-            ctx.fill(Path(CGRect(x: ox + r.minX * s, y: oy + r.minY * s, width: max(1.5, r.width * s), height: max(1.5, r.height * s))), with: .color(.white.opacity(0.5)))
+        let s: CGFloat = 0.15
+        let ox: CGFloat = 16, oy: CGFloat = 104
+        let focus: TPlayer = me.alive ? me : (players.first { $0.team == me.team && $0.alive } ?? me)
+        let fl = TMap.floorOf(focus.pos)
+        let fo: CGFloat = fl == 1 ? TMap.off : 0
+        let w = TMap.floorW * s, h = TMap.H * s
+        func P(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: ox + (x - fo) * s, y: oy + y * s) }
+        func R(_ r: CGRect) -> CGRect { CGRect(x: ox + (r.minX - fo) * s, y: oy + r.minY * s, width: r.width * s, height: r.height * s) }
+        func here(_ p: CGPoint) -> Bool { TMap.floorOf(p) == fl }
+        func hereR(_ r: CGRect) -> Bool { TMap.floorOf(CGPoint(x: r.midX, y: r.midY)) == fl }
+        let frame = CGRect(x: ox - 5, y: oy - 5, width: w + 10, height: h + 10)
+        ctx.fill(Path(roundedRect: frame, cornerRadius: 10), with: .color(Color(red: 0.04, green: 0.05, blue: 0.08).opacity(0.82)))
+        ctx.stroke(Path(roundedRect: frame, cornerRadius: 10), with: .color(.white.opacity(0.35)), lineWidth: 1.5)
+        ctx.draw(Text(fl == 0 ? "GROUND FLOOR" : "UPSTAIRS").font(.system(size: 9, weight: .heavy)).foregroundColor(fl == 0 ? Color.white.opacity(0.8) : Color(red: 0.85, green: 0.93, blue: 0.2)), at: CGPoint(x: ox + w / 2, y: oy - 11))
+        let floors: [Color] = [Color(red: 0.45, green: 0.31, blue: 0.19), Color(red: 0.34, green: 0.36, blue: 0.38), Color(red: 0.27, green: 0.24, blue: 0.33), Color(red: 0.5, green: 0.54, blue: 0.56), Color(red: 0.28, green: 0.19, blue: 0.13), Color(red: 0.4, green: 0.4, blue: 0.42)]
+        for rm in TMap.rooms where hereR(rm.r) {
+            ctx.fill(Path(R(rm.r)), with: .color(floors[rm.mat % floors.count].opacity(0.55)))
         }
-        for i in 0..<2 {
-            let r = TMap.site(i)
-            ctx.fill(Path(CGRect(x: ox + r.minX * s, y: oy + r.minY * s, width: r.width * s, height: r.height * s)), with: .color(.yellow.opacity(0.25)))
-            ctx.draw(Text(i == 0 ? "A" : "B").font(.system(size: 9, weight: .heavy)).foregroundColor(.yellow), at: CGPoint(x: ox + r.midX * s, y: oy + r.midY * s))
+        for pr in TMap.props where hereR(pr.r) {
+            ctx.fill(Path(roundedRect: R(pr.r), cornerRadius: 1.5), with: .color(.black.opacity(0.35)))
         }
-        for p in players where p.alive && (p.team == me.team || p.spotted) {
-            let c: Color = p.isPlayer ? .green : (p.team == me.team ? .blue : .red)
-            ctx.fill(Path(ellipseIn: CGRect(x: ox + p.pos.x * s - 2.5, y: oy + p.pos.y * s - 2.5, width: 5, height: 5)), with: .color(c))
+        for d in TMap.doors where hereR(d) {
+            ctx.fill(Path(R(d)), with: .color(Color(red: 0.7, green: 0.5, blue: 0.25).opacity(0.9)))
         }
-        if planted {
-            ctx.fill(Path(ellipseIn: CGRect(x: ox + bombPos.x * s - 3.5, y: oy + bombPos.y * s - 3.5, width: 7, height: 7)), with: .color(.orange))
+        for (k, wl) in TMap.walls.enumerated() where hereR(wl) {
+            let r = R(wl)
+            let rr = CGRect(x: r.minX, y: r.minY, width: max(2, r.width), height: max(2, r.height))
+            let c: Color
+            switch TMap.wallMats[k] {
+            case .brick: c = Color(red: 0.85, green: 0.5, blue: 0.42)
+            case .concrete: c = Color(red: 0.82, green: 0.86, blue: 0.95)
+            case .wood: c = Color(red: 0.8, green: 0.6, blue: 0.35)
+            case .glass: c = Color(red: 0.5, green: 0.85, blue: 1)
+            }
+            ctx.fill(Path(rr), with: .color(c.opacity(TMap.wallMats[k] == .glass ? 0.55 : 0.92)))
+        }
+        for rm in TMap.rooms where hereR(rm.r) {
+            ctx.draw(Text(rm.name.uppercased()).font(.system(size: 6, weight: .bold)).foregroundColor(.white.opacity(0.55)), at: CGPoint(x: R(rm.r).midX, y: R(rm.r).minY + 8))
+        }
+        let pulse = 0.5 + 0.5 * sin(Double(time) * 4)
+        for i in 0..<2 where hereR(TMap.site(i)) {
+            let r = R(TMap.site(i))
+            let hot = i == atkSite && !planted
+            ctx.fill(Path(roundedRect: r, cornerRadius: 3), with: .color(Color.yellow.opacity(hot ? 0.25 + 0.2 * pulse : 0.18)))
+            ctx.stroke(Path(roundedRect: r, cornerRadius: 3), with: .color(Color.yellow.opacity(0.85)), style: StrokeStyle(lineWidth: 1.2, dash: [3, 2]))
+            ctx.draw(Text(i == 0 ? "A" : "B").font(.system(size: 14, weight: .heavy)).foregroundColor(.yellow), at: CGPoint(x: r.midX, y: r.midY))
+        }
+        for i in TMap.stairs.indices {
+            let r = R(TMap.stairRect(i, floor: fl))
+            ctx.fill(Path(roundedRect: r, cornerRadius: 2), with: .color(.white.opacity(0.22)))
+            var st = Path()
+            var yy = r.minY + 3
+            while yy < r.maxY - 1 { st.move(to: CGPoint(x: r.minX + 2, y: yy)); st.addLine(to: CGPoint(x: r.maxX - 2, y: yy)); yy += 3 }
+            ctx.stroke(st, with: .color(.white.opacity(0.55)), lineWidth: 0.8)
+            ctx.draw(Text(fl == 0 ? "UP" : "DN").font(.system(size: 6, weight: .heavy)).foregroundColor(.white), at: CGPoint(x: r.midX, y: r.midY))
+        }
+        for pk in packs where !pk.taken && here(pk.pos) {
+            let c = P(pk.pos.x, pk.pos.y)
+            ctx.fill(Path(CGRect(x: c.x - 3, y: c.y - 1, width: 6, height: 2)), with: .color(.green))
+            ctx.fill(Path(CGRect(x: c.x - 1, y: c.y - 3, width: 2, height: 6)), with: .color(.green))
+        }
+        for sm in smokeClouds where here(sm.pos) {
+            let c = P(sm.pos.x, sm.pos.y)
+            ctx.fill(Path(ellipseIn: CGRect(x: c.x - sm.r * s, y: c.y - sm.r * s, width: sm.r * 2 * s, height: sm.r * 2 * s)), with: .color(.white.opacity(0.35)))
+        }
+        if me.alive && here(me.pos) {
+            let c = P(me.pos.x, me.pos.y)
+            var cone = Path()
+            cone.move(to: c)
+            cone.addArc(center: c, radius: 70, startAngle: .radians(Double(me.aim) - 0.55), endAngle: .radians(Double(me.aim) + 0.55), clockwise: false)
+            cone.closeSubpath()
+            ctx.fill(cone, with: .color(.green.opacity(0.18)))
+        }
+        for p in players where p.alive && here(p.pos) && (p.team == me.team || p.spotted) {
+            let c = P(p.pos.x, p.pos.y)
+            let col: Color = p.isPlayer ? Color(red: 0.3, green: 0.95, blue: 0.45) : (p.team == me.team ? Color(red: 0.3, green: 0.62, blue: 1) : Color(red: 1, green: 0.28, blue: 0.3))
+            let a = Double(p.aim)
+            var tri = Path()
+            let sz: CGFloat = p.isPlayer ? 6.5 : 5
+            tri.move(to: CGPoint(x: c.x + CGFloat(cos(a)) * sz * 1.4, y: c.y + CGFloat(sin(a)) * sz * 1.4))
+            tri.addLine(to: CGPoint(x: c.x + CGFloat(cos(a + 2.5)) * sz, y: c.y + CGFloat(sin(a + 2.5)) * sz))
+            tri.addLine(to: CGPoint(x: c.x + CGFloat(cos(a - 2.5)) * sz, y: c.y + CGFloat(sin(a - 2.5)) * sz))
+            tri.closeSubpath()
+            ctx.fill(tri, with: .color(col))
+            ctx.stroke(tri, with: .color(.black.opacity(0.7)), lineWidth: 0.8)
+            if p.team != me.team {
+                ctx.stroke(Path(ellipseIn: CGRect(x: c.x - 8, y: c.y - 8, width: 16, height: 16)), with: .color(col.opacity(0.4 + 0.4 * pulse)), lineWidth: 1)
+            }
+        }
+        for p in players where !p.alive && here(p.pos) && (p.team == me.team || p.seenEver) {
+            ctx.draw(Text("\u{2715}").font(.system(size: 8, weight: .heavy)).foregroundColor(.white.opacity(0.6)), at: P(p.pos.x, p.pos.y))
+        }
+        for pg in pings where here(pg.pos) {
+            let c = P(pg.pos.x, pg.pos.y)
+            ctx.stroke(Path(ellipseIn: CGRect(x: c.x - 7, y: c.y - 7, width: 14, height: 14)), with: .color(.orange.opacity(Double(min(1, pg.life)))), lineWidth: 1.5)
+        }
+        if planted && here(bombPos) {
+            let c = P(bombPos.x, bombPos.y)
+            let rr = 5 + 5 * CGFloat(pulse)
+            ctx.stroke(Path(ellipseIn: CGRect(x: c.x - rr, y: c.y - rr, width: rr * 2, height: rr * 2)), with: .color(.red.opacity(0.8)), lineWidth: 1.5)
+            ctx.fill(Path(ellipseIn: CGRect(x: c.x - 3.5, y: c.y - 3.5, width: 7, height: 7)), with: .color(.orange))
         }
     }
 
@@ -1570,6 +1904,7 @@ struct TacticalPlay: View {
     @EnvironmentObject var game: Game
     @Environment(\.dismiss) private var dismiss
     var diff: Int
+    var fpMode = false
     @State private var engine = TacticalEngine()
     @State private var lStart: CGPoint? = nil
     @State private var lKnob: CGPoint = .zero
@@ -1577,6 +1912,7 @@ struct TacticalPlay: View {
     @State private var rKnob: CGPoint = .zero
     @State private var collected = false
     @State private var mode = 0
+    @State private var autoOn = true
     @State private var bridge: TacScene? = nil
     private var fp: Bool { mode == 1 }
     @State private var lastLook: CGFloat = 0
@@ -1603,8 +1939,11 @@ struct TacticalPlay: View {
         .statusBarHidden(true)
         .onAppear {
             OrientationLock.set(landscape: true)
-            engine.fp = false
-            engine.view3D = true
+            mode = fpMode ? 1 : 0
+            engine.fp = fpMode
+            engine.view3D = !fpMode
+            engine.autoAim = true
+            autoOn = true
             let st = game.s
             let cast = st.npcs.filter { $0.id != "newsdesk" }
             let owned = (st.ex.surv ?? SurvData()).guns
@@ -1652,7 +1991,7 @@ struct TacticalPlay: View {
                                 if hypot(dx, dy) > 8 { engine.aimIn = atan2(dy, dx) }
                                 engine.firing = true
                             }
-                            .onEnded { _ in rStart = nil; lastLook = 0; if !fp { engine.firing = false } })
+                            .onEnded { _ in rStart = nil; lastLook = 0; engine.aimIn = nil; engine.firing = false })
                 }
                 if let s = lStart { stick(s, lKnob, Color.white) }
                 if let s = rStart { stick(s, rKnob, Color.red) }
@@ -1787,9 +2126,9 @@ struct TacticalPlay: View {
                                 .gesture(DragGesture(minimumDistance: 0).onChanged { _ in e.actHeld = true }.onEnded { _ in e.actHeld = false })
                         }
                     }
-                    Button { mode = (mode + 1) % 3; e.fp = (mode == 1); e.view3D = (mode == 0) } label: {
-                        Text(mode == 0 ? "3D" : (mode == 1 ? "FP" : "Map")).font(.jk(12, .bold)).foregroundColor(.white)
-                            .padding(.horizontal, 12).frame(height: 38).background(Color.black.opacity(0.55)).clipShape(Capsule())
+                    Button { e.autoAim.toggle(); autoOn = e.autoAim } label: {
+                        Text(autoOn ? "AUTO" : "MAN").font(.jk(12, .heavy)).foregroundColor(autoOn ? .black : .white)
+                            .padding(.horizontal, 12).frame(height: 38).background(autoOn ? Color(red: 0.85, green: 0.93, blue: 0.2) : Color.black.opacity(0.55)).clipShape(Capsule())
                     }
                     Button { e.paused = true } label: {
                         Image(systemName: "pause.fill").font(.system(size: 13, weight: .bold)).foregroundColor(.white)

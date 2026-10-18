@@ -458,6 +458,7 @@ final class Nav: ObservableObject {
     @Published var chat: String? = nil
     @Published var coin: String? = nil
     @Published var tacPlay: Int? = nil
+    @Published var tacFP = false
 }
 
 func clockString(_ secs: Int) -> String { String(format: "%d:%02d", secs / 60, secs % 60) }

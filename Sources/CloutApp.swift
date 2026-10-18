@@ -2,13 +2,13 @@ import SwiftUI
 import CoreText
 
 enum OrientationLock {
-    static var mask: UIInterfaceOrientationMask = .portrait
+    static var mask: UIInterfaceOrientationMask = .landscape
 
     static func set(landscape: Bool) {
         mask = landscape ? .landscape : .portrait
         guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
         scene.windows.first?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
-        scene.requestGeometryUpdate(.iOS(interfaceOrientations: landscape ? .landscapeRight : .portrait)) { _ in }
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: landscape ? .landscape : .portrait)) { _ in }
     }
 }
 

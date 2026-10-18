@@ -31,6 +31,9 @@ final class TacScene {
     var camX: CGFloat = 0
     var camZ: CGFloat = 0
     var started = false
+    let floorRoot = [SCNNode(), SCNNode()]
+    var focusFloor = 0
+    var camFloor = 0
 
     var roots: [SCNNode] = []
     var bodies: [SCNNode] = []
@@ -203,6 +206,11 @@ final class TacScene {
     func build(_ e: TacticalEngine) {
         scene.background.contents = UIColor(red: 0.03, green: 0.04, blue: 0.06, alpha: 1)
         let root = scene.rootNode
+        floorRoot[1].position = SCNVector3(-Float(TMap.off), 0, 0)
+        floorRoot[1].isHidden = true
+        root.addChildNode(floorRoot[0])
+        root.addChildNode(floorRoot[1])
+        func fr(_ x: CGFloat) -> SCNNode { floorRoot[x >= TMap.off ? 1 : 0] }
 
         let amb = SCNNode()
         amb.light = SCNLight()
@@ -273,14 +281,14 @@ final class TacScene {
             let top = mat(img, sx: rm.r.width / tile, sy: rm.r.height / tile)
             let side = mat(nil, color: ui(b, 0.5))
             let n = box(rm.r, h: 1, y0: -1, mats: [side, side, side, side, top, side])
-            root.addChildNode(n)
+            fr(rm.r.midX).addChildNode(n)
         }
         // rugs
         for rg in TMap.rugs {
             let c = UIColor(cgColor: UIColor(rg.1).cgColor)
             let n = solid(rg.0, h: 1.6, color: c, top: c)
             n.castsShadow = false
-            root.addChildNode(n)
+            fr(rg.0.midX).addChildNode(n)
         }
         // sites
         for i in 0..<2 {
@@ -293,7 +301,7 @@ final class TacScene {
             let n = box(r, h: 0.4, y0: 2, mats: [clear, clear, clear, clear, m, clear])
             n.castsShadow = false
             n.renderingOrder = 5
-            root.addChildNode(n)
+            fr(r.midX).addChildNode(n)
         }
         // doors
         let doorTop = UIColor(red: 0.62, green: 0.5, blue: 0.32, alpha: 1)
@@ -301,25 +309,74 @@ final class TacScene {
         for d in TMap.doors {
             let n = solid(d, h: 2.4, color: doorTop, top: doorTop)
             n.castsShadow = false
-            root.addChildNode(n)
+            fr(d.midX).addChildNode(n)
             let horiz = d.width > d.height
             let p1 = horiz ? CGRect(x: d.minX - 3, y: d.midY - 6, width: 8, height: 12) : CGRect(x: d.midX - 6, y: d.minY - 3, width: 12, height: 8)
             let p2 = horiz ? CGRect(x: d.maxX - 5, y: d.midY - 6, width: 8, height: 12) : CGRect(x: d.midX - 6, y: d.maxY - 5, width: 12, height: 8)
-            root.addChildNode(solid(p1, h: 74, color: frame, top: frame, chamfer: 1.5))
-            root.addChildNode(solid(p2, h: 74, color: frame, top: frame, chamfer: 1.5))
+            fr(d.midX).addChildNode(solid(p1, h: TMap.wallH, color: frame, top: frame, chamfer: 1.5))
+            fr(d.midX).addChildNode(solid(p2, h: TMap.wallH, color: frame, top: frame, chamfer: 1.5))
         }
         // walls
         let brick = brickTex()
-        for o in TMap.walls {
-            let wallH: CGFloat = 70
-            let front = mat(brick, sx: o.width / 128, sy: wallH / 128)
-            let side = mat(brick, sx: o.height / 128, sy: wallH / 128)
-            let cap = mat(nil, color: UIColor(red: 0.66, green: 0.69, blue: 0.74, alpha: 1))
-            let n = box(o, h: wallH, mats: [front, side, front, side, cap, front])
-            root.addChildNode(n)
+        let concrete = noiseTex((0.58, 0.6, 0.64), "conc", dots: 900, grid: true)
+        let wood = woodTex((0.5, 0.36, 0.22), "wallwood")
+        let wallH = TMap.wallH
+        let cap = mat(nil, color: UIColor(red: 0.66, green: 0.69, blue: 0.74, alpha: 1))
+        for (k, o) in TMap.walls.enumerated() {
+            let mt = TMap.wallMats[k]
+            let front: SCNMaterial
+            let side: SCNMaterial
+            switch mt {
+            case .brick:
+                front = mat(brick, sx: o.width / 128, sy: wallH / 128)
+                side = mat(brick, sx: o.height / 128, sy: wallH / 128)
+            case .concrete:
+                front = mat(concrete, sx: o.width / 160, sy: wallH / 160)
+                side = mat(concrete, sx: o.height / 160, sy: wallH / 160)
+            case .wood:
+                front = mat(wood, sx: o.width / 128, sy: wallH / 128)
+                side = mat(wood, sx: o.height / 128, sy: wallH / 128)
+            case .glass:
+                front = mat(nil, color: UIColor(red: 0.55, green: 0.82, blue: 0.95, alpha: 1))
+                front.transparency = 0.32
+                front.isDoubleSided = true
+                front.writesToDepthBuffer = false
+                side = front
+            }
+            let n = box(o, h: wallH, mats: [front, side, front, side, mt == .glass ? front : cap, front])
+            if mt == .glass { n.castsShadow = false; n.renderingOrder = 3 }
+            fr(o.midX).addChildNode(n)
+        }
+        // stairs
+        for fl in 0..<2 {
+            for i in TMap.stairs.indices {
+                let r = TMap.stairRect(i, floor: fl)
+                if fl == 0 {
+                    let steps = 7
+                    let sh = r.height / CGFloat(steps)
+                    for k in 0..<steps {
+                        let sr = CGRect(x: r.minX, y: r.maxY - CGFloat(k + 1) * sh, width: r.width, height: sh + 0.5)
+                        let c = UIColor(red: 0.5 + 0.03 * CGFloat(k), green: 0.42 + 0.03 * CGFloat(k), blue: 0.3, alpha: 1)
+                        let n = solid(sr, h: 3 + CGFloat(k) * 4.5, color: c, top: c)
+                        n.castsShadow = false
+                        fr(r.midX).addChildNode(n)
+                    }
+                } else {
+                    let hole = solid(r, h: 1.2, y0: 0.4, color: UIColor(red: 0.04, green: 0.05, blue: 0.08, alpha: 1), top: UIColor(red: 0.04, green: 0.05, blue: 0.08, alpha: 1))
+                    hole.castsShadow = false
+                    fr(r.midX).addChildNode(hole)
+                }
+                let rail = UIColor(red: 0.95, green: 0.82, blue: 0.2, alpha: 1)
+                let glow = UIColor(red: 0.5, green: 0.42, blue: 0.08, alpha: 1)
+                let l = solid(CGRect(x: r.minX - 3, y: r.minY, width: 4, height: r.height), h: 22, color: rail, top: rail, emission: glow)
+                let rr = solid(CGRect(x: r.maxX - 1, y: r.minY, width: 4, height: r.height), h: 22, color: rail, top: rail, emission: glow)
+                l.castsShadow = false; rr.castsShadow = false
+                fr(r.midX).addChildNode(l)
+                fr(r.midX).addChildNode(rr)
+            }
         }
         // props
-        for pr in TMap.props { root.addChildNode(buildProp(pr)) }
+        for pr in TMap.props { fr(pr.r.midX).addChildNode(buildProp(pr)) }
         // health packs
         for k in e.packs {
             let g = SCNNode()
@@ -336,7 +393,7 @@ final class TacScene {
             g.addChildNode(ball); g.addChildNode(h); g.addChildNode(v)
             g.position = SCNVector3(Float(k.pos.x), 4, Float(k.pos.y))
             g.runAction(.repeatForever(.rotateBy(x: 0, y: 2, z: 0, duration: 2)))
-            root.addChildNode(g)
+            fr(k.pos.x).addChildNode(g)
             packNodes.append(g)
         }
         // bomb
@@ -526,29 +583,37 @@ final class TacScene {
     // MARK: per-frame
 
     func project(_ p: CGPoint, _ h: CGFloat) -> CGPoint? {
-        let v = view.projectPoint(SCNVector3(Float(p.x), Float(h), Float(p.y)))
+        if TMap.floorOf(p) != focusFloor { return nil }
+        let v = view.projectPoint(SCNVector3(Float(sx(p)), Float(h), Float(p.y)))
         if v.z > 1 || v.z < 0 { return nil }
         return CGPoint(x: CGFloat(v.x), y: CGFloat(v.y))
     }
 
+    func sx(_ p: CGPoint) -> CGFloat { p.x >= TMap.off ? p.x - TMap.off : p.x }
+
     func sync(_ e: TacticalEngine) {
         guard !e.players.isEmpty, roots.count == e.players.count else { return }
         let focus: TPlayer = e.me.alive ? e.me : (e.players.first { $0.team == e.me.team && $0.alive } ?? e.me)
-        if !started { camX = focus.pos.x; camZ = focus.pos.y; started = true }
-        camX += (focus.pos.x - camX) * 0.2
+        focusFloor = TMap.floorOf(focus.pos)
+        floorRoot[0].isHidden = focusFloor != 0
+        floorRoot[1].isHidden = focusFloor != 1
+        let fx = sx(focus.pos)
+        if !started || camFloor != focusFloor { camX = fx; camZ = focus.pos.y; started = true; camFloor = focusFloor }
+        camX += (fx - camX) * 0.2
         camZ += (focus.pos.y - camZ) * 0.2
         let sh = e.shake
         let jx: CGFloat = sh > 0 ? CGFloat.random(in: -sh...sh) * 0.6 : 0
         let jz: CGFloat = sh > 0 ? CGFloat.random(in: -sh...sh) * 0.6 : 0
-        camNode.position = SCNVector3(Float(camX + jx), 430, Float(camZ + 270 + jz))
-        camNode.look(at: SCNVector3(Float(camX), 0, Float(camZ)))
+        let lx = camX + cos(focus.aim) * 70, lz = camZ + sin(focus.aim) * 40
+        camNode.position = SCNVector3(Float(lx + jx), 400, Float(lz + 250 + jz))
+        camNode.look(at: SCNVector3(Float(lx), 0, Float(lz)))
 
         for (i, p) in e.players.enumerated() {
             let rt = roots[i]
-            let show = p.team == e.me.team || p.spotted || (!p.alive && p.seenEver)
+            let show = (p.team == e.me.team || p.spotted || (!p.alive && p.seenEver)) && TMap.floorOf(p.pos) == focusFloor
             rt.isHidden = !show
             if !show { continue }
-            rt.position = SCNVector3(Float(p.pos.x), 0, Float(p.pos.y))
+            rt.position = SCNVector3(Float(sx(p.pos)), 0, Float(p.pos.y))
             rt.eulerAngles = SCNVector3(0, Float(-p.aim), 0)
             if p.alive {
                 bodies[i].eulerAngles = SCNVector3(0, 0, 0)
@@ -575,10 +640,10 @@ final class TacScene {
         }
         // bullets
         for (i, node) in bulletPool.enumerated() {
-            if i < e.bullets.count {
+            if i < e.bullets.count, TMap.floorOf(e.bullets[i].pos) == focusFloor {
                 let b = e.bullets[i]
                 node.isHidden = false
-                node.position = SCNVector3(Float(b.pos.x), 30, Float(b.pos.y))
+                node.position = SCNVector3(Float(sx(b.pos)), 30, Float(b.pos.y))
                 node.eulerAngles = SCNVector3(0, Float(-atan2(b.vel.dy, b.vel.dx)), 0)
                 let c: UIColor = b.team == e.me.team ? UIColor(red: 0.7, green: 0.9, blue: 1, alpha: 1) : UIColor(red: 1, green: 0.55, blue: 0.35, alpha: 1)
                 node.geometry?.firstMaterial?.emission.contents = c
@@ -586,30 +651,30 @@ final class TacScene {
             } else { node.isHidden = true }
         }
         for (i, node) in nadePool.enumerated() {
-            if i < e.nades.count {
+            if i < e.nades.count, TMap.floorOf(e.nades[i].pos) == focusFloor {
                 let g = e.nades[i]
                 node.isHidden = false
-                node.position = SCNVector3(Float(g.pos.x), 8, Float(g.pos.y))
+                node.position = SCNVector3(Float(sx(g.pos)), 8, Float(g.pos.y))
                 node.geometry?.firstMaterial?.diffuse.contents = g.kind == 1 ? UIColor(white: 0.75, alpha: 1) : UIColor(red: 0.3, green: 0.8, blue: 0.3, alpha: 1)
             } else { node.isHidden = true }
         }
         for (i, node) in boomPool.enumerated() {
-            if i < e.booms.count {
+            if i < e.booms.count, TMap.floorOf(e.booms[i].pos) == focusFloor {
                 let b = e.booms[i]
                 let total: CGFloat = b.r > 150 ? 0.8 : 0.45
                 let k = min(1, max(0, 1 - b.life / total))
                 let rr = b.r * (0.35 + k * 0.7)
                 node.isHidden = false
-                node.position = SCNVector3(Float(b.pos.x), 20, Float(b.pos.y))
+                node.position = SCNVector3(Float(sx(b.pos)), 20, Float(b.pos.y))
                 node.scale = SCNVector3(Float(rr), Float(rr * 0.6), Float(rr))
                 node.opacity = CGFloat(0.65 * (1 - k))
             } else { node.isHidden = true }
         }
         for (i, node) in smokePool.enumerated() {
-            if i < e.smokeClouds.count {
+            if i < e.smokeClouds.count, TMap.floorOf(e.smokeClouds[i].pos) == focusFloor {
                 let s = e.smokeClouds[i]
                 node.isHidden = false
-                node.position = SCNVector3(Float(s.pos.x), 0, Float(s.pos.y))
+                node.position = SCNVector3(Float(sx(s.pos)), 0, Float(s.pos.y))
                 let sc = Float(s.r / 85)
                 node.scale = SCNVector3(sc, sc, sc)
                 node.opacity = min(1, s.life / 1.5) * 0.93
@@ -619,9 +684,10 @@ final class TacScene {
         for (i, node) in packNodes.enumerated() where i < e.packs.count {
             node.isHidden = e.packs[i].taken
         }
-        bombNode.isHidden = !e.planted
-        if e.planted {
-            bombNode.position = SCNVector3(Float(e.bombPos.x), 0, Float(e.bombPos.y))
+        let bombHere = e.planted && TMap.floorOf(e.bombPos) == focusFloor
+        bombNode.isHidden = !bombHere
+        if bombHere {
+            bombNode.position = SCNVector3(Float(sx(e.bombPos)), 0, Float(e.bombPos.y))
         }
     }
 }
@@ -641,7 +707,7 @@ extension TacticalEngine {
             let a = CGFloat(i) / CGFloat(n) * 2 * .pi
             let d = TMap.rayDist(vp, a, 700)
             let hit = d < 699
-            guard let pt = pr(CGPoint(x: vp.x + cos(a) * d, y: vp.y + sin(a) * d), hit ? 62 : 0) else { ok = false; break }
+            guard let pt = pr(CGPoint(x: vp.x + cos(a) * d, y: vp.y + sin(a) * d), hit ? TMap.wallH - 8 : 0) else { ok = false; break }
             if i == 0 { poly.move(to: pt) } else { poly.addLine(to: pt) }
         }
         if ok {
@@ -649,6 +715,14 @@ extension TacticalEngine {
             var dark = Path(CGRect(x: -60, y: -60, width: size.width + 120, height: size.height + 120))
             dark.addPath(poly)
             ctx.fill(dark, with: .color(.black.opacity(0.6)), style: FillStyle(eoFill: true))
+        }
+        // stair labels
+        let ff = TMap.floorOf(focus.pos)
+        for i in TMap.stairs.indices {
+            let r = TMap.stairRect(i, floor: ff)
+            if let pt = pr(CGPoint(x: r.midX, y: r.midY), 56) {
+                ctx.draw(Text(ff == 0 ? "UP" : "DOWN").font(.system(size: 12, weight: .heavy)).foregroundColor(Color(red: 1, green: 0.88, blue: 0.25)), at: pt)
+            }
         }
         // name tags
         for p in players where p.alive && (p.team == me.team || p.spotted) {
@@ -662,6 +736,14 @@ extension TacticalEngine {
             if p.reloadT > 0 {
                 ctx.draw(Text("reload").font(.system(size: 9, weight: .semibold)).foregroundColor(.white.opacity(0.85)), at: CGPoint(x: pt.x, y: pt.y + 14))
             }
+        }
+        if autoTarget >= 0, let tp = players.first(where: { $0.id == autoTarget }), tp.alive, let pt = pr(tp.pos, 30) {
+            let r: CGFloat = 26 + 3 * CGFloat(sin(Double(time) * 8))
+            ctx.stroke(Path(ellipseIn: CGRect(x: pt.x - r, y: pt.y - r, width: r * 2, height: r * 2)), with: .color(Color(red: 1, green: 0.3, blue: 0.3).opacity(0.9)), style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+            var cx = Path()
+            cx.move(to: CGPoint(x: pt.x - 8, y: pt.y)); cx.addLine(to: CGPoint(x: pt.x + 8, y: pt.y))
+            cx.move(to: CGPoint(x: pt.x, y: pt.y - 8)); cx.addLine(to: CGPoint(x: pt.x, y: pt.y + 8))
+            ctx.stroke(cx, with: .color(Color(red: 1, green: 0.3, blue: 0.3)), lineWidth: 1.5)
         }
         // pings
         for pg in pings {

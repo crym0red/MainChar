@@ -822,23 +822,23 @@ extension Game {
 struct TacMapPreview: View {
     var body: some View {
         Canvas { ctx, size in
-            let s = size.width / TMap.W
+            let s = size.width / TMap.floorW
             func R(_ r: CGRect) -> CGRect { CGRect(x: r.minX * s, y: r.minY * s, width: r.width * s, height: r.height * s) }
             let cols: [Color] = [
                 Color(red: 0.45, green: 0.31, blue: 0.19), Color(red: 0.34, green: 0.36, blue: 0.38),
                 Color(red: 0.27, green: 0.24, blue: 0.33), Color(red: 0.5, green: 0.54, blue: 0.56),
                 Color(red: 0.28, green: 0.19, blue: 0.13), Color(red: 0.4, green: 0.4, blue: 0.42)
             ]
-            for rm in TMap.rooms {
+            for rm in TMap.rooms where rm.r.midX < TMap.off {
                 ctx.fill(Path(R(rm.r)), with: .color(cols[rm.mat]))
                 ctx.draw(Text(rm.name.uppercased()).font(.system(size: 8, weight: .heavy)).foregroundColor(.white.opacity(0.35)), at: CGPoint(x: rm.r.midX * s, y: (rm.r.minY + 28) * s))
             }
-            for pr in TMap.props {
+            for pr in TMap.props where pr.r.midX < TMap.off {
                 ctx.fill(Path(roundedRect: R(pr.r), cornerRadius: 2), with: .color(Color(red: 0.2, green: 0.22, blue: 0.27).opacity(0.85)))
             }
-            for d in TMap.doors { ctx.fill(Path(R(d)), with: .color(Color(red: 0.62, green: 0.5, blue: 0.32))) }
-            for w in TMap.walls { ctx.fill(Path(R(w).insetBy(dx: -0.5, dy: -0.5)), with: .color(Color(red: 0.8, green: 0.83, blue: 0.87))) }
-            for i in 0..<2 {
+            for d in TMap.doors where d.midX < TMap.off { ctx.fill(Path(R(d)), with: .color(Color(red: 0.62, green: 0.5, blue: 0.32))) }
+            for w in TMap.walls where w.midX < TMap.off { ctx.fill(Path(R(w).insetBy(dx: -0.5, dy: -0.5)), with: .color(Color(red: 0.8, green: 0.83, blue: 0.87))) }
+            for i in 0..<1 {
                 let r = TMap.site(i)
                 ctx.fill(Path(R(r)), with: .color(Color(red: 0.15, green: 0.45, blue: 0.85).opacity(0.3)))
                 ctx.stroke(Path(R(r).insetBy(dx: 2, dy: 2)), with: .color(Color.yellow), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
@@ -847,7 +847,7 @@ struct TacMapPreview: View {
             for p in TMap.atkSpawn { ctx.fill(Path(ellipseIn: CGRect(x: p.x * s - 4, y: p.y * s - 4, width: 8, height: 8)), with: .color(Color(red: 0.25, green: 0.6, blue: 1))) }
             for p in TMap.defSpawn { ctx.fill(Path(ellipseIn: CGRect(x: p.x * s - 4, y: p.y * s - 4, width: 8, height: 8)), with: .color(Color(red: 1, green: 0.25, blue: 0.3))) }
         }
-        .aspectRatio(TMap.W / TMap.H, contentMode: .fit)
+        .aspectRatio(TMap.floorW / TMap.H, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }

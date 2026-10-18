@@ -56,7 +56,7 @@ struct LobbyView: View {
             }
         }
         .fullScreenCover(isPresented: Binding(get: { nav.tacPlay != nil }, set: { if !$0 { nav.tacPlay = nil } })) {
-            TacticalPlay(diff: nav.tacPlay ?? 1).environmentObject(game).environmentObject(nav).preferredColorScheme(.dark)
+            TacticalPlay(diff: nav.tacPlay ?? 1, fpMode: nav.tacFP).environmentObject(game).environmentObject(nav).preferredColorScheme(.dark)
         }
         .sheet(isPresented: Binding(get: { sheet != nil }, set: { if !$0 { sheet = nil } })) {
             sheetBody.environmentObject(game).preferredColorScheme(.dark)
@@ -166,7 +166,7 @@ struct LobbyView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("5V5 BOMB DEFUSAL").font(.jk(16, .heavy)).foregroundColor(.white)
-                        Text("Safehouse  |  \(diffNames[diff])").font(.jk(12, .semibold)).foregroundColor(.white.opacity(0.8))
+                        Text("Safehouse  |  \(diffNames[diff])  |  \(nav.tacFP ? "FIRST PERSON" : "3D")").font(.jk(12, .semibold)).foregroundColor(.white.opacity(0.8))
                     }
                     Spacer()
                     Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold)).foregroundColor(.white.opacity(0.7))
@@ -174,6 +174,17 @@ struct LobbyView: View {
                 .padding(.horizontal, 12).frame(width: w, height: 52).background(Color.black.opacity(0.7))
             }
             .buttonStyle(.plain)
+            HStack(spacing: 0) {
+                ForEach(Array(["3D", "FIRST PERSON"].enumerated()), id: \.offset) { i, n in
+                    let on = (i == 1) == nav.tacFP
+                    Button { nav.tacFP = (i == 1) } label: {
+                        Text(n).font(.jk(12, .heavy)).foregroundColor(on ? .black : .white.opacity(0.8))
+                            .frame(maxWidth: .infinity).frame(height: 32).background(on ? lime : Color.black.opacity(0.7))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .frame(width: w)
             Button { nav.tacPlay = diff } label: {
                 VStack(spacing: 0) {
                     HStack {
