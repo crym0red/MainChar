@@ -115,11 +115,19 @@ struct RaidZone {
 }
 
 extension TacticalEngine {
-    static let raidZones: [RaidZone] = [
+    static let warehouseZones: [RaidZone] = [
         RaidZone(pos: CGPoint(x: 2740 + 3200, y: 440), name: "EAST GATE", key: false, hold: 8, loud: false),
         RaidZone(pos: CGPoint(x: 1500 + 3200, y: 900), name: "CENTRAL YARD", key: false, hold: 14, loud: true),
         RaidZone(pos: CGPoint(x: 1500 + 3200, y: 1650), name: "SOUTH DOCK", key: true, hold: 8, loud: false)
     ]
+    static let harborZones: [RaidZone] = [
+RaidZone(pos: CGPoint(x: 5200 + 10600, y: 170), name: "NORTH GATE", key: false, hold: 8, loud: false),
+RaidZone(pos: CGPoint(x: 5200 + 10600, y: 5200), name: "CENTRAL TERMINAL", key: false, hold: 14, loud: true),
+RaidZone(pos: CGPoint(x: 7800 + 10600, y: 10230), name: "SOUTH PIER", key: true, hold: 8, loud: false),
+RaidZone(pos: CGPoint(x: 10230 + 10600, y: 3200), name: "EAST PIER", key: false, hold: 8, loud: false),
+RaidZone(pos: CGPoint(x: 170 + 10600, y: 3500), name: "WEST QUAY", key: false, hold: 8, loud: false),
+    ]
+    static var raidZones: [RaidZone] { TMap.kind == 4 ? harborZones : warehouseZones }
 
     var bagValue: Int { raidBag.reduce(0) { $0 + $1.value } }
     static let raidAmmoCap = 8
@@ -142,6 +150,11 @@ extension TacticalEngine {
     }
 
     func raidNote(_ s: String) { raidMsg = s; raidMsgT = 2.5 }
+
+    func raidContinue() {
+        replayOn = false
+        brEndT = 0
+    }
 
     func raidStart() {
         loot = TMap.lootSpots.map { Loot(pos: $0.0, id: $0.1, taken: false) }
@@ -228,9 +241,15 @@ extension TacticalEngine {
             raidBag.append(it)
             raidNote("+ \(it.name.uppercased())")
         case "vault":
-            raidBag.append(RaidItem(kind: "val", name: "Gold Bars", value: 600))
-            raidBag.append(raidRollGun(["ak", "m4", "awp", "p90"].randomElement() ?? "ak", minTier: 2))
-            raidBag.append(RaidItem.supply("plate"))
+            if arg.hasPrefix("B") {
+                raidBag.append(RaidItem(kind: "val", name: "Mythic Relic", value: 4000))
+                raidBag.append(raidRollGun(["ak", "m4", "awp", "p90"].randomElement() ?? "ak", minTier: 5))
+                raidBag.append(RaidItem.supply("plate"))
+            } else {
+                raidBag.append(RaidItem(kind: "val", name: "Gold Bars", value: 600))
+                raidBag.append(raidRollGun(["ak", "m4", "awp", "p90"].randomElement() ?? "ak", minTier: 2))
+                raidBag.append(RaidItem.supply("plate"))
+            }
             vaultsOpened += 1
             alarmT = 25
             alarmPulse = 0
@@ -408,7 +427,7 @@ extension TacticalEngine {
             }
         }
         if !me.alive {
-            brEndT -= dt
+            if !(replayOn && !replayDone) { brEndT -= dt }
             if !raidCommitted {
                 raidCommitted = true
                 raidSold = raidSecureCommit()
@@ -421,7 +440,7 @@ extension TacticalEngine {
     /// bots patrol rooms, scavenge nearby loot and sometimes hunt the player
     func raidGoal(_ p: TPlayer) -> CGPoint {
         if p.faction == 2 { return p.home }
-        if p.faction == 1 || p.faction == 3 { return raidPost(p) }
+        if p.faction == 1 || p.faction == 3 || p.faction == 4 { return raidPost(p) }
         if p.roam != .zero && p.goalT > time && tDist(p.pos, p.roam) > 40 { return p.roam }
         p.goalT = time + CGFloat.random(in: 4...8)
         var dest = p.roam
@@ -434,10 +453,14 @@ extension TacticalEngine {
         }
         if let b = best {
             dest = b
-        } else if me.alive && Int.random(in: 0..<100) < 30 && tDist(p.pos, me.pos) < 1300 {
+        } else if me.alive && Int.random(in: 0..<100) < 30 && TMap.pdist(p.pos, me.pos) < 650 && TMap.floorOf(p.pos) == TMap.floorOf(me.pos) {
             dest = me.pos
-        } else if let r = TMap.rooms.randomElement() {
-            dest = CGPoint(x: r.r.midX + CGFloat.random(in: -50...50), y: r.r.midY + CGFloat.random(in: -50...50))
+        } else {
+            let pf = TMap.floorOf(p.pos)
+            let near = TMap.rooms.filter { $0.fl == pf && hypot($0.r.midX - p.pos.x, $0.r.midY - p.pos.y) < 1100 }
+            if let r = near.randomElement() ?? TMap.rooms.randomElement() {
+                dest = CGPoint(x: r.r.midX + CGFloat.random(in: -50...50), y: r.r.midY + CGFloat.random(in: -50...50))
+            }
         }
         p.roam = dest
         return dest
