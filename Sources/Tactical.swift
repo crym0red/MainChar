@@ -1533,17 +1533,17 @@ final class TacticalEngine {
         let id = me.gun
         let img = GunSprites.image(id)
         let mz = GunSprites.muzzle(id)
-        let gw = min(size.width * 0.5, size.height * 1.6)
-        let gh = gw * 0.625
         let rec: CGFloat = me.flash > 0 ? 1 : 0
         let moving = hypot(move.dx, move.dy)
         let bob = CGFloat(sin(Double(time) * 9)) * 6 * moving
-        let dip: CGFloat = me.reloadT > 0 ? min(1, me.reloadT * 2.5) * gh * 0.4 : 0
         let spr = ctx.resolve(Image(uiImage: img))
-        let rect = CGRect(x: size.width - gw * 0.97 + rec * 10, y: size.height - gh + 6 + dip + bob + rec * 12, width: gw, height: gh)
+        var rect = GunSprites.rect(size)
+        let dip: CGFloat = me.reloadT > 0 ? min(1, me.reloadT * 2.5) * rect.height * 0.35 : 0
+        rect.origin.x += rec * 12
+        rect.origin.y += dip + bob + rec * 14
         ctx.draw(spr, in: rect)
         if me.flash > 0 {
-            let p = CGPoint(x: rect.minX + mz.x * gw, y: rect.minY + mz.y * gh)
+            let p = CGPoint(x: rect.minX + mz.x * rect.width, y: rect.minY + mz.y * rect.height)
             ctx.fill(Path(ellipseIn: CGRect(x: p.x - 30, y: p.y - 30, width: 60, height: 60)), with: .color(.yellow.opacity(0.85)))
             ctx.fill(Path(ellipseIn: CGRect(x: p.x - 14, y: p.y - 14, width: 28, height: 28)), with: .color(.white.opacity(0.95)))
         }

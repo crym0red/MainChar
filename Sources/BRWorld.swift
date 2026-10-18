@@ -32,14 +32,16 @@ struct BRGunDef {
     let spread: CGFloat
     let reload: CGFloat
     let pellets: Int
+    let kick: CGFloat
+    let zoom: CGFloat
 }
 
 enum BRGuns {
     static let all: [BRGunDef] = [
-        BRGunDef(id: "pistol", name: "M9 SIDEARM", dmg: 22, rate: 0.28, mag: 15, range: 650, spread: 0.025, reload: 1.2, pellets: 1),
-        BRGunDef(id: "smg", name: "VX-9 SMG", dmg: 14, rate: 0.075, mag: 30, range: 520, spread: 0.05, reload: 1.6, pellets: 1),
-        BRGunDef(id: "rifle", name: "AR-27 RIFLE", dmg: 24, rate: 0.12, mag: 30, range: 1100, spread: 0.02, reload: 2.0, pellets: 1),
-        BRGunDef(id: "shotgun", name: "BREACHER", dmg: 11, rate: 0.9, mag: 6, range: 320, spread: 0.09, reload: 2.4, pellets: 8)
+        BRGunDef(id: "pistol", name: "M9 SIDEARM", dmg: 22, rate: 0.28, mag: 15, range: 650, spread: 0.025, reload: 1.2, pellets: 1, kick: 0.010, zoom: 1.12),
+        BRGunDef(id: "smg", name: "VX-9 SMG", dmg: 14, rate: 0.075, mag: 30, range: 520, spread: 0.05, reload: 1.6, pellets: 1, kick: 0.006, zoom: 0.95),
+        BRGunDef(id: "rifle", name: "AR-27 RIFLE", dmg: 24, rate: 0.12, mag: 30, range: 1100, spread: 0.02, reload: 2.0, pellets: 1, kick: 0.012, zoom: 0.5),
+        BRGunDef(id: "shotgun", name: "BREACHER", dmg: 11, rate: 0.9, mag: 6, range: 320, spread: 0.09, reload: 2.4, pellets: 8, kick: 0.03, zoom: 1.1)
     ]
     static func def(_ id: String) -> BRGunDef { all.first { $0.id == id } ?? all[0] }
 }
@@ -108,6 +110,10 @@ final class BRWorld {
     var roads: [[CGPoint]] = []
     var roadSegs: [(CGPoint, CGPoint)] = []
     var patches: [(CGRect, BRCol)] = []
+    static let texN = 600
+    static let texS: CGFloat = 10
+    var tex: [UInt8] = []
+    var mapImage: CGImage? = nil
 
     static func coastDist(_ p: CGPoint) -> CGFloat {
         let coastX: CGFloat = 420 + 260 * sin(p.y / 640) + 140 * sin(p.y / 230)
@@ -411,6 +417,7 @@ final class BRWorld {
         }
 
         buildGrid()
+        bakeGround()
     }
 
     private func wallHit(_ r: CGRect) -> Bool {
@@ -529,5 +536,61 @@ final class BRWorld {
         for b in blds where b.r.insetBy(dx: -pad, dy: -pad).contains(p) { return true }
         for i in near(p, pad + 10) where walls[i].r.insetBy(dx: -pad, dy: -pad).contains(p) { return true }
         return false
+    }
+
+    // MARK: baked ground texture (also used by the minimap)
+
+    private func paint(_ r: CGRect, _ c: BRCol) {
+        let n = BRWorld.texN
+        let sc = BRWorld.texS
+        let i0 = max(0, Int(floor(r.minX / sc))), i1 = min(n - 1, Int(floor(r.maxX / sc)))
+        let j0 = max(0, Int(floor(r.minY / sc))), j1 = min(n - 1, Int(floor(r.maxY / sc)))
+        if i1 < i0 || j1 < j0 { return }
+        let rr = UInt8(max(0, min(255, c.0 * 255))), gg = UInt8(max(0, min(255, c.1 * 255))), bb = UInt8(max(0, min(255, c.2 * 255)))
+        for j in j0...j1 {
+            for i in i0...i1 {
+                let o = (j * n + i) * 4
+                tex[o] = rr
+                tex[o + 1] = gg
+                tex[o + 2] = bb
+                tex[o + 3] = 255
+            }
+        }
+    }
+
+    private func bakeGround() {
+        let n = BRWorld.texN
+        let sc = BRWorld.texS
+        tex = [UInt8](repeating: 255, count: n * n * 4)
+        for j in 0..<n {
+            for i in 0..<n {
+                let p = CGPoint(x: (CGFloat(i) + 0.5) * sc, y: (CGFloat(j) + 0.5) * sc)
+                let c = ground(p)
+                let hsh = sin(CGFloat(i) * 12.9898 + CGFloat(j) * 78.233) * 43758.5453
+                let nz = (hsh - floor(hsh) - 0.5) * 0.045
+                let o = (j * n + i) * 4
+                tex[o] = UInt8(max(0, min(255, (c.0 + nz) * 255)))
+                tex[o + 1] = UInt8(max(0, min(255, (c.1 + nz) * 255)))
+                tex[o + 2] = UInt8(max(0, min(255, (c.2 + nz) * 255)))
+            }
+        }
+        for b in blds { paint(b.r, (0.5, 0.48, 0.44)) }
+        for w in walls {
+            if w.h < 60 { paint(w.r, w.c) } else { paint(w.r, (0.13, 0.13, 0.15)) }
+        }
+        tex.withUnsafeMutableBytes { raw in
+            if let cg = CGContext(data: raw.baseAddress, width: n, height: n, bitsPerComponent: 8, bytesPerRow: n * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
+                mapImage = cg.makeImage()
+            }
+        }
+    }
+
+    // returns 0..255 rgb at world position
+    func sample(_ x: CGFloat, _ y: CGFloat) -> (Int, Int, Int) {
+        let n = BRWorld.texN
+        let i = Int(x / BRWorld.texS), j = Int(y / BRWorld.texS)
+        if i < 0 || j < 0 || i >= n || j >= n { return (44, 100, 150) }
+        let o = (j * n + i) * 4
+        return (Int(tex[o]), Int(tex[o + 1]), Int(tex[o + 2]))
     }
 }

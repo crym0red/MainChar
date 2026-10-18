@@ -17,7 +17,7 @@ extension BREngine {
                  with: .linearGradient(Gradient(colors: [brc(0.26, 0.48, 0.82), brc(0.55, 0.74, 0.92), brc(0.82, 0.9, 0.96)]), startPoint: CGPoint(x: 0, y: 0), endPoint: CGPoint(x: 0, y: hz)))
         // sun
         let sunRel = brWrap(0.7 - m.ang)
-        if abs(sunRel) < BREngine.fov / 2 + 0.3 {
+        if abs(sunRel) < curFov / 2 + 0.3 {
             let sx = W / 2 + tan(sunRel) * focal
             let sy = hz - 130 * sc
             ctx.fill(Path(ellipseIn: CGRect(x: sx - 60, y: sy - 60, width: 120, height: 120)), with: .color(brc(1, 0.95, 0.75, 0.25)))
@@ -27,7 +27,7 @@ extension BREngine {
         let cl: [CGFloat] = [0.2, 1.1, 1.9, 2.8, 3.6, 4.4, 5.3, 6.0]
         for (i, ca) in cl.enumerated() {
             let rel = brWrap(ca - m.ang)
-            if abs(rel) > BREngine.fov / 2 + 0.5 { continue }
+            if abs(rel) > curFov / 2 + 0.5 { continue }
             let cx = W / 2 + tan(rel) * focal
             let cy = hz - (90 + CGFloat(i % 3) * 36) * sc
             let cwid: CGFloat = (120 + CGFloat(i % 4) * 30) * sc
@@ -57,36 +57,8 @@ extension BREngine {
 
         // ground base
         ctx.fill(Path(CGRect(x: 0, y: hz, width: W, height: H - hz + 1)),
-                 with: .linearGradient(Gradient(colors: [brc(0.62, 0.72, 0.58), brc(0.3, 0.42, 0.24)]), startPoint: CGPoint(x: 0, y: hz), endPoint: CGPoint(x: 0, y: H)))
-        // floor casting
-        let nx = 60
-        let cwf = W / CGFloat(nx)
-        var cs = [CGFloat](repeating: 0, count: nx)
-        var sn = [CGFloat](repeating: 0, count: nx)
-        var ik = [CGFloat](repeating: 1, count: nx)
-        for i in 0..<nx {
-            let off = atan((CGFloat(i) + 0.5 - CGFloat(nx) / 2) * cwf / focal)
-            cs[i] = cos(m.ang + off)
-            sn[i] = sin(m.ang + off)
-            ik[i] = 1 / cos(off)
-        }
-        let rows = 26
-        let dmin: CGFloat = 45, dmax: CGFloat = 1300
-        var prevD = dmin
-        for r in 1...rows {
-            let d = dmin * pow(dmax / dmin, CGFloat(r) / CGFloat(rows))
-            let yNear = hz + eye * focal / prevD
-            let yFar = hz + eye * focal / d
-            let mid = (prevD + d) / 2
-            prevD = d
-            if yFar > H { continue }
-            let fog = pow(min(1, mid / 1300), 1.1) * 0.8
-            for i in 0..<nx {
-                let dist = mid * ik[i]
-                let c = world.ground(CGPoint(x: m.p.x + cs[i] * dist, y: m.p.y + sn[i] * dist))
-                ctx.fill(Path(CGRect(x: CGFloat(i) * cwf, y: yFar, width: cwf + 1, height: min(yNear, H) - yFar + 1)), with: .color(hazeMix(c, 1, fog)))
-            }
-        }
+                 with: .linearGradient(Gradient(colors: [brc(0.66, 0.76, 0.66), brc(0.3, 0.42, 0.24)]), startPoint: CGPoint(x: 0, y: hz), endPoint: CGPoint(x: 0, y: H)))
+        drawFloor(&ctx, W, H, hz, focal)
 
         // walls
         let cols = max(120, Int(W / 3))
@@ -114,7 +86,8 @@ extension BREngine {
             let f = focal / perp
             let top = hz - (w.h - eye) * f
             let bot = hz + eye * f
-            let shade: CGFloat = bs ? 1 : 0.78
+            let tintH = sin(CGFloat(bi) * 12.9898) * 43758.5453
+            let shade: CGFloat = (bs ? 1 : 0.78) * (0.93 + 0.12 * (tintH - floor(tintH)))
             let fog = pow(min(1, bt / 1000), 1.2) * 0.75
             let hh = bot - top
             let x = CGFloat(i) * cw
@@ -123,7 +96,7 @@ extension BREngine {
             ctx.fill(Path(CGRect(x: x, y: top, width: cw + 0.6, height: max(1.5, 5 * f))), with: .color(brc(1, 1, 1, 0.22 * (1 - fog))))
             // base shadow
             ctx.fill(Path(CGRect(x: x, y: bot - 6 * f, width: cw + 0.6, height: 6 * f)), with: .color(brc(0, 0, 0, 0.22)))
-            if w.h >= 95 && bt < 800 {
+            if w.h >= 70 && bt < 900 {
                 let hx = m.p.x + dx * bt, hy = m.p.y + dy * bt
                 let u = abs(bs ? hy : hx)
                 let cell = fmod(u, 52)
@@ -144,5 +117,56 @@ extension BREngine {
             }
         }
         return zb
+    }
+
+    private func drawFloor(_ ctx: inout GraphicsContext, _ W: CGFloat, _ H: CGFloat, _ hz: CGFloat, _ focal: CGFloat) {
+        let m = me
+        let y0 = max(0, hz)
+        if y0 >= H - 1 { return }
+        let bw = 170, bh = 70
+        let span = H - y0
+        let eye = BREngine.eyeH
+        var cs = [CGFloat](repeating: 0, count: bw)
+        var sn = [CGFloat](repeating: 0, count: bw)
+        var ik = [CGFloat](repeating: 1, count: bw)
+        for i in 0..<bw {
+            let off = atan((CGFloat(i) + 0.5 - CGFloat(bw) / 2) * (W / CGFloat(bw)) / focal)
+            cs[i] = cos(m.ang + off)
+            sn[i] = sin(m.ang + off)
+            ik[i] = 1 / cos(off)
+        }
+        let hr: CGFloat = 0.74 * 255, hg: CGFloat = 0.83 * 255, hb: CGFloat = 0.9 * 255
+        for j in 0..<bh {
+            let sy = y0 + (CGFloat(j) + 0.5) / CGFloat(bh) * span
+            let dy = max(0.5, sy - hz)
+            let d = eye * focal / dy
+            let fog = min(1, pow(min(1, d / 1500), 1.15) * 0.85)
+            let k = 1 - fog
+            for i in 0..<bw {
+                let o = (j * bw + i) * 4
+                if d > 1500 {
+                    floorBuf[o] = UInt8(hr)
+                    floorBuf[o + 1] = UInt8(hg)
+                    floorBuf[o + 2] = UInt8(hb)
+                    floorBuf[o + 3] = 255
+                    continue
+                }
+                let dist = d * ik[i]
+                let c = world.sample(m.p.x + cs[i] * dist, m.p.y + sn[i] * dist)
+                floorBuf[o] = UInt8(CGFloat(c.0) * k + hr * fog)
+                floorBuf[o + 1] = UInt8(CGFloat(c.1) * k + hg * fog)
+                floorBuf[o + 2] = UInt8(CGFloat(c.2) * k + hb * fog)
+                floorBuf[o + 3] = 255
+            }
+        }
+        var img: CGImage? = nil
+        floorBuf.withUnsafeMutableBytes { raw in
+            if let cg = CGContext(data: raw.baseAddress, width: bw, height: bh, bitsPerComponent: 8, bytesPerRow: bw * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
+                img = cg.makeImage()
+            }
+        }
+        if let img = img {
+            ctx.draw(Image(decorative: img, scale: 1).interpolation(.high), in: CGRect(x: 0, y: y0, width: W, height: span + 1))
+        }
     }
 }
