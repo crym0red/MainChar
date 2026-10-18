@@ -409,6 +409,7 @@ struct TowerPlay: View {
             VStack(spacing: 8) {
                 btn("RELOAD", .white) { e.startReload(m) }
                 btn("SWAP", .white) { e.swap(m) }
+                btn(m.crouch ? "STAND" : "COVER", m.crouch ? .yellow : .white) { e.toggleCover(m) }
                 btn("MED \(m.meds)", .red) { e.useMed(m) }
                 btn("CAM", .white) { e.zoom = (e.zoom + 1) % 3 }
                 btn(lookOn ? "FOLLOW" : "LOOK", lookOn ? .yellow : .cyan) {

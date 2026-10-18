@@ -42,6 +42,7 @@ struct TwView {
     var gun: Int
     var hurt: Bool
     var team: Int
+    var crouch = false
 }
 
 struct TwFrame {
@@ -100,6 +101,7 @@ final class TwActor {
     var keys = 0
     var lastStep = 0
     var dormant = false
+    var crouch = false
     var vis = false
     var memT: CGFloat = 0
     var noiseT: CGFloat = 0
@@ -280,7 +282,7 @@ final class TowerEngine {
     }
 
     func snapshot() -> [TwView] {
-        actors.map { TwView(p: $0.p, f: $0.f, ang: $0.ang, alive: $0.alive && !$0.dormant, flash: $0.flash > 0.4, walk: $0.walk, gun: gunIdx($0), hurt: $0.hurtT > 0, team: $0.team) }
+        actors.map { TwView(p: $0.p, f: $0.f, ang: $0.ang, alive: $0.alive && !$0.dormant, flash: $0.flash > 0.4, walk: $0.walk, gun: gunIdx($0), hurt: $0.hurtT > 0, team: $0.team, crouch: $0.crouch) }
     }
 
     func currentViews() -> [TwView] {
@@ -355,6 +357,7 @@ final class TowerEngine {
         updateZone(dt)
         updateDoors(dt)
         updateMech(dt)
+        if me.crouch && !inCoverRange(me) { me.crouch = false }
         wakeT -= dt
         if wakeT <= 0 { wakeT = 0.25; streamActors() }
         var rep = 0
@@ -491,6 +494,18 @@ final class TowerEngine {
             }
         }
         if changed { map.refreshBlockers() }
+    }
+
+    // MARK: cover
+
+    func inCoverRange(_ a: TwActor) -> Bool {
+        for w in map.rayBlockers[a.f] where doorDist(w, a.p) < 24 { return true }
+        return false
+    }
+
+    func toggleCover(_ a: TwActor) {
+        if a.crouch { a.crouch = false; return }
+        if inCoverRange(a) { a.crouch = true; note("IN COVER  -  FIRE TO BLIND-FIRE OVER IT") } else { note("NO COVER NEARBY") }
     }
 
     // MARK: manual doors
@@ -644,7 +659,7 @@ final class TowerEngine {
             let c = cos(camYaw), sn = sin(camYaw)
             mv = CGPoint(x: c * move.x + sn * move.y, y: -sn * move.x + c * move.y)
         }
-        moveActor(a, mv, 150, dt)
+        moveActor(a, mv, a.crouch ? 78 : 150, dt)
         if hypot(aim.x, aim.y) > 0.2 {
             var want = atan2(aim.y, aim.x)
             if let g = a.gun, hypot(aim.x, aim.y) > 0.5 {
@@ -711,11 +726,20 @@ final class TowerEngine {
         a.noiseT = 2
         let rb: CGFloat = 1 + CGFloat(g.rar) * 0.08
         sfx("shot_" + g.id, at: a.p, f: a.f, vol: a.isMe ? 0.9 : 1)
-        let spreadMul: CGFloat = a.isMe ? 1 : (1.8 - a.skill)
+        var spreadMul: CGFloat = a.isMe ? 1 : (1.8 - a.skill)
+        // blind fire: gun raised over / around the cover in front, no aiming, big spread
+        var muzzle: CGFloat = 16
+        if a.isMe && a.crouch {
+            let bx = cos(a.ang), by = sin(a.ang)
+            for w in map.rayBlockers[a.f] {
+                if let h = brRayThrough(a.p, bx, by, w), h.0 >= 0, h.0 < 36, h.1 - h.0 < 90 { muzzle = max(muzzle, h.1 + 3) }
+            }
+            if muzzle > 16 { spreadMul = 2.6 }
+        }
         for _ in 0..<d.pellets {
             let ang = a.ang + (rng.f() - 0.5) * 2 * d.spread * spreadMul
             let dx = cos(ang), dy = sin(ang)
-            let origin = CGPoint(x: a.p.x + dx * 16, y: a.p.y + dy * 16)
+            let origin = CGPoint(x: a.p.x + dx * muzzle, y: a.p.y + dy * muzzle)
             var dist = map.rayDist(a.f, origin, dx, dy, d.range)
             // bots punch through thin walls (player bullets stop); each wall costs damage
             var walls: [(CGFloat, CGFloat)] = []
@@ -773,6 +797,7 @@ final class TowerEngine {
     func hurt(_ e: TwActor, _ dmgIn: CGFloat, by: TwActor?, head: Bool, silent: Bool) {
         guard e.alive else { return }
         var dmg = dmgIn
+        if e.crouch && by != nil { dmg *= 0.7 }
         if e.armor > 0 {
             let ab = min(e.armor, dmg * 0.6)
             e.armor -= ab

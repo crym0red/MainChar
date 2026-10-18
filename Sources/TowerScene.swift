@@ -81,10 +81,89 @@ final class TowerScene {
 
     private func tex(_ key: String, _ draw: (CGContext, CGFloat) -> Void) -> UIImage {
         if let t = texCache[key] { return t }
-        let s: CGFloat = 128
-        let img = UIGraphicsImageRenderer(size: CGSize(width: s, height: s)).image { c in draw(c.cgContext, s) }
+        let s: CGFloat = 256
+        let fmt = UIGraphicsImageRendererFormat()
+        fmt.scale = 1
+        fmt.opaque = false
+        let img = UIGraphicsImageRenderer(size: CGSize(width: s, height: s), format: fmt).image { c in draw(c.cgContext, s) }
         texCache[key] = img
         return img
+    }
+
+    private func grime(_ g: CGContext, _ s: CGFloat, _ seed: UInt64, _ amt: CGFloat) {
+        var r = TwLCG(s: seed)
+        for _ in 0..<Int(16 * amt) {
+            let w = 30 + r.n() * 90, h = 20 + r.n() * 70
+            g.setFillColor(twCol(0, 0, 0, 0.025 + r.n() * 0.05).cgColor)
+            g.fillEllipse(in: CGRect(x: r.n() * s - w / 2, y: r.n() * s - h / 2, width: w, height: h))
+        }
+        for _ in 0..<Int(5 * amt) {
+            let w = 40 + r.n() * 80
+            g.setFillColor(twCol(1, 1, 1, 0.02 + r.n() * 0.03).cgColor)
+            g.fillEllipse(in: CGRect(x: r.n() * s - w / 2, y: r.n() * s - w / 2, width: w, height: w * 0.7))
+        }
+        for _ in 0..<Int(700 * amt) {
+            g.setFillColor(twCol(0, 0, 0, 0.08 + r.n() * 0.16).cgColor)
+            let d = 0.8 + r.n() * 1.6
+            g.fill(CGRect(x: r.n() * s, y: r.n() * s, width: d, height: d))
+        }
+        for _ in 0..<Int(260 * amt) {
+            g.setFillColor(twCol(1, 1, 1, 0.05 + r.n() * 0.1).cgColor)
+            g.fill(CGRect(x: r.n() * s, y: r.n() * s, width: 1, height: 1))
+        }
+        g.setLineWidth(0.8)
+        for _ in 0..<Int(9 * amt) {
+            g.setStrokeColor(twCol(1, 1, 1, 0.07 + r.n() * 0.08).cgColor)
+            let x = r.n() * s, y = r.n() * s
+            g.move(to: CGPoint(x: x, y: y))
+            g.addLine(to: CGPoint(x: x + (r.n() - 0.5) * 60, y: y + (r.n() - 0.5) * 60))
+            g.strokePath()
+        }
+        // dirt at the slab edges
+        g.setStrokeColor(twCol(0, 0, 0, 0.22).cgColor)
+        g.setLineWidth(5)
+        g.stroke(CGRect(x: 0, y: 0, width: s, height: s))
+    }
+
+    private func decalTex(_ k: Int) -> UIImage {
+        tex("decal\(k)") { g, s in
+            var r = TwLCG(s: UInt64(k * 31 + 7))
+            switch k {
+            case 0: // stain
+                for _ in 0..<7 {
+                    let w = 40 + r.n() * 110
+                    g.setFillColor(twCol(0.05, 0.04, 0.03, 0.10 + r.n() * 0.10).cgColor)
+                    g.fillEllipse(in: CGRect(x: s / 2 - w / 2 + (r.n() - 0.5) * 50, y: s / 2 - w * 0.35 + (r.n() - 0.5) * 40, width: w, height: w * 0.7))
+                }
+            case 1: // scorch / oil
+                let cols = [twCol(0, 0, 0, 0.55).cgColor, twCol(0, 0, 0, 0).cgColor] as CFArray
+                if let gr = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: cols, locations: [0, 1]) {
+                    g.drawRadialGradient(gr, startCenter: CGPoint(x: s / 2, y: s / 2), startRadius: 0, endCenter: CGPoint(x: s / 2, y: s / 2), endRadius: s / 2, options: [])
+                }
+            case 2: // loose papers
+                for _ in 0..<9 {
+                    g.saveGState()
+                    g.translateBy(x: s / 2 + (r.n() - 0.5) * 150, y: s / 2 + (r.n() - 0.5) * 120)
+                    g.rotate(by: r.n() * 6.28)
+                    let v = 0.78 + r.n() * 0.2
+                    g.setFillColor(twCol(v, v, v * 0.95, 0.92).cgColor)
+                    g.fill(CGRect(x: -12, y: -16, width: 24, height: 32))
+                    g.setFillColor(twCol(0.3, 0.3, 0.35, 0.5).cgColor)
+                    for l in 0..<4 { g.fill(CGRect(x: -9, y: -11 + CGFloat(l) * 6, width: 16, height: 1.5)) }
+                    g.restoreGState()
+                }
+            default: // crack
+                g.setStrokeColor(twCol(0, 0, 0, 0.7).cgColor)
+                g.setLineWidth(2)
+                var p = CGPoint(x: 10, y: s * 0.3 + r.n() * s * 0.4)
+                g.move(to: p)
+                while p.x < s - 10 {
+                    p = CGPoint(x: p.x + 10 + r.n() * 24, y: p.y + (r.n() - 0.5) * 36)
+                    g.addLine(to: p)
+                }
+                g.strokePath()
+            }
+        }
     }
 
     private func floorTex(_ kind: String) -> UIImage {
@@ -182,6 +261,7 @@ final class TowerScene {
                 g.setLineWidth(1.5)
                 g.stroke(CGRect(x: 0, y: 0, width: s, height: s))
             }
+            grime(g, s, UInt64(kind.hashValue & 0xFFFF) + 101, kind == "grate" ? 0.25 : kind == "marble" ? 0.6 : 1)
         }
     }
 
@@ -203,13 +283,18 @@ final class TowerScene {
             // top rail
             g.setFillColor(twCol(0.55, 0.55, 0.6).cgColor)
             g.fill(CGRect(x: 0, y: 0, width: s, height: 8))
+            // accent stripe in the map colour
+            let c = def.coreC
+            g.setFillColor(twCol(c.0, c.1, c.2).cgColor)
+            g.fill(CGRect(x: 0, y: s * 0.66, width: s, height: s * 0.055))
+            grime(g, s, 303, 0.9)
         }
     }
 
     private var poolTex: UIImage {
         tex("pool") { g, s in
             let cs = CGColorSpaceCreateDeviceRGB()
-            let cols = [twCol(1, 0.95, 0.8, 0.55).cgColor, twCol(1, 0.95, 0.8, 0).cgColor] as CFArray
+            let cols = [twCol(1, 1, 1, 0.75).cgColor, twCol(1, 1, 1, 0).cgColor] as CFArray
             if let gr = CGGradient(colorsSpace: cs, colors: cols, locations: [0, 1]) {
                 g.drawRadialGradient(gr, startCenter: CGPoint(x: s / 2, y: s / 2), startRadius: 0, endCenter: CGPoint(x: s / 2, y: s / 2), endRadius: s / 2, options: [])
             }
@@ -217,6 +302,35 @@ final class TowerScene {
     }
 
     private var matCache: [String: SCNMaterial] = [:]
+
+    private func poolMat(_ c: UIColor, _ k: CGFloat) -> SCNMaterial {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        c.getRed(&r, green: &g, blue: &b, alpha: &a)
+        let key = "pool\(Int(r * 100))_\(Int(g * 100))_\(Int(b * 100))_\(Int(k * 10))"
+        if let m = matCache[key] { return m }
+        let m = SCNMaterial()
+        m.diffuse.contents = poolTex
+        m.multiply.contents = UIColor(red: r * k, green: g * k, blue: b * k, alpha: 1)
+        m.lightingModel = .constant
+        m.blendMode = .add
+        m.writesToDepthBuffer = false
+        m.isDoubleSided = true
+        matCache[key] = m
+        return m
+    }
+
+    private func decalMat(_ k: Int) -> SCNMaterial {
+        let key = "decalm\(k)"
+        if let m = matCache[key] { return m }
+        let m = SCNMaterial()
+        m.diffuse.contents = decalTex(k)
+        m.lightingModel = .lambert
+        m.writesToDepthBuffer = false
+        m.isDoubleSided = true
+        m.transparencyMode = .aOne
+        matCache[key] = m
+        return m
+    }
 
     private func texMat(_ img: UIImage, _ su: CGFloat, _ sv: CGFloat, _ tint: UIColor, shared: Bool = true, gloss: CGFloat = 0.25, bump: CGFloat = 0.5) -> SCNMaterial {
         var key = ""
@@ -356,14 +470,14 @@ final class TowerScene {
         let amb = SCNNode()
         amb.light = SCNLight()
         amb.light?.type = .ambient
-        amb.light?.intensity = map.def.ambI
+        amb.light?.intensity = map.def.ambI * 0.58
         amb.light?.color = twCol(map.def.amb.0, map.def.amb.1, map.def.amb.2)
         scene.rootNode.addChildNode(amb)
         let sun = SCNNode()
         sun.light = SCNLight()
         sun.light?.type = .directional
-        sun.light?.intensity = 1000
-        sun.light?.color = twCol(1.0, 0.95, 0.88)
+        sun.light?.intensity = 760
+        sun.light?.color = twCol(0.92, 0.94, 1.0)
         sun.position = SCNVector3(300, 900, 1000)
         scene.rootNode.addChildNode(sun)
         let aim = SCNNode()
@@ -373,9 +487,9 @@ final class TowerScene {
         sun.constraints = [lk]
         sun.light?.castsShadow = true
         sun.light?.shadowMode = .forward
-        sun.light?.shadowSampleCount = 3
+        sun.light?.shadowSampleCount = 6
         sun.light?.shadowRadius = 2.5
-        sun.light?.shadowColor = UIColor(white: 0, alpha: 0.55)
+        sun.light?.shadowColor = UIColor(white: 0, alpha: 0.72)
         sun.light?.shadowMapSize = CGSize(width: 2048, height: 2048)
         sun.light?.orthographicScale = 950
         sun.light?.zNear = 200
@@ -383,19 +497,19 @@ final class TowerScene {
         sunNode = sun
 
         let cam = SCNCamera()
-        cam.fieldOfView = 52
+        cam.fieldOfView = 46
         cam.zNear = 10
         cam.zFar = 3000
         cam.wantsHDR = true
-        cam.bloomIntensity = 0.45
-        cam.bloomThreshold = 0.85
+        cam.bloomIntensity = 0.8
+        cam.bloomThreshold = 0.72
         cam.bloomBlurRadius = 6
-        cam.vignettingIntensity = 0.5
+        cam.vignettingIntensity = 0.75
         cam.vignettingPower = 1.2
-        cam.screenSpaceAmbientOcclusionIntensity = 0.7
-        cam.screenSpaceAmbientOcclusionRadius = 8
-        cam.saturation = 1.08
-        cam.contrast = 0.1
+        cam.screenSpaceAmbientOcclusionIntensity = 1.1
+        cam.screenSpaceAmbientOcclusionRadius = 10
+        cam.saturation = 1.15
+        cam.contrast = 0.2
         camNode.camera = cam
         scene.rootNode.addChildNode(camNode)
 
@@ -436,9 +550,9 @@ final class TowerScene {
     private func wallBox(_ w: CGFloat, _ h: CGFloat, _ l: CGFloat, _ tint: UIColor) -> SCNNode {
         let g = SCNBox(width: w, height: h, length: l, chamferRadius: 0)
         let vf = h / 80
-        let fb = texMat(wallTex, max(0.05, w / 120), vf, tint)
-        let lr = texMat(wallTex, max(0.05, l / 120), vf, tint)
-        let top = plain(twCol(0.97, 0.97, 1.0))
+        let fb = texMat(wallTex, max(0.05, w / 120), vf, tint, gloss: 0.12, bump: 0.9)
+        let lr = texMat(wallTex, max(0.05, l / 120), vf, tint, gloss: 0.12, bump: 0.9)
+        let top = plain(twCol(0.045, 0.05, 0.065))
         let bot = plain(twCol(0.2, 0.2, 0.22))
         g.materials = [fb, lr, fb, lr, top, bot]
         return SCNNode(geometry: g)
@@ -458,7 +572,7 @@ final class TowerScene {
         }
         // wall base shadow + walls
         let trimDark = twCol(0.16, 0.14, 0.13)
-        let trimLight = twCol(0.88, 0.87, 0.84)
+        let trimLight = twCol(0.07, 0.075, 0.09)
         for w in map.walls[f] {
             st.addChildNode(at(wallBox(w.width, TowerMap.wallH, w.height, tintC), w.midX, TowerMap.wallH / 2, w.midY))
             if min(w.width, w.height) < 40 {
@@ -502,23 +616,53 @@ final class TowerScene {
             st.addChildNode(at(box(ln.width, 1.4, 4, twCol(1.0, 0.85, 0.1), glow: true), ln.midX, 1.8, ln.maxY + 2))
         }
         for p in map.props[f] { st.addChildNode(propNode(p, f)) }
+        // floor grime decals: stains, scorch, papers, cracks
+        var dr = TwLCG(s: UInt64(f * 977 + def.id * 131 + 5))
+        for _ in 0..<34 {
+            let p = CGPoint(x: 60 + dr.n() * (W - 120), y: 60 + dr.n() * (H - 120))
+            if map.blockers[f].contains(where: { $0.insetBy(dx: -12, dy: -12).contains(p) }) { continue }
+            let k = Int(dr.n() * 3.99)
+            let sz = 26 + dr.n() * 70
+            let pl = SCNPlane(width: sz, height: sz)
+            pl.materials = [decalMat(k)]
+            let inner = SCNNode(geometry: pl)
+            inner.eulerAngles = SCNVector3(-Float.pi / 2, 0, 0)
+            let outer = SCNNode()
+            outer.addChildNode(inner)
+            outer.eulerAngles = SCNVector3(0, Float(dr.n() * 6.28), 0)
+            outer.position = SCNVector3(Float(p.x), 0.7, Float(p.y))
+            st.addChildNode(outer)
+        }
         // light pools
         let pst = SCNNode()
         var pools: [CGPoint] = []
         for x in stride(from: 160, to: 1500, by: 220) { pools.append(CGPoint(x: CGFloat(x), y: 500)); pools.append(CGPoint(x: CGFloat(x), y: 300)); pools.append(CGPoint(x: CGFloat(x), y: 700)) }
         for r in map.rooms[f] { pools.append(CGPoint(x: r.r.midX, y: r.r.midY)) }
-        for p in pools {
-            let pl = SCNPlane(width: 210, height: 210)
-            let m = SCNMaterial()
-            m.diffuse.contents = poolTex
-            m.lightingModel = .constant
-            m.blendMode = .add
-            m.writesToDepthBuffer = false
-            m.isDoubleSided = true
-            pl.materials = [m]
+        let cool = poolMat(twCol(0.35, 0.62, 1.0), 0.9)
+        let warm = poolMat(twCol(1.0, 0.82, 0.55), 0.8)
+        for (pi, p) in pools.enumerated() {
+            let pl = SCNPlane(width: 230, height: 230)
+            pl.materials = [(pi + Int(p.x / 100)) % 3 == 0 ? cool : warm]
             let n = SCNNode(geometry: pl)
             n.eulerAngles = SCNVector3(-Float.pi / 2, 0, 0)
             n.position = SCNVector3(Float(p.x), 0.8, Float(p.y))
+            pst.addChildNode(n)
+        }
+        for r in map.rooms[f] where r.secure || r.hazard {
+            let pl = SCNPlane(width: r.r.width + 90, height: r.r.height + 90)
+            pl.materials = [poolMat(r.hazard ? twCol(0.3, 1.0, 0.4) : twCol(1.0, 0.25, 0.2), 0.9)]
+            let n = SCNNode(geometry: pl)
+            n.eulerAngles = SCNVector3(-Float.pi / 2, 0, 0)
+            n.position = SCNVector3(Float(r.r.midX), 0.85, Float(r.r.midY))
+            pst.addChildNode(n)
+        }
+        do {
+            let cc = def.coreC
+            let pl = SCNPlane(width: TowerMap.core.width + 300, height: TowerMap.core.height + 300)
+            pl.materials = [poolMat(twCol(cc.0, cc.1, cc.2), 1.0)]
+            let n = SCNNode(geometry: pl)
+            n.eulerAngles = SCNVector3(-Float.pi / 2, 0, 0)
+            n.position = SCNVector3(Float(TowerMap.core.midX), 0.9, Float(TowerMap.core.midY))
             pst.addChildNode(n)
         }
         // stairs
@@ -651,138 +795,413 @@ final class TowerScene {
         doorNodes.append(dn)
     }
 
+    // MARK: prop toolkit
+
+    private func mat(_ c: UIColor, spec: CGFloat = 0.2, shin: CGFloat = 0.3, fabric: Bool = false) -> SCNMaterial {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        c.getRed(&r, green: &g, blue: &b, alpha: &a)
+        let key = "m\(Int(r * 255))_\(Int(g * 255))_\(Int(b * 255))_\(Int(spec * 100))_\(Int(shin * 100))_\(fabric)"
+        if let m = matCache[key] { return m }
+        let m = SCNMaterial()
+        m.diffuse.contents = c
+        m.lightingModel = .blinn
+        m.specular.contents = UIColor(white: spec, alpha: 1)
+        m.shininess = shin
+        if fabric {
+            m.normal.contents = floorTex("carpet")
+            m.normal.intensity = 1.0
+            m.normal.wrapS = .repeat
+            m.normal.wrapT = .repeat
+            m.normal.contentsTransform = SCNMatrix4MakeScale(4, 4, 1)
+        }
+        matCache[key] = m
+        return m
+    }
+
+    private func rb(_ w: CGFloat, _ h: CGFloat, _ l: CGFloat, _ c: UIColor, _ rad: CGFloat = 2.2, spec: CGFloat = 0.2, shin: CGFloat = 0.3, fabric: Bool = false) -> SCNNode {
+        let ww = max(0.2, w), hh = max(0.2, h), ll = max(0.2, l)
+        let g = SCNBox(width: ww, height: hh, length: ll, chamferRadius: min(rad, min(ww, hh, ll) * 0.45))
+        g.chamferSegmentCount = 3
+        g.materials = [mat(c, spec: spec, shin: shin, fabric: fabric)]
+        return SCNNode(geometry: g)
+    }
+
+    private func wd(_ w: CGFloat, _ h: CGFloat, _ l: CGFloat, _ tint: UIColor = twCol(0.85, 0.7, 0.55)) -> SCNNode {
+        let ww = max(0.2, w), hh = max(0.2, h), ll = max(0.2, l)
+        let g = SCNBox(width: ww, height: hh, length: ll, chamferRadius: min(0.8, min(ww, hh, ll) * 0.4))
+        g.chamferSegmentCount = 2
+        g.materials = [texMat(floorTex("wood"), max(0.3, max(ww, ll) / 52), max(0.3, hh / 52), tint, gloss: 0.3, bump: 0.7)]
+        return SCNNode(geometry: g)
+    }
+
+    private func cy(_ r: CGFloat, _ h: CGFloat, _ c: UIColor, spec: CGFloat = 0.3, shin: CGFloat = 0.5) -> SCNNode {
+        let g = SCNCylinder(radius: max(0.1, r), height: max(0.1, h))
+        g.radialSegmentCount = 28
+        g.materials = [mat(c, spec: spec, shin: shin)]
+        return SCNNode(geometry: g)
+    }
+
+    private func cn(_ top: CGFloat, _ bot: CGFloat, _ h: CGFloat, _ c: UIColor, spec: CGFloat = 0.25) -> SCNNode {
+        let g = SCNCone(topRadius: top, bottomRadius: bot, height: h)
+        g.radialSegmentCount = 24
+        g.materials = [mat(c, spec: spec, shin: 0.4)]
+        return SCNNode(geometry: g)
+    }
+
+    private func tr(_ ring: CGFloat, _ pipe: CGFloat, _ c: UIColor) -> SCNNode {
+        let g = SCNTorus(ringRadius: ring, pipeRadius: pipe)
+        g.ringSegmentCount = 36
+        g.pipeSegmentCount = 8
+        g.materials = [mat(c, spec: 0.5, shin: 0.8)]
+        return SCNNode(geometry: g)
+    }
+
+    private func tb(_ inner: CGFloat, _ outer: CGFloat, _ h: CGFloat, _ c: UIColor) -> SCNNode {
+        let g = SCNTube(innerRadius: inner, outerRadius: outer, height: h)
+        g.radialSegmentCount = 20
+        g.materials = [mat(c, spec: 0.4, shin: 0.6)]
+        return SCNNode(geometry: g)
+    }
+
+    private func sp(_ r: CGFloat, _ c: UIColor, spec: CGFloat = 0.3) -> SCNNode {
+        let g = SCNSphere(radius: r)
+        g.segmentCount = 18
+        g.materials = [mat(c, spec: spec, shin: 0.5)]
+        return SCNNode(geometry: g)
+    }
+
+    private func put(_ g: SCNNode, _ n: SCNNode, _ x: CGFloat, _ y: CGFloat, _ z: CGFloat, rx: CGFloat = 0, ry: CGFloat = 0, rz: CGFloat = 0) {
+        n.position = SCNVector3(Float(x), Float(y), Float(z))
+        n.eulerAngles = SCNVector3(Float(rx), Float(ry), Float(rz))
+        g.addChildNode(n)
+    }
+
     private func propNode(_ p: TwProp, _ f: Int) -> SCNNode {
         let r = p.r
-        let n = SCNNode()
-        let cx = r.midX, cz = r.midY
+        let long = r.width >= r.height
+        let L = max(r.width, r.height), D = min(r.width, r.height)
+        let hv = abs(Int(r.minX * 7 + r.minY * 13)) % 97
+        var rg = TwLCG(s: UInt64(hv * 7919 + p.kind * 131 + 11))
+        let g = SCNNode()
+        let steel = twCol(0.55, 0.58, 0.62)
+        let dark = twCol(0.1, 0.1, 0.12)
+        let brass = twCol(0.85, 0.68, 0.3)
+        let white = twCol(0.93, 0.93, 0.95)
+        let palette: [UIColor] = [twCol(0.7, 0.2, 0.2), twCol(0.2, 0.4, 0.7), twCol(0.82, 0.7, 0.22), twCol(0.25, 0.6, 0.38), twCol(0.9, 0.9, 0.84), twCol(0.45, 0.25, 0.55), twCol(0.85, 0.5, 0.2)]
         switch p.kind {
-        case 0: // crate
-            n.addChildNode(at(box(r.width, 30, r.height, twCol(0.55, 0.4, 0.22)), cx, 15, cz))
-            for dy in [1.0, 29.0] as [CGFloat] { n.addChildNode(at(box(r.width + 1, 3, r.height + 1, twCol(0.35, 0.25, 0.13)), cx, dy, cz)) }
-            n.addChildNode(at(box(3, 30.5, r.height + 1, twCol(0.35, 0.25, 0.13)), cx, 15, cz))
-        case 1: // desk + monitor + chair
-            n.addChildNode(at(box(r.width, 3, r.height, twCol(0.5, 0.36, 0.24)), cx, 23, cz))
-            n.addChildNode(at(box(3, 22, r.height - 4, twCol(0.3, 0.22, 0.15)), r.minX + 3, 11, cz))
-            n.addChildNode(at(box(3, 22, r.height - 4, twCol(0.3, 0.22, 0.15)), r.maxX - 3, 11, cz))
-            n.addChildNode(at(box(2, 9, 12, twCol(0.05, 0.05, 0.07)), cx, 30, cz))
-            n.addChildNode(at(box(0.6, 7, 10.5, twCol(0.15, 0.8, 0.95), glow: true), cx + 1.2, 30, cz))
-            n.addChildNode(at(box(4, 1, 8, twCol(0.1, 0.1, 0.12)), cx - 6, 24, cz))
-            let chairZ = r.height < r.width ? r.maxY + 9 : cz
-            let chairX = r.height < r.width ? cx : r.maxX + 9
-            n.addChildNode(at(box(11, 3, 11, twCol(0.12, 0.12, 0.15)), chairX, 13, chairZ))
-            n.addChildNode(at(box(11, 12, 2, twCol(0.12, 0.12, 0.15)), chairX, 19, chairZ + 5))
-            n.addChildNode(at(cyl(1, 10, twCol(0.3, 0.3, 0.3)), chairX, 7, chairZ))
-        case 2: // couch with rug
-            let rug = box(r.width + 24, 0.8, r.height + 24, twCol(0.35, 0.12, 0.14))
-            n.addChildNode(at(rug, cx, 1, cz))
-            n.addChildNode(at(box(r.width, 10, r.height, twCol(0.45, 0.16, 0.22)), cx, 8, cz))
-            let long = r.width >= r.height
-            n.addChildNode(at(box(long ? r.width : 9, 20, long ? 9 : r.height, twCol(0.4, 0.14, 0.2)), long ? cx : r.minX + 4.5, 15, long ? r.minY + 4.5 : cz))
-            let cu = twCol(0.6, 0.22, 0.3)
-            if long {
-                n.addChildNode(at(box(r.width / 2 - 6, 5, r.height - 12, cu), cx - r.width / 4, 15, cz + 3))
-                n.addChildNode(at(box(r.width / 2 - 6, 5, r.height - 12, cu), cx + r.width / 4, 15, cz + 3))
-            } else {
-                n.addChildNode(at(box(r.width - 12, 5, r.height / 2 - 6, cu), cx + 3, 15, cz - r.height / 4))
-                n.addChildNode(at(box(r.width - 12, 5, r.height / 2 - 6, cu), cx + 3, 15, cz + r.height / 4))
-            }
-        case 3: // plant
-            n.addChildNode(at(cyl(min(r.width, r.height) / 2, 12, twCol(0.5, 0.3, 0.2)), cx, 6, cz))
-            for (dx, dy, dz, rr) in [(0.0, 20.0, 0.0, 9.0), (4.0, 27.0, 3.0, 6.0), (-4.0, 25.0, -3.0, 6.0)] as [(CGFloat, CGFloat, CGFloat, CGFloat)] {
-                n.addChildNode(at(ball(rr, twCol(0.12, 0.5 + dy * 0.004, 0.18)), cx + dx, dy, cz + dz))
-            }
-        case 4: // shelf with books
-            n.addChildNode(at(box(r.width, 54, r.height, twCol(0.34, 0.25, 0.18)), cx, 27, cz))
-            let long = r.width >= r.height
-            let cols: [UIColor] = [twCol(0.7, 0.2, 0.2), twCol(0.2, 0.4, 0.7), twCol(0.8, 0.7, 0.2), twCol(0.25, 0.6, 0.35), twCol(0.9, 0.9, 0.85)]
-            for row in 0..<3 {
-                let y = 12 + CGFloat(row) * 16
-                let count = Int((long ? r.width : r.height) / 6)
-                for b in 0..<count {
-                    let off = -((long ? r.width : r.height) / 2) + 4 + CGFloat(b) * 6
-                    let bh = 9 + CGFloat((b * 7 + row * 3) % 5)
-                    let col = cols[(b + row * 2) % cols.count]
-                    if long { n.addChildNode(at(box(4.5, bh, 3, col), cx + off, y + bh / 2 - 2, r.maxY + 0.8)) }
-                    else { n.addChildNode(at(box(3, bh, 4.5, col), r.maxX + 0.8, y + bh / 2 - 2, cz + off)) }
+        case 0: // shipping crate
+            let H: CGFloat = 27 + CGFloat(hv % 3) * 3
+            let planks = twCol(0.82, 0.66, 0.5)
+            let beam = twCol(0.55, 0.42, 0.3)
+            put(g, wd(L, H, D, planks), 0, H / 2, 0)
+            for sx in [-1.0, 1.0] as [CGFloat] {
+                for sz in [-1.0, 1.0] as [CGFloat] {
+                    put(g, wd(3.4, H + 0.6, 3.4, beam), sx * (L / 2 - 1.2), H / 2, sz * (D / 2 - 1.2))
                 }
             }
-        case 5: // table
-            n.addChildNode(at(box(r.width, 3, r.height, twCol(0.55, 0.4, 0.28)), cx, 21, cz))
-            for (dx, dz) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] as [(CGFloat, CGFloat)] {
-                n.addChildNode(at(box(3, 20, 3, twCol(0.3, 0.22, 0.15)), cx + dx * (r.width / 2 - 4), 10, cz + dz * (r.height / 2 - 4)))
+            for y in [2.6, H - 2.6] as [CGFloat] { put(g, wd(L + 0.9, 2.8, D + 0.9, beam), 0, y, 0) }
+            let bl = hypot(L - 8, H - 8), ba = atan2(H - 8, L - 8)
+            put(g, wd(bl, 2.4, 0.9, beam), 0, H / 2, D / 2 + 0.5, rz: ba)
+            put(g, wd(bl, 2.4, 0.9, beam), 0, H / 2, -D / 2 - 0.5, rz: -ba)
+            put(g, box(L * 0.3, 4.5, 0.3, twCol(0.08, 0.08, 0.08)), -L * 0.18, H * 0.62, D / 2 + 0.8)
+            put(g, wd(L - 0.8, 1.6, D - 0.8, planks), 0, H + 0.6, 0)
+            if hv % 3 == 0 && L > 30 { put(g, wd(L * 0.5, 17, D * 0.7, planks), 2, H + 9.4, 0, ry: 0.25) }
+        case 1: // desk + monitor + chair
+            let wood = twCol(0.78, 0.58, 0.42)
+            let woodD = twCol(0.6, 0.45, 0.33)
+            put(g, wd(L, 2.6, D, wood), 0, 25, 0)
+            put(g, rb(20, 22, D - 4, woodD, 1.5), -L / 2 + 12, 12, 0)
+            for k in 0..<3 {
+                put(g, wd(18.4, 6.2, 0.9, wood), -L / 2 + 12, 5 + CGFloat(k) * 7.2, (D - 4) / 2 + 0.4)
+                put(g, rb(4, 0.9, 0.9, brass, 0.3, spec: 0.7, shin: 1.0), -L / 2 + 12, 5 + CGFloat(k) * 7.2, (D - 4) / 2 + 1.2)
             }
-            n.addChildNode(at(cyl(3, 4, twCol(0.9, 0.9, 0.95)), cx, 24, cz))
+            put(g, rb(2, 22, D - 4, woodD, 1), L / 2 - 2, 12, 0)
+            put(g, rb(L - 26, 13, 1.4, woodD, 0.6), 0, 17, -D / 2 + 3)
+            put(g, cy(4.5, 0.8, twCol(0.15, 0.15, 0.17)), 2, 26.7, -D * 0.12)
+            put(g, rb(1.6, 8, 1.6, twCol(0.15, 0.15, 0.17), 0.6), 2, 31, -D * 0.12)
+            put(g, rb(17, 10.5, 1.6, twCol(0.06, 0.06, 0.08), 0.8, spec: 0.5), 2, 37.5, -D * 0.12)
+            put(g, box(15.6, 9, 0.3, twCol(0.2, 0.75, 1.0), glow: true), 2, 37.5, -D * 0.12 + 0.9)
+            put(g, rb(14, 0.9, 5, twCol(0.14, 0.14, 0.16), 0.5), 2, 26.9, D * 0.2)
+            for k in 0..<3 { put(g, rb(12.5, 0.3, 1.1, twCol(0.38, 0.38, 0.42), 0.2), 2, 27.5, D * 0.2 - 1.6 + CGFloat(k) * 1.6) }
+            put(g, rb(2.4, 1.3, 3.6, twCol(0.1, 0.1, 0.12), 0.6), 12, 27, D * 0.2)
+            put(g, cy(3, 0.8, twCol(0.1, 0.1, 0.12)), -L / 2 + 6, 26.7, -D / 2 + 6)
+            put(g, cy(0.35, 11, steel), -L / 2 + 6, 32, -D / 2 + 6)
+            put(g, cn(0.8, 3.6, 3.6, twCol(1, 0.85, 0.5), spec: 0.1), -L / 2 + 8.5, 38, -D / 2 + 6, rz: 0.5)
+            put(g, tb(1.1, 1.7, 3.2, white), L / 2 - 8, 28, -D * 0.1)
+            put(g, rb(8, 0.3, 11, white, 0.1), -4, 26.5, D * 0.12, ry: 0.35)
+            let ch = SCNNode()
+            put(ch, rb(12, 2.8, 12, twCol(0.17, 0.18, 0.22), 2.6, fabric: true), 0, 14, 0)
+            put(ch, rb(11, 13, 2.4, twCol(0.17, 0.18, 0.22), 2.6, fabric: true), 0, 21, 6, rx: -0.12)
+            put(ch, cy(1, 9, steel, spec: 0.6, shin: 1), 0, 9, 0)
+            for i in 0..<5 {
+                let a = CGFloat(i) * 2 * .pi / 5
+                put(ch, rb(1.3, 1, 7, dark, 0.4), sin(a) * 3.5, 4, cos(a) * 3.5, ry: a)
+                put(ch, sp(1.2, dark), sin(a) * 6.8, 1.4, cos(a) * 6.8)
+            }
+            for s in [-1.0, 1.0] as [CGFloat] { put(ch, rb(1.3, 1.3, 7.5, twCol(0.12, 0.12, 0.14), 0.5), s * 6.6, 18.5, 0) }
+            ch.position = SCNVector3(Float(CGFloat(hv % 5) - 2), 0, Float(D / 2 + 9))
+            ch.eulerAngles = SCNVector3(0, Float(CGFloat(hv % 7 - 3) * 0.2), 0)
+            g.addChildNode(ch)
+        case 2: // couch + rug
+            let cols: [UIColor] = [twCol(0.46, 0.16, 0.22), twCol(0.2, 0.3, 0.45), twCol(0.28, 0.33, 0.27), twCol(0.45, 0.34, 0.24)]
+            let c1 = cols[hv % 4]
+            var cr: CGFloat = 0, cg: CGFloat = 0, cb: CGFloat = 0, ca: CGFloat = 0
+            c1.getRed(&cr, green: &cg, blue: &cb, alpha: &ca)
+            let c2 = twCol(min(1, cr * 1.25 + 0.05), min(1, cg * 1.25 + 0.05), min(1, cb * 1.25 + 0.05))
+            put(g, rb(L + 26, 0.7, D + 26, twCol(0.3, 0.26, 0.24), 0.3, fabric: true), 0, 0.7, 6)
+            put(g, rb(L + 16, 0.9, D + 16, twCol(0.55, 0.42, 0.3), 0.3, fabric: true), 0, 0.9, 6)
+            put(g, rb(L, 8, D, c1, 3.5, fabric: true), 0, 7, 0)
+            for sx in [-1.0, 1.0] as [CGFloat] { for sz in [-1.0, 1.0] as [CGFloat] { put(g, cy(1.2, 3, brass, spec: 0.6, shin: 1), sx * (L / 2 - 4), 1.5, sz * (D / 2 - 4)) } }
+            put(g, rb(L, 17, 8, c1, 4.5, fabric: true), 0, 15.5, -D / 2 + 4)
+            for sx in [-1.0, 1.0] as [CGFloat] { put(g, rb(7, 13, D, c1, 3.5, fabric: true), sx * (L / 2 - 3.5), 14.5, 0) }
+            let n = L > 90 ? 3 : 2
+            let cw = (L - 14) / CGFloat(n)
+            for k in 0..<n {
+                let x = -L / 2 + 7 + cw * (CGFloat(k) + 0.5)
+                put(g, rb(cw - 1, 5.5, D - 9, c2, 3, fabric: true), x, 13.7, 2)
+                put(g, rb(cw - 1, 11, 5, c2, 3.4, fabric: true), x, 19.5, -D / 2 + 10, rx: -0.14)
+            }
+            put(g, rb(8, 8, 3, palette[(hv + 2) % palette.count], 2.5, fabric: true), -L / 2 + 13, 19, 0, ry: 0.4, rz: 0.5)
+        case 3: // plant
+            let rr = min(L, D) / 2
+            let terr = twCol(0.72, 0.4, 0.26)
+            put(g, cn(rr, rr * 0.68, 13, terr), 0, 6.5, 0)
+            put(g, tr(rr * 0.98, 0.9, twCol(0.62, 0.32, 0.2)), 0, 13, 0)
+            put(g, cy(rr * 0.92, 0.8, twCol(0.16, 0.1, 0.07), spec: 0.05), 0, 12.6, 0)
+            for i in 0..<3 {
+                let a = CGFloat(i) * 2.1
+                put(g, cy(0.55, 17, twCol(0.3, 0.22, 0.12)), sin(a) * 1.6, 21, cos(a) * 1.6, rx: cos(a) * 0.18, rz: -sin(a) * 0.18)
+            }
+            for i in 0..<16 {
+                let a = CGFloat(i) * 0.62
+                let ringR = 3 + CGFloat(i % 4) * 2.2
+                let lf = sp(1, twCol(0.1 + rg.n() * 0.08, 0.42 + rg.n() * 0.25, 0.14 + rg.n() * 0.08), spec: 0.4)
+                lf.scale = SCNVector3(5.5, 0.8, 2.4)
+                put(g, lf, sin(a) * ringR, 17 + CGFloat(i % 5) * 3.6, cos(a) * ringR, ry: a, rz: 0.45)
+            }
+        case 4: // bookcase (open side faces +z)
+            let wood = twCol(0.62, 0.45, 0.32)
+            let H: CGFloat = 56
+            for s in [-1.0, 1.0] as [CGFloat] { put(g, wd(2, H, D, wood), s * (L / 2 - 1), H / 2, 0) }
+            put(g, wd(L, 2.4, D + 1, wood), 0, H + 0.6, 0)
+            put(g, wd(L, 3.5, D, wood), 0, 1.8, 0)
+            put(g, wd(L - 2, H, 1.4, twCol(0.5, 0.36, 0.26)), 0, H / 2, -D / 2 + 0.7)
+            for k in 0..<3 { put(g, wd(L - 3, 1.5, D - 1.5, wood), 0, 14 + CGFloat(k) * 13, 0) }
+            for row in 0..<4 {
+                let top: CGFloat = row == 0 ? 3.5 : 14.75 + CGFloat(row - 1) * 13
+                var x = -L / 2 + 3.2
+                while x < L / 2 - 4 {
+                    let w = 2.0 + rg.n() * 2.4
+                    let h = 6.5 + rg.n() * 5
+                    if rg.n() < 0.07 { x += 5; continue }
+                    let lean = rg.n() < 0.05
+                    let c = palette[Int(rg.n() * 6.99)]
+                    put(g, rb(w, h, D * 0.62, c, 0.5, spec: 0.1), x + w / 2, top + h / 2, 0.8, rz: lean ? -0.3 : 0)
+                    x += w + 0.25
+                }
+            }
+        case 5: // table + props
+            let wood = twCol(0.82, 0.62, 0.45)
+            put(g, wd(L, 2.4, D, wood), 0, 22, 0)
+            put(g, wd(L - 6, 3, D - 6, twCol(0.55, 0.4, 0.3)), 0, 19.8, 0)
+            for sx in [-1.0, 1.0] as [CGFloat] { for sz in [-1.0, 1.0] as [CGFloat] { put(g, cn(1.4, 0.8, 19, twCol(0.5, 0.36, 0.26)), sx * (L / 2 - 3.5), 9.5, sz * (D / 2 - 3.5)) } }
+            if hv % 2 == 0 {
+                put(g, rb(11, 0.8, 8, twCol(0.75, 0.77, 0.8), 0.5, spec: 0.7, shin: 1), -L * 0.15, 23.6, D * 0.1)
+                put(g, rb(11, 7, 0.6, twCol(0.75, 0.77, 0.8), 0.4, spec: 0.7, shin: 1), -L * 0.15, 27, D * 0.1 - 4, rx: -0.2)
+                put(g, box(9.8, 5.8, 0.2, twCol(0.3, 0.7, 1.0), glow: true), -L * 0.15, 27, D * 0.1 - 3.6, rx: -0.2)
+            } else {
+                put(g, rb(8, 0.3, 11, white, 0.1), -L * 0.15, 23.4, 0, ry: 0.3)
+                put(g, rb(6, 0.3, 8, twCol(0.9, 0.85, 0.6), 0.1), -L * 0.15 + 3, 23.7, 1, ry: -0.2)
+            }
+            put(g, tb(1.1, 1.7, 3.2, palette[hv % palette.count]), L * 0.25, 24.2, D * 0.1)
+            put(g, cy(2, 5, twCol(0.25, 0.4, 0.6), spec: 0.6, shin: 1), L * 0.3, 25.5, -D * 0.15)
+            for i in 0..<4 {
+                let lf = sp(1, twCol(0.15, 0.5, 0.2))
+                lf.scale = SCNVector3(3.2, 0.6, 1.4)
+                put(g, lf, L * 0.3 + sin(CGFloat(i) * 1.6) * 1.5, 29 + CGFloat(i % 2), -D * 0.15 + cos(CGFloat(i) * 1.6) * 1.5, ry: CGFloat(i) * 1.6, rz: 0.5)
+            }
         case 6: // server rack
-            n.addChildNode(at(box(r.width, 58, r.height, twCol(0.12, 0.13, 0.16)), cx, 29, cz))
-            for k in 0..<7 {
-                let y = 6 + CGFloat(k) * 7.5
-                n.addChildNode(at(box(r.width + 0.6, 4, r.height - 6, twCol(0.2, 0.22, 0.26)), cx, y, cz))
-                let led = k % 3 == 0 ? twCol(1.0, 0.3, 0.2) : twCol(0.2, 1.0, 0.4)
-                n.addChildNode(at(box(r.width + 0.8, 1, 3, led, glow: true), cx, y + 1, cz + (r.height > r.width ? 0 : r.height / 2 - 4)))
+            let H: CGFloat = 60
+            let frame = twCol(0.07, 0.075, 0.09)
+            for sx in [-1.0, 1.0] as [CGFloat] { for sz in [-1.0, 1.0] as [CGFloat] { put(g, rb(2.4, H, 2.4, frame, 0.6, spec: 0.5, shin: 0.8), sx * (L / 2 - 1.2), H / 2, sz * (D / 2 - 1.2)) } }
+            put(g, rb(L, 2.4, D, frame, 0.8, spec: 0.5), 0, H + 0.4, 0)
+            put(g, rb(L, 4, D, frame, 0.8, spec: 0.5), 0, 2, 0)
+            for s in [-1.0, 1.0] as [CGFloat] { put(g, rb(0.8, H - 4, D - 2, twCol(0.13, 0.14, 0.17), 0.3), s * (L / 2 - 0.4), H / 2, 0) }
+            for k in 0..<9 {
+                let y = 6.5 + CGFloat(k) * 5.9
+                put(g, rb(L - 3.6, 5.2, D - 5, k % 4 == 3 ? twCol(0.22, 0.24, 0.3) : twCol(0.16, 0.17, 0.21), 0.5, spec: 0.5, shin: 0.8), 0, y, 0)
+                for sz in [-1.0, 1.0] as [CGFloat] {
+                    let z = sz * (D / 2 - 2.4)
+                    put(g, box(1.1, 0.7, 0.3, k % 3 == 0 ? twCol(1.0, 0.3, 0.2) : twCol(0.2, 1.0, 0.45), glow: true), -L / 2 + 5.5, y + 1, z)
+                    put(g, box(1.1, 0.7, 0.3, twCol(0.3, 0.7, 1.0), glow: true), -L / 2 + 8, y + 1, z)
+                    for b in 0..<4 { put(g, rb(3.4, 3.6, 0.3, twCol(0.06, 0.06, 0.08), 0.2), -L / 2 + 14 + CGFloat(b) * 4.2, y, z) }
+                }
             }
-        case 7: // barrel
-            n.addChildNode(at(cyl(min(r.width, r.height) / 2, 30, twCol(0.65, 0.18, 0.12)), cx, 15, cz))
-            n.addChildNode(at(cyl(min(r.width, r.height) / 2 + 0.5, 3, twCol(0.2, 0.2, 0.22)), cx, 8, cz))
-            n.addChildNode(at(cyl(min(r.width, r.height) / 2 + 0.5, 3, twCol(0.2, 0.2, 0.22)), cx, 22, cz))
+            for i in 0..<3 { put(g, cy(0.55, 40, [twCol(0.9, 0.3, 0.2), twCol(0.2, 0.5, 0.9), twCol(0.9, 0.8, 0.2)][i]), -L / 2 + 2 + CGFloat(i) * 1.1, 32, -D / 2 + 3.2) }
+            put(g, cy(3.6, 0.5, twCol(0.04, 0.04, 0.05)), L * 0.2, H + 1.8, 0)
+            put(g, tr(3.6, 0.35, steel), L * 0.2, H + 1.8, 0)
+        case 7: // steel drum
+            let rr = min(L, D) / 2
+            let cols: [UIColor] = [twCol(0.68, 0.14, 0.1), twCol(0.15, 0.3, 0.6), twCol(0.18, 0.45, 0.25), twCol(0.45, 0.46, 0.5)]
+            put(g, cy(rr, 30, cols[hv % 4], spec: 0.5, shin: 0.9), 0, 15, 0)
+            for y in [4.0, 15.0, 26.0] as [CGFloat] { put(g, tr(rr + 0.05, 0.9, twCol(0.3, 0.31, 0.34)), 0, y, 0) }
+            put(g, cy(rr - 0.4, 0.8, twCol(0.5, 0.52, 0.56), spec: 0.7, shin: 1), 0, 30.2, 0)
+            put(g, tr(rr - 0.4, 0.6, twCol(0.4, 0.42, 0.46)), 0, 30.5, 0)
+            put(g, cy(1.4, 1.2, twCol(0.2, 0.2, 0.22)), rr * 0.45, 31, 0)
+            put(g, cy(1.1, 1.0, twCol(0.2, 0.2, 0.22)), -rr * 0.3, 31, rr * 0.3)
+            put(g, rb(rr * 1.0, 8, 0.5, twCol(0.95, 0.8, 0.15), 0.2), 0, 17, rr + 0.1)
+            put(g, rb(3, 3, 0.4, twCol(0.08, 0.08, 0.08), 0.1), 0, 17, rr + 0.5, rz: .pi / 4)
         case 8: // kiosk
-            n.addChildNode(at(box(r.width, 36, r.height, twCol(0.18, 0.22, 0.3)), cx, 18, cz))
-            n.addChildNode(at(box(r.width + 4, 4, r.height + 4, twCol(0.9, 0.7, 0.2), glow: true), cx, 38, cz))
-            n.addChildNode(at(box(r.width * 0.6, 10, 1, twCol(0.2, 0.8, 1.0), glow: true), cx, 24, r.maxY + 0.6))
-        case 10: // bed
-            n.addChildNode(at(box(r.width, 9, r.height, twCol(0.35, 0.24, 0.16)), cx, 5, cz))
-            n.addChildNode(at(box(r.width - 5, 8, r.height - 5, twCol(0.92, 0.92, 0.95)), cx, 12, cz))
-            let long = r.width >= r.height
-            n.addChildNode(at(box(long ? r.width * 0.5 : r.width - 5, 3, long ? r.height - 5 : r.height * 0.5, twCol(0.6, 0.18, 0.22)), long ? cx + r.width * 0.2 : cx, 17, long ? cz : cz + r.height * 0.2))
-            n.addChildNode(at(box(long ? 12 : 22, 4, long ? 22 : 12, twCol(1, 1, 1)), long ? r.minX + 12 : cx, 18, long ? cz : r.minY + 12))
-            n.addChildNode(at(box(long ? 4 : r.width, 22, long ? r.height : 4, twCol(0.3, 0.2, 0.13)), long ? r.minX + 2 : cx, 11, long ? cz : r.minY + 2))
-        case 11: // hospital bed + iv
-            n.addChildNode(at(box(r.width, 7, r.height, twCol(0.7, 0.72, 0.76)), cx, 12, cz))
-            n.addChildNode(at(box(r.width - 4, 5, r.height - 4, twCol(0.9, 0.95, 1.0)), cx, 17, cz))
-            let long = r.width >= r.height
-            n.addChildNode(at(box(long ? r.width * 0.55 : r.width - 4, 2, long ? r.height - 4 : r.height * 0.55, twCol(0.3, 0.6, 0.85)), long ? cx + r.width * 0.2 : cx, 20, long ? cz : cz + r.height * 0.2))
-            for (dx, dz) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] as [(CGFloat, CGFloat)] {
-                n.addChildNode(at(cyl(2, 9, twCol(0.2, 0.2, 0.22)), cx + dx * (r.width / 2 - 4), 4.5, cz + dz * (r.height / 2 - 4)))
+            put(g, rb(L, 4, D, twCol(0.14, 0.15, 0.18), 1.5, spec: 0.5), 0, 2, 0)
+            put(g, rb(L - 4, 30, D - 4, twCol(0.2, 0.23, 0.3), 5, spec: 0.5, shin: 0.8), 0, 19, 0)
+            put(g, rb(L, 6, D, twCol(0.95, 0.72, 0.22), 2, spec: 0.1), 0, 37.5, 0)
+            put(g, box(L - 3, 3, D - 3, twCol(1.0, 0.82, 0.35), glow: true), 0, 40.6, 0)
+            put(g, rb(L * 0.72, 13, 1.4, twCol(0.05, 0.05, 0.07), 1, spec: 0.6, shin: 1), 0, 25, D / 2 - 0.5, rx: -0.38)
+            put(g, box(L * 0.64, 10.5, 0.3, twCol(0.2, 0.75, 1.0), glow: true), 0, 25.2, D / 2 + 0.2, rx: -0.38)
+            for k in 0..<3 { put(g, rb(5, 6.5, 1.2, palette[(hv + k) % palette.count], 0.5), -L * 0.26 + CGFloat(k) * 5.8, 10, D / 2 + 0.6, rx: -0.15) }
+        case 10: // bed (head at -x)
+            let wood = twCol(0.6, 0.44, 0.32)
+            let sheet = twCol(0.93, 0.93, 0.95)
+            put(g, rb(L, 7, D, wood, 2), 0, 5.5, 0)
+            for sx in [-1.0, 1.0] as [CGFloat] { for sz in [-1.0, 1.0] as [CGFloat] { put(g, cy(1.4, 3, twCol(0.3, 0.2, 0.14)), sx * (L / 2 - 3), 1.5, sz * (D / 2 - 3)) } }
+            put(g, rb(L - 4, 9, D - 4, sheet, 4.2, fabric: true), 0, 12.5, 0)
+            put(g, rb((L - 4) * 0.62, 3.6, D - 3, palette[hv % palette.count], 3.4, fabric: true), L * 0.17, 17.4, 0)
+            put(g, rb(7, 4.8, D - 2, palette[hv % palette.count], 3, fabric: true), -L * 0.12, 17.6, 0)
+            for s in [-1.0, 1.0] as [CGFloat] { put(g, rb(12, 5, D * 0.42, white, 3.4, fabric: true), -L / 2 + 11, 17.8, s * D * 0.23, ry: s * 0.06) }
+            put(g, wd(3.2, 26, D + 1, wood), -L / 2 + 1.6, 13, 0)
+            put(g, wd(2.6, 13, D, wood), L / 2 - 1.3, 6.5, 0)
+        case 11: // hospital bed + IV stand
+            put(g, rb(L - 8, 3, D - 8, steel, 1.2, spec: 0.7, shin: 1), 0, 10.5, 0)
+            for sx in [-1.0, 1.0] as [CGFloat] { for sz in [-1.0, 1.0] as [CGFloat] {
+                put(g, cy(0.9, 7, steel, spec: 0.7, shin: 1), sx * (L / 2 - 8), 6.5, sz * (D / 2 - 6))
+                put(g, sp(2.1, dark), sx * (L / 2 - 8), 2.1, sz * (D / 2 - 6))
+            } }
+            put(g, rb(L * 0.68, 4.6, D - 6, twCol(0.84, 0.9, 0.95), 2.6, fabric: true), L * 0.1, 14.5, 0)
+            put(g, rb(L * 0.3, 4.6, D - 6, twCol(0.84, 0.9, 0.95), 2.6, fabric: true), -L / 2 + L * 0.26, 17.2, 0, rz: 0.3)
+            put(g, rb(L * 0.46, 2.6, D - 5, twCol(0.3, 0.58, 0.82), 2.2, fabric: true), L * 0.14, 17.6, 0)
+            put(g, rb(10, 3.6, D * 0.52, white, 3, fabric: true), -L / 2 + 9, 21, 0, rz: 0.3)
+            for s in [-1.0, 1.0] as [CGFloat] {
+                put(g, rb(L * 0.55, 0.9, 0.9, steel, 0.4, spec: 0.7, shin: 1), L * 0.08, 22, s * (D / 2 - 2))
+                for k in 0..<3 { put(g, rb(0.9, 6, 0.9, steel, 0.3, spec: 0.7, shin: 1), L * 0.08 - L * 0.2 + CGFloat(k) * L * 0.2, 19, s * (D / 2 - 2)) }
             }
-            n.addChildNode(at(cyl(1, 46, twCol(0.75, 0.78, 0.82)), long ? r.maxX + 5 : r.minX - 5, 23, long ? r.minY - 3 : r.maxY + 3))
-            n.addChildNode(at(box(4, 8, 3, twCol(0.8, 0.95, 1.0), glow: true), long ? r.maxX + 5 : r.minX - 5, 44, long ? r.minY - 3 : r.maxY + 3))
+            put(g, rb(2, 12, D - 6, white, 1.2), -L / 2 + 3, 16, 0)
+            put(g, rb(2, 9, D - 6, white, 1.2), L / 2 - 3, 14.5, 0)
+            let px = L / 2 + 5, pz = -D / 2 - 4
+            put(g, cy(0.6, 48, steel, spec: 0.7, shin: 1), px, 24, pz)
+            put(g, cy(4, 0.8, steel, spec: 0.6), px, 0.6, pz)
+            put(g, rb(7, 0.8, 0.8, steel, 0.3), px, 47.5, pz)
+            put(g, ghost(2.6, 6, 1.2, twCol(0.8, 0.95, 1.0), 0.45), px - 2.6, 43, pz)
+            put(g, cy(0.25, 22, twCol(0.9, 0.95, 1)), px - 2.6, 29, pz)
+            put(g, rb(6, 5, 2.4, dark, 1, spec: 0.5), px, 34, pz + 2)
+            put(g, box(5, 3.6, 0.2, twCol(0.2, 1.0, 0.4), glow: true), px, 34, pz + 3.3)
         case 12: // display case
-            n.addChildNode(at(box(r.width, 12, r.height, twCol(0.2, 0.17, 0.15)), cx, 6, cz))
-            n.addChildNode(at(ghost(r.width - 3, 20, r.height - 3, twCol(0.6, 0.85, 1.0), 0.28), cx, 22, cz))
-            n.addChildNode(at(ball(5, twCol(1.0, 0.8, 0.25)), cx, 17, cz))
-            n.addChildNode(at(box(r.width - 2, 1.5, r.height - 2, twCol(0.9, 0.9, 1.0), glow: true), cx, 33, cz))
-        case 13: // machine
-            n.addChildNode(at(box(r.width, 40, r.height, twCol(0.25, 0.27, 0.3)), cx, 20, cz))
-            n.addChildNode(at(box(r.width + 1, 5, r.height + 1, twCol(1.0, 0.55, 0.1)), cx, 28, cz))
-            n.addChildNode(at(box(r.width * 0.5, 2, r.height * 0.5, twCol(1.0, 0.4, 0.1), glow: true), cx, 41, cz))
-            n.addChildNode(at(cyl(4, 22, twCol(0.5, 0.52, 0.56)), r.minX + 8, 51, r.minY + 8))
-        case 14: // shop rack
-            n.addChildNode(at(box(r.width, 3, r.height, twCol(0.3, 0.3, 0.34)), cx, 2, cz))
-            n.addChildNode(at(box(r.width, 36, 2, twCol(0.35, 0.36, 0.4)), cx, 20, cz))
-            let cols: [UIColor] = [twCol(0.9, 0.3, 0.3), twCol(0.3, 0.6, 0.95), twCol(0.95, 0.8, 0.2), twCol(0.4, 0.8, 0.5), twCol(0.9, 0.5, 0.8)]
-            let long = r.width >= r.height
-            for k in 0..<Int((long ? r.width : r.height) / 8) {
-                let off = -((long ? r.width : r.height) / 2) + 5 + CGFloat(k) * 8
-                for row in 0..<2 {
-                    let c = cols[(k + row * 2) % cols.count]
-                    n.addChildNode(at(box(long ? 5 : 11, 10, long ? 11 : 5, c), long ? cx + off : cx, 12 + CGFloat(row) * 15, long ? cz : cz + off))
+            put(g, rb(L, 12, D, twCol(0.06, 0.06, 0.07), 1.5, spec: 0.7, shin: 1), 0, 6, 0)
+            put(g, ghost(L - 3, 22, D - 3, twCol(0.7, 0.9, 1.0), 0.2), 0, 23, 0)
+            for sx in [-1.0, 1.0] as [CGFloat] { for sz in [-1.0, 1.0] as [CGFloat] { put(g, rb(1, 22, 1, brass, 0.3, spec: 0.7, shin: 1), sx * (L / 2 - 1.6), 23, sz * (D / 2 - 1.6)) } }
+            put(g, rb(L - 2, 1.8, D - 2, twCol(0.08, 0.08, 0.1), 0.8, spec: 0.6), 0, 34.8, 0)
+            put(g, box(L - 5, 0.5, D - 5, twCol(0.9, 0.95, 1.0), glow: true), 0, 33.8, 0)
+            put(g, cy(3.6, 1.2, brass, spec: 0.7, shin: 1), 0, 12.6, 0)
+            let vase = sp(4.8, brass, spec: 0.8)
+            vase.scale = SCNVector3(1, 1.3, 1)
+            put(g, vase, 0, 19.3, 0)
+            put(g, cy(1.9, 4.5, brass, spec: 0.8, shin: 1), 0, 26, 0)
+            put(g, tr(2.1, 0.45, brass), 0, 28.2, 0)
+        case 13: // industrial machine
+            put(g, rb(L, 6, D, twCol(0.2, 0.21, 0.24), 1.5, spec: 0.5), 0, 3, 0)
+            put(g, rb(L + 0.6, 1.8, D + 0.6, twCol(0.95, 0.78, 0.1), 0.6), 0, 1.5, 0)
+            put(g, rb(L - 2, 30, D - 2, twCol(0.9, 0.46, 0.12), 3, spec: 0.5, shin: 0.8), 0, 21, 0)
+            put(g, rb(L * 0.5, 9, 3, twCol(0.16, 0.17, 0.2), 1.4, spec: 0.5), L * 0.15, 28, D / 2 + 0.2, rx: -0.3)
+            for (i, c) in [twCol(1, 0.2, 0.2), twCol(0.2, 0.95, 0.35), twCol(1, 0.8, 0.2), twCol(0.3, 0.6, 1)].enumerated() {
+                put(g, sp(1.2, c, spec: 0.7), L * 0.15 - 6 + CGFloat(i) * 4, 29, D / 2 + 1.6)
+            }
+            put(g, cy(3, 0.8, twCol(0.08, 0.08, 0.1)), -L * 0.2, 26, D / 2 + 0.2, rx: .pi / 2)
+            put(g, box(L * 0.34, 8, 0.4, twCol(1.0, 0.5, 0.15), glow: true), -L * 0.22, 14, D / 2 + 0.1)
+            let motor = cy(5, 12, twCol(0.5, 0.53, 0.58), spec: 0.7, shin: 1)
+            put(g, motor, -L / 4, 41, 0, rz: .pi / 2)
+            put(g, cy(2.2, 20, steel, spec: 0.7, shin: 1), L / 2 - 6, 46, -D / 4)
+            put(g, tr(3.2, 0.9, steel), L / 2 - 6, 52, -D / 4 + 3, rx: .pi / 2)
+            put(g, cy(3.2, 2, dark), L / 2 - 6, 56.5, -D / 4)
+        case 14: // gondola shelf
+            put(g, rb(L, 3, D, twCol(0.5, 0.53, 0.58), 1, spec: 0.5), 0, 1.5, 0)
+            for sx in [-1.0, 1.0] as [CGFloat] { for sz in [-1.0, 1.0] as [CGFloat] { put(g, cy(0.8, 40, twCol(0.8, 0.82, 0.86), spec: 0.8, shin: 1), sx * (L / 2 - 1), 21, sz * (D / 2 - 1)) } }
+            put(g, rb(L - 2, 38, 1, twCol(0.78, 0.8, 0.84), 0.4), 0, 22, -D / 2 + 0.8)
+            for row in 0..<3 {
+                let y = 3.5 + CGFloat(row) * 13
+                put(g, rb(L, 1.2, D - 0.8, twCol(0.9, 0.92, 0.95), 0.5, spec: 0.5), 0, y, 0)
+                put(g, rb(L - 1, 1.5, 0.4, white, 0.2), 0, y, D / 2 - 0.2)
+                var x = -L / 2 + 3
+                var i = 0
+                while x < L / 2 - 4 {
+                    let t = (i + row) % 3
+                    if t == 0 {
+                        for s in 0..<3 { put(g, rb(7, 2.6, D * 0.6, palette[(i + s + row) % palette.count], 1.2, fabric: true), x + 3.5, y + 0.6 + 1.3 + CGFloat(s) * 2.6, 0.5, ry: CGFloat(s) * 0.05) }
+                        x += 8.2
+                    } else if t == 1 {
+                        put(g, cy(1.3, 7, palette[(i + row) % palette.count], spec: 0.6, shin: 1), x + 1.4, y + 0.6 + 3.5, 1)
+                        put(g, cy(0.8, 1.5, white), x + 1.4, y + 0.6 + 7.7, 1)
+                        x += 3.4
+                    } else {
+                        put(g, rb(5.5, 7.5, 5.5, palette[(i * 2 + row) % palette.count], 0.5, spec: 0.1), x + 2.75, y + 0.6 + 3.75, 0.5)
+                        x += 6.2
+                    }
+                    i += 1
                 }
             }
         case 15: // bench
-            n.addChildNode(at(box(r.width, 3, r.height, twCol(0.5, 0.35, 0.2)), cx, 12, cz))
-            n.addChildNode(at(box(3, 12, r.height, twCol(0.2, 0.2, 0.22)), r.minX + 5, 6, cz))
-            n.addChildNode(at(box(3, 12, r.height, twCol(0.2, 0.2, 0.22)), r.maxX - 5, 6, cz))
-        case 17: // lockers
-            n.addChildNode(at(box(r.width, 54, r.height, twCol(0.35, 0.5, 0.52)), cx, 27, cz))
-            let long = r.width >= r.height
-            for k in 1..<Int((long ? r.width : r.height) / 14) {
-                let off = -((long ? r.width : r.height) / 2) + CGFloat(k) * 14
-                n.addChildNode(at(box(long ? 1 : r.width + 0.8, 46, long ? r.height + 0.8 : 1, twCol(0.1, 0.15, 0.16)), long ? cx + off : cx, 27, long ? cz : cz + off))
+            let wood = twCol(0.8, 0.6, 0.42)
+            let iron = twCol(0.1, 0.1, 0.12)
+            for k in -1...1 { put(g, wd(L, 1.8, D / 3 - 0.4, wood), 0, 12.4, CGFloat(k) * D / 3) }
+            put(g, wd(L, 3, 1.4, wood), 0, 19, -D / 2 + 1, rx: -0.2)
+            put(g, wd(L, 3, 1.4, wood), 0, 23.5, -D / 2 + 0.5, rx: -0.2)
+            for s in [-1.0, 1.0] as [CGFloat] {
+                let x = s * (L / 2 - 5)
+                put(g, rb(1.6, 12, D, iron, 0.6, spec: 0.5), x, 6, 0)
+                put(g, rb(1.6, 1.6, D, iron, 0.6, spec: 0.5), x, 11.4, 0)
+                put(g, rb(1.6, 22, 1.6, iron, 0.6, spec: 0.5), x, 11, -D / 2 + 1, rx: -0.2)
+                put(g, rb(1.4, 1.4, D - 2, iron, 0.5, spec: 0.5), x, 17, 0)
+                put(g, rb(1.4, 6, 1.4, iron, 0.5), x, 14, D / 2 - 1.5)
+            }
+        case 17: // lockers (doors face +z)
+            let n = max(2, Int(L / 14))
+            let w = L / CGFloat(n)
+            let base = twCol(0.3, 0.46, 0.5)
+            put(g, rb(L, 54, D, twCol(0.2, 0.3, 0.33), 1.2, spec: 0.5, shin: 0.8), 0, 28, 0)
+            put(g, rb(L, 2.4, D + 1, twCol(0.22, 0.34, 0.37), 1, spec: 0.5), 0, 56.4, 0)
+            put(g, rb(L, 3, D + 1, dark, 0.8), 0, 1.5, 0)
+            let ajar = hv % 2 == 0 ? hv % n : -1
+            for k in 0..<n {
+                let x = -L / 2 + w * (CGFloat(k) + 0.5)
+                let door = SCNNode()
+                door.addChildNode(rb(w - 1.2, 50, 1, base, 0.8, spec: 0.5, shin: 0.8))
+                for s in 0..<4 { put(door, box(w * 0.5, 0.7, 0.3, twCol(0.05, 0.08, 0.09)), 0, 20 + CGFloat(s) * 1.8, 0.6) }
+                put(door, rb(1, 5, 1.2, twCol(0.8, 0.82, 0.86), 0.4, spec: 0.8, shin: 1), w * 0.28, 0, 0.9)
+                put(door, box(3, 1.5, 0.3, white), 0, 12, 0.6)
+                if k == ajar {
+                    put(g, box(w - 1.4, 50, 0.4, twCol(0.02, 0.03, 0.03)), x, 29, D / 2 + 0.1)
+                    let piv = SCNNode()
+                    door.position = SCNVector3(Float((w - 1.2) / 2), 0, 0.5)
+                    piv.addChildNode(door)
+                    put(g, piv, x - w / 2 + 0.6, 29, D / 2 + 0.4, ry: -1.15)
+                } else {
+                    put(g, door, x, 29, D / 2 + 0.2)
+                }
             }
         default: // pillar
-            n.addChildNode(at(box(r.width, 80, r.height, twCol(0.62, 0.64, 0.7)), cx, 40, cz))
-            n.addChildNode(at(box(r.width + 6, 6, r.height + 6, twCol(0.45, 0.47, 0.52)), cx, 3, cz))
-            n.addChildNode(at(box(r.width + 6, 6, r.height + 6, twCol(0.45, 0.47, 0.52)), cx, 77, cz))
+            let conc = twCol(0.6, 0.62, 0.68)
+            put(g, rb(L, 80, D, conc, 2.5, spec: 0.1), 0, 40, 0)
+            put(g, rb(L + 6, 8, D + 6, twCol(0.42, 0.44, 0.5), 2, spec: 0.1), 0, 4, 0)
+            put(g, rb(L + 6, 7, D + 6, twCol(0.42, 0.44, 0.5), 2, spec: 0.1), 0, 76.5, 0)
+            let ac = def.coreC
+            put(g, box(L + 0.8, 1, D + 0.8, twCol(ac.0, ac.1, ac.2), glow: true), 0, 62, 0)
+            for s in [-1.0, 1.0] as [CGFloat] {
+                put(g, rb(0.8, 60, 0.5, twCol(0.3, 0.32, 0.37), 0.2), 0, 34, s * (D / 2))
+                put(g, rb(0.5, 60, 0.8, twCol(0.3, 0.32, 0.37), 0.2), s * (L / 2), 34, 0)
+            }
         }
+        g.position = SCNVector3(Float(r.midX), 0, Float(r.midY))
+        if !long { g.eulerAngles = SCNVector3(0, Float.pi / 2, 0) }
+        let n = SCNNode()
+        n.addChildNode(g)
         return n
     }
 
@@ -1054,7 +1473,7 @@ final class TowerScene {
             camNode.position = SCNVector3(Float(tx + e.camDist * sin(e.camYaw) * cp), Float(e.camDist * sp), Float(tz + e.camDist * cos(e.camYaw) * cp))
             camNode.look(at: SCNVector3(Float(tx), 20, Float(tz)))
         } else {
-            camNode.position = SCNVector3(Float(cx), Float(camH), Float(cz + camH * 0.6))
+            camNode.position = SCNVector3(Float(cx), Float(camH), Float(cz + camH * 0.82))
             camNode.look(at: SCNVector3(Float(cx), 0, Float(cz)))
         }
 
@@ -1077,6 +1496,7 @@ final class TowerScene {
             }
             r.isHidden = !seen
             if !seen { continue }
+            r.scale = SCNVector3(1, v.crouch ? 0.74 : 1, 1)
             seenIdx.append(i)
             r.position = SCNVector3(Float(v.p.x), 0, Float(v.p.y))
             r.eulerAngles = SCNVector3(0, Float(-v.ang), 0)

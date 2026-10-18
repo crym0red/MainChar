@@ -255,9 +255,29 @@ enum TMap {
         return nil
     }
 
-    static let solid: [CGRect] = layout.walls + props.map { $0.r }
-    static let solidKind: [PropKind?] = layout.walls.map { _ -> PropKind? in nil } + props.map { Optional($0.k) }
-    static let solidMat: [WallMat] = layout.mats + props.map { TMap.propMat($0.k) }
+    static let baseSolid: [CGRect] = layout.walls + props.map { $0.r }
+    static var solid: [CGRect] = baseSolid + layout.doors
+    static var solidKind: [PropKind?] = layout.walls.map { _ -> PropKind? in nil } + props.map { Optional($0.k) } + layout.doors.map { _ -> PropKind? in nil }
+    static var solidMat: [WallMat] = layout.mats + props.map { TMap.propMat($0.k) } + layout.doors.map { _ -> WallMat in .wood }
+    static var doorOpen: [CGFloat] = [CGFloat](repeating: 0, count: layout.doors.count)
+    static var doorWant: [Bool] = [Bool](repeating: false, count: layout.doors.count)
+    static var doorHold: [CGFloat] = [CGFloat](repeating: 0, count: layout.doors.count)
+
+    static func refreshDoors() {
+        let b = baseSolid.count
+        for i in doors.indices { solid[b + i] = doorOpen[i] > 0.8 ? CGRect(x: -9999, y: -9999, width: 1, height: 1) : doors[i] }
+    }
+
+    static func resetDoors() {
+        for i in doors.indices { doorOpen[i] = 0; doorWant[i] = false; doorHold[i] = 0 }
+        refreshDoors()
+    }
+
+    static func rectDist(_ r: CGRect, _ p: CGPoint) -> CGFloat {
+        let dx = max(r.minX - p.x, 0, p.x - r.maxX)
+        let dy = max(r.minY - p.y, 0, p.y - r.maxY)
+        return (dx * dx + dy * dy).squareRoot()
+    }
     static let siteA = CGRect(x: 170, y: 170, width: 230, height: 170)
     static let siteB = CGRect(x: off + 690, y: 830, width: 240, height: 170)
     static let atkSpawn: [CGPoint] = [CGPoint(x: 90, y: 1130), CGPoint(x: 160, y: 1130), CGPoint(x: 230, y: 1130), CGPoint(x: 90, y: 1060), CGPoint(x: 160, y: 1060)]
@@ -308,7 +328,7 @@ enum TNav {
             for r in 0..<rows {
                 let p = CGPoint(x: CGFloat(c) * cell + cell / 2, y: CGFloat(r) * cell + cell / 2)
                 if p.x > TMap.W - 20 || p.y > TMap.H - 20 { b[r * cols + c] = true; continue }
-                for o in TMap.solid where o.insetBy(dx: -18, dy: -18).contains(p) { b[r * cols + c] = true; break }
+                for o in TMap.baseSolid where o.insetBy(dx: -18, dy: -18).contains(p) { b[r * cols + c] = true; break }
             }
         }
         return b
@@ -337,7 +357,7 @@ enum TNav {
     }
 
     static func clear(_ a: CGPoint, _ b: CGPoint) -> Bool {
-        for o in TMap.solid where tSegT(a, b, o.insetBy(dx: -15, dy: -15)) != nil { return false }
+        for o in TMap.baseSolid where tSegT(a, b, o.insetBy(dx: -15, dy: -15)) != nil { return false }
         return true
     }
 
@@ -449,6 +469,11 @@ final class TPlayer {
     var spotted = false
     var seenEver = false
     var onStair = false
+    var crouch = false
+    var hiding = false
+    var hideT: CGFloat = 0
+    var cover: CGPoint? = nil
+    var noiseT: CGFloat = 0
 
     init(id: Int, team: Int, name: String, handle: String, emoji: String, isPlayer: Bool) {
         self.id = id; self.team = team; self.name = name; self.handle = handle; self.emoji = emoji; self.isPlayer = isPlayer
@@ -600,6 +625,7 @@ final class TacticalEngine {
         defuseProg = 0
         bullets = []; nades = []; booms = []; pops = []
         smokeClouds = []; pings = []
+        TMap.resetDoors()
         lookDelta = 0
         packs = TMap.packPos.map { Pack(pos: $0, taken: false) }
         var ai = 0, di = 0
@@ -617,6 +643,10 @@ final class TacticalEngine {
             p.nades = 1
             p.smokes = 1
             p.pingCd = 0
+            p.crouch = false
+            p.hiding = false
+            p.cover = nil
+            p.noiseT = 0
             let atk = p.team == atkTeam
             let spot = atk ? TMap.atkSpawn[ai % 5] : TMap.defSpawn[di % 5]
             if atk { ai += 1 } else { di += 1 }
@@ -662,7 +692,7 @@ final class TacticalEngine {
         pings.removeAll { $0.life <= 0 }
         for i in pops.indices { pops[i].life -= dt * 1.1 }
         pops.removeAll { $0.life <= 0 }
-        for p in players { p.flash = max(0, p.flash - dt); p.hurt = max(0, p.hurt - dt) }
+        for p in players { p.flash = max(0, p.flash - dt); p.hurt = max(0, p.hurt - dt); p.noiseT = max(0, p.noiseT - dt) }
 
         if phase == 3 {
             timer -= dt
@@ -686,6 +716,7 @@ final class TacticalEngine {
         timer -= dt
         var planting = false
         var defusing = false
+        updateDoors(dt)
         playerUpdate(dt, &planting, &defusing)
         for p in players where !p.isPlayer && p.alive { botThink(p, dt, &planting, &defusing) }
         for i in packs.indices where !packs[i].taken {
@@ -768,10 +799,88 @@ final class TacticalEngine {
 
     // MARK: player
 
+    // MARK: doors + cover
+
+    private func updateDoors(_ dt: CGFloat) {
+        var changed = false
+        for i in TMap.doors.indices {
+            let d = TMap.doors[i]
+            var botNear = false
+            for p in players where p.alive && !p.isPlayer && TMap.floorOf(p.pos) == TMap.floorOf(CGPoint(x: d.midX, y: d.midY)) {
+                if TMap.rectDist(d, p.pos) < 40 { botNear = true; break }
+            }
+            let meNear = me.alive && TMap.rectDist(d, me.pos) < 100
+            if botNear { TMap.doorWant[i] = true; TMap.doorHold[i] = 1.2 }
+            else if TMap.doorWant[i] {
+                if meNear { TMap.doorHold[i] = max(TMap.doorHold[i], 2.5) } else {
+                    TMap.doorHold[i] -= dt
+                    if TMap.doorHold[i] <= 0 { TMap.doorWant[i] = false }
+                }
+            }
+            let goal: CGFloat = TMap.doorWant[i] ? 1 : 0
+            let was = TMap.doorOpen[i] > 0.8
+            if TMap.doorOpen[i] < goal { TMap.doorOpen[i] = min(goal, TMap.doorOpen[i] + dt * 3.2) }
+            else if TMap.doorOpen[i] > goal { TMap.doorOpen[i] = max(goal, TMap.doorOpen[i] - dt * 2.4) }
+            if was != (TMap.doorOpen[i] > 0.8) { changed = true }
+        }
+        if changed { TMap.refreshDoors() }
+    }
+
+    func nearestDoor() -> Int? {
+        guard me.alive else { return nil }
+        var best: Int? = nil
+        var bd: CGFloat = 46
+        for i in TMap.doors.indices {
+            let dd = TMap.rectDist(TMap.doors[i], me.pos)
+            if dd < bd && TMap.floorOf(CGPoint(x: TMap.doors[i].midX, y: TMap.doors[i].midY)) == TMap.floorOf(me.pos) { bd = dd; best = i }
+        }
+        return best
+    }
+
+    func toggleDoor() {
+        guard let i = nearestDoor() else { return }
+        if TMap.doorWant[i] || TMap.doorOpen[i] > 0.5 { TMap.doorWant[i] = false; TMap.doorHold[i] = 0 }
+        else { TMap.doorWant[i] = true; TMap.doorHold[i] = 3 }
+    }
+
+    func coverNear(_ p: TPlayer) -> Bool {
+        for r in TMap.solid where r.minX > -5000 && TMap.rectDist(r, p.pos) < 26 { return true }
+        return false
+    }
+
+    func toggleCover() {
+        let p = me
+        guard p.alive else { return }
+        if p.crouch { p.crouch = false; return }
+        if coverNear(p) { p.crouch = true }
+    }
+
+    private func coverSpot(_ p: TPlayer, _ threat: CGPoint) -> CGPoint? {
+        let base = atan2(threat.y - p.pos.y, threat.x - p.pos.x)
+        for rad in [44, 76, 120] as [CGFloat] {
+            var best: CGPoint? = nil
+            var bs: CGFloat = 1e9
+            for k in 0..<12 {
+                let a = base + CGFloat.pi + (CGFloat(k) / 12) * 6.283 - CGFloat.pi
+                let c = CGPoint(x: p.pos.x + cos(a) * rad, y: p.pos.y + sin(a) * rad)
+                if TMap.solid.contains(where: { $0.insetBy(dx: -15, dy: -15).contains(c) }) { continue }
+                if TMap.los(c, threat) { continue }
+                if !TMap.los(p.pos, c) { continue }
+                let d = tDist(c, threat)
+                if d < 90 { continue }
+                let s = rad + (d > 420 ? 40 : 0)
+                if s < bs { bs = s; best = c }
+            }
+            if best != nil { return best }
+        }
+        return nil
+    }
+
     private func playerUpdate(_ dt: CGFloat, _ planting: inout Bool, _ defusing: inout Bool) {
         let p = me
         guard p.alive else { return }
-        let sp: CGFloat = 170
+        if p.crouch && !coverNear(p) { p.crouch = false }
+        let sp: CGFloat = p.crouch ? 88 : 170
         var mv = move
         let tgt = autoAim ? pickTarget(p) : nil
         autoTarget = tgt?.id ?? -1
@@ -852,9 +961,19 @@ final class TacticalEngine {
     private func shoot(_ p: TPlayer, _ err: CGFloat) {
         let g = TGuns.get(p.gun)
         let spd: CGFloat = 1100
+        var muzzle: CGFloat = 20
+        var sprd = g.spread + err
+        if p.isPlayer && p.crouch {
+            let bx = cos(p.aim), by = sin(p.aim)
+            for r in TMap.solid where r.minX > -5000 {
+                if let h = brRayThrough(p.pos, bx, by, r), h.0 >= 0, h.0 < 40, h.1 - h.0 < 100 { muzzle = max(muzzle, h.1 + 3) }
+            }
+            if muzzle > 20 { sprd *= 2.6 }
+        }
+        p.noiseT = 1.5
         for _ in 0..<g.pellets {
-            let a = p.aim + CGFloat.random(in: -(g.spread + err)...(g.spread + err))
-            bullets.append(Bullet(pos: CGPoint(x: p.pos.x + cos(a) * 20, y: p.pos.y + sin(a) * 20),
+            let a = p.aim + CGFloat.random(in: -sprd...sprd)
+            bullets.append(Bullet(pos: CGPoint(x: p.pos.x + cos(a) * muzzle, y: p.pos.y + sin(a) * muzzle),
                                   vel: CGVector(dx: cos(a) * spd, dy: sin(a) * spd), dmg: g.dmg * (p.isPlayer ? 1 : [0.85, 1, 1][diff]),
                                   life: g.range / spd + 0.15, owner: p.id, team: p.team))
         }
@@ -873,7 +992,7 @@ final class TacticalEngine {
 
     private func damage(_ victim: TPlayer, _ amt: CGFloat, by owner: Int) {
         guard victim.alive else { return }
-        victim.hp -= amt
+        victim.hp -= victim.crouch ? amt * 0.7 : amt
         victim.hurt = 0.25
         if owner == 0 && victim.team != me.team { hitT = 0.2 }
         if victim.isPlayer { shake = max(shake, 8) }
@@ -1055,6 +1174,19 @@ final class TacticalEngine {
             let pref: CGFloat = p.gun == "shotgun" ? 200 : (p.gun == "smg" ? 320 : (p.gun == "rifle" ? 460 : 380))
             p.strafeT -= dt
             if p.strafeT <= 0 { p.strafe = Bool.random() ? 1 : -1; p.strafeT = CGFloat.random(in: 0.5...1.4) }
+            p.hideT -= dt
+            if p.hideT <= 0 {
+                p.hiding = p.hiding ? false : (p.hp < 50 || Double.random(in: 0...1) < 0.55)
+                p.hideT = p.hiding ? CGFloat.random(in: 0.9...1.8) : CGFloat.random(in: 1.2...2.4)
+                p.cover = p.hiding ? coverSpot(p, e.pos) : nil
+            }
+            if p.hiding, let c = p.cover, tDist(p.pos, c) > 8 {
+                let a2 = atan2(c.y - p.pos.y, c.x - p.pos.x)
+                p.pos.x += cos(a2) * 125 * dt
+                p.pos.y += sin(a2) * 125 * dt
+                TMap.push(&p.pos, 14)
+                return
+            }
             if d > pref + 60 && (atk || planted) {
                 dest = e.pos
             } else {
@@ -1068,6 +1200,18 @@ final class TacticalEngine {
         } else if p.hunt > 0 {
             dest = p.lastSeen
             speed = 130
+            // hear gunfire through walls and spray at it (no aim assist, just rough error)
+            if p.fireCd <= 0 && p.reloadT <= 0 && p.mag > 0 {
+                for e in players where e.team != p.team && e.alive && e.noiseT > 0 {
+                    let d = tDist(p.pos, e.pos)
+                    if d < 300 && TMap.floorOf(e.pos) == TMap.floorOf(p.pos) {
+                        let ang = atan2(e.pos.y - p.pos.y, e.pos.x - p.pos.x)
+                        p.aim += max(-6 * dt, min(6 * dt, tAngDiff(ang, p.aim)))
+                        if abs(tAngDiff(ang, p.aim)) < 0.2 && Double.random(in: 0...1) < 0.5 { shoot(p, aimErr[diff] * 2) }
+                        break
+                    }
+                }
+            }
         }
         if atk && !planted && p.smokes > 0 && p.targetID < 0 && smokeClouds.isEmpty {
             let sc = TMap.site(atkSite)
@@ -1868,6 +2012,7 @@ struct TacticalPlay: View {
     private var fp: Bool { mode == 1 }
     @State private var lastLook: CGFloat = 0
     @State private var lookOn = false
+    @State private var baseYaw: CGFloat = 0
     @State private var lastDrag = CGSize.zero
     @State private var baseDist: CGFloat = 430
     @State private var camP = 1
@@ -1931,7 +2076,7 @@ struct TacticalPlay: View {
                                 let d = hypot(dx, dy)
                                 let k = min(1, d / 50)
                                 var mv = d > 4 ? CGVector(dx: dx / d * k, dy: dy / d * k) : .zero
-                                if let b = bridge, b.lookOn {
+                                if let b = bridge, b.yaw != 0 {
                                     let c = cos(b.yaw), sn = sin(b.yaw)
                                     mv = CGVector(dx: c * mv.dx + sn * mv.dy, dy: -sn * mv.dx + c * mv.dy)
                                 }
@@ -1949,7 +2094,7 @@ struct TacticalPlay: View {
                                 rStart = v.startLocation
                                 rKnob = v.location
                                 let dx = v.location.x - v.startLocation.x, dy = v.location.y - v.startLocation.y
-                                if hypot(dx, dy) > 8 { engine.aimIn = atan2(dy, dx) }
+                                if hypot(dx, dy) > 8 { engine.aimIn = atan2(dy, dx) - (bridge?.yaw ?? 0) }
                                 engine.firing = true
                             }
                             .onEnded { _ in rStart = nil; lastLook = 0; engine.aimIn = nil; engine.firing = false })
@@ -1984,6 +2129,9 @@ struct TacticalPlay: View {
                 }
             }
             .frame(width: g.size.width, height: g.size.height)
+            .simultaneousGesture(RotationGesture()
+                .onChanged { a in bridge?.yaw = baseYaw + CGFloat(a.radians) }
+                .onEnded { _ in baseYaw = bridge?.yaw ?? 0 })
         }
         .ignoresSafeArea()
     }
@@ -2100,6 +2248,16 @@ struct TacticalPlay: View {
                             Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 14, weight: .bold)).foregroundColor(.white)
                                 .frame(width: 38, height: 38).background(Color.black.opacity(0.55)).clipShape(Circle())
                         }
+                        Button { e.toggleCover() } label: {
+                            Text(e.me.crouch ? "STAND" : "COVER").font(.jk(12, .heavy)).foregroundColor(e.me.crouch ? .black : .white)
+                                .padding(.horizontal, 11).frame(height: 38).background(e.me.crouch ? Color.yellow : Color.black.opacity(0.55)).clipShape(Capsule())
+                        }
+                        if let di = e.nearestDoor() {
+                            Button { e.toggleDoor() } label: {
+                                Text(TMap.doorWant[di] || TMap.doorOpen[di] > 0.5 ? "CLOSE DOOR" : "OPEN DOOR").font(.jk(12, .heavy)).foregroundColor(.black)
+                                    .padding(.horizontal, 12).frame(height: 40).background(Color.yellow).clipShape(Capsule())
+                            }
+                        }
                         if e.meInSite || e.meNearBomb {
                             Text(e.meInSite ? "HOLD PLANT" : "HOLD DEFUSE").font(.jk(12, .heavy)).foregroundColor(.black)
                                 .padding(.horizontal, 14).frame(height: 44).background(Color.yellow).clipShape(Capsule())
@@ -2115,13 +2273,13 @@ struct TacticalPlay: View {
                             .padding(.horizontal, 10).frame(height: 38).background(Color.black.opacity(0.55)).clipShape(Capsule())
                     }
                     Button {
-                        lookOn.toggle()
-                        bridge?.lookOn = lookOn
-                        e.firing = false
-                        if lookOn { bridge?.yaw = 0; bridge?.pitch = 1.0; bridge?.dist = 430; baseDist = 430 }
+                        let b = bridge
+                        let y = ((b?.yaw ?? 0) / (CGFloat.pi / 2)).rounded() + 1
+                        b?.yaw = y * CGFloat.pi / 2
+                        baseYaw = b?.yaw ?? 0
                     } label: {
-                        Text(lookOn ? "FOLLOW" : "LOOK").font(.jk(12, .heavy)).foregroundColor(lookOn ? .black : .white)
-                            .padding(.horizontal, 10).frame(height: 38).background(lookOn ? Color.yellow : Color.black.opacity(0.55)).clipShape(Capsule())
+                        Text("TURN").font(.jk(12, .heavy)).foregroundColor(.white)
+                            .padding(.horizontal, 10).frame(height: 38).background(Color.black.opacity(0.55)).clipShape(Capsule())
                     }
                     Button { e.paused = true } label: {
                         Image(systemName: "pause.fill").font(.system(size: 13, weight: .bold)).foregroundColor(.white)
