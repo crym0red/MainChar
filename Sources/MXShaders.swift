@@ -19,6 +19,7 @@ struct FrameU {
     float4 ptCol[8];     // rgb = color * intensity, w = attenuation end
     float4 counts;       // x = directional count, y = point count, z = shadow on, w = shadow texel
     float4 shadowInfo;   // x = strength, y = radius in texels, z = bias
+    float4x4 invVP;
 };
 
 struct NodeU {
@@ -101,6 +102,24 @@ fragment float4 fs_main(VOut in [[stage_in]],
     if (m.flags.z > 0.5) { base.rgb *= tMul.sample(sRep, in.uv).rgb; }
     else { base.rgb *= m.mulColor.rgb; }
     float alpha = base.a * m.params.x;
+    float3 Nn = normalize(in.nrm);
+    if (m.params.w < 1.5 && in.pos.z > 0.1) {
+        if (abs(Nn.y) < 0.6) {
+            // walls darken toward the ground like baked contact AO
+            base.rgb *= mix(0.6, 1.0, smoothstep(0.0, 70.0, in.wpos.y));
+        } else if (Nn.y > 0.6) {
+            // large soft tonal variation on floors/tops so big flat areas don't read as one colour
+            float2 q = in.wpos.xz * 0.012;
+            float2 i = floor(q), fr = fract(q);
+            fr = fr * fr * (3.0 - 2.0 * fr);
+            float a = fract(sin(dot(i, float2(12.9898, 78.233))) * 43758.5453);
+            float b = fract(sin(dot(i + float2(1, 0), float2(12.9898, 78.233))) * 43758.5453);
+            float c = fract(sin(dot(i + float2(0, 1), float2(12.9898, 78.233))) * 43758.5453);
+            float d = fract(sin(dot(i + float2(1, 1), float2(12.9898, 78.233))) * 43758.5453);
+            float nz = mix(mix(a, b, fr.x), mix(c, d, fr.x), fr.y);
+            base.rgb *= 0.88 + 0.2 * nz;
+        }
+    }
 
     float3 N = normalize(in.nrm);
     float3 V = normalize(f.camPos.xyz - in.wpos);
@@ -119,7 +138,8 @@ fragment float4 fs_main(VOut in [[stage_in]],
             float3 grad = sign(det) * (dfdx(h) * r1 + dfdy(h) * r2);
             N = normalize(abs(det) * N - m.params.z * 2.2 * grad);
         }
-        float3 lightSum = f.ambient.rgb;
+        float hemi = mix(0.5, 1.2, N.y * 0.5 + 0.5);
+        float3 lightSum = f.ambient.rgb * hemi;
         float3 spec = float3(0.0);
         bool useSpec = (model == 0) && (m.specular.w > 0.0);
         float shadow = 1.0;
@@ -185,8 +205,23 @@ vertex FSOut vs_full(uint vid [[vertex_id]]) {
     return o;
 }
 
-fragment float4 fs_sky(FSOut in [[stage_in]], texture2d<float> tSky [[texture(0)]]) {
-    return float4(tSky.sample(sClamp, in.uv).rgb, 1.0);
+fragment float4 fs_sky(FSOut in [[stage_in]], texture2d<float> tSky [[texture(0)]], constant FrameU& f [[buffer(1)]]) {
+    float4 clip = float4(in.uv.x * 2.0 - 1.0, 1.0 - in.uv.y * 2.0, 1.0, 1.0);
+    float4 wp = f.invVP * clip;
+    float3 dir = normalize(wp.xyz / wp.w - f.camPos.xyz);
+    float up = saturate(dir.y);
+    float v = 1.0 - pow(up, 0.55);
+    float3 sky = tSky.sample(sClamp, float2(0.5, v)).rgb;
+    // haze band that matches the distance fog
+    float haze = pow(1.0 - up, 5.0);
+    float3 col = mix(sky, f.fogColor.rgb, saturate(haze * 0.85));
+    if (dir.y < 0.0) { col = mix(col, f.fogColor.rgb, saturate(-dir.y * 6.0)); }
+    // sun glow
+    float3 sd = normalize(f.dirDir[0].xyz);
+    float sdot = saturate(dot(dir, sd));
+    float3 sc = f.dirCol[0].rgb;
+    col += sc * (pow(sdot, 900.0) * 14.0 + pow(sdot, 48.0) * 0.45 + pow(sdot, 6.0) * 0.12);
+    return float4(col, 1.0);
 }
 
 fragment float4 fs_bright(FSOut in [[stage_in]],

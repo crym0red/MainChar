@@ -95,6 +95,8 @@ final class TwViewModel {
         }
         if gid == shown { return }
         shown = gid
+        let ks: Float = gid == "pistol" || gid == "eagle" ? 1 : (gid == "awp" ? 0.72 : (gid == "pump" || gid == "shotgun" || gid == "rifle" || gid == "ak" ? 0.76 : 0.85))
+        root.scale = MXVector3(k * ks, k * ks, k * ks)
         for (key, r) in rigs { r.node.isHidden = key != gid }
         slideK = 0; recoil = 0; cycleT = 2; cycleDelay = 0
         for r in rigs.values { for g in r.groups.values { g.position = MXVector3Zero; g.isHidden = false } }

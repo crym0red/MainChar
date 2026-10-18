@@ -287,7 +287,7 @@ final class MXRenderer {
     private var shadowMap: MTLTexture?
 
     // scratch uniform memory
-    private let frameU = UnsafeMutablePointer<SIMD4<Float>>.allocate(capacity: 40)
+    private let frameU = UnsafeMutablePointer<SIMD4<Float>>.allocate(capacity: 44)
     private let nodeU = UnsafeMutablePointer<simd_float4x4>.allocate(capacity: 2)
     private let matU = UnsafeMutablePointer<SIMD4<Float>>.allocate(capacity: 8)
     private let post0 = UnsafeMutablePointer<SIMD4<Float>>.allocate(capacity: 2)
@@ -614,7 +614,8 @@ final class MXRenderer {
         frameU[32] = SIMD4<Float>(Float(dirs.count), Float(pts.count), shadowOn ? 1 : 0, 1 / Float(max(1, MXRenderer.shadowSize)))
         frameU[33] = SIMD4<Float>(0.72, 1.4, 0.0012, 0)
         if let sl = sunLight?.0, let sc = MXColor.linear(sl.shadowColor) { frameU[33].x = max(0.2, min(1, sc.w)) }
-        let frameBytes = 34 * MemoryLayout<SIMD4<Float>>.stride
+        put(34, simd_inverse(vp))
+        let frameBytes = 38 * MemoryLayout<SIMD4<Float>>.stride
 
         let winding: MTLWinding = MXRenderer.flipWinding ? .clockwise : .counterClockwise
 
@@ -668,6 +669,7 @@ final class MXRenderer {
         enc.setFrontFacing(winding)
 
         if hasBG, let img = scene.background.image, let st = gpu.texture(img, srgb: true) {
+            enc.setFragmentBytes(frameU, length: frameBytes, index: 1)
             enc.setRenderPipelineState(skyPipe)
             enc.setDepthStencilState(gpu.dsNoRead)
             enc.setCullMode(.none)

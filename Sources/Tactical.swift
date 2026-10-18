@@ -2000,10 +2000,10 @@ struct TacticalPlay: View {
     }
 
     private func nadeSlot(_ icon: String, _ n: Int, _ act: @escaping () -> Void) -> some View {
-        hotCell(36, on: false, act) {
+        hotCell(32, on: false, act) {
             ZStack(alignment: .bottomTrailing) {
                 SF(icon, "circle.fill").font(.system(size: 17, weight: .bold)).foregroundColor(.white.opacity(n == 0 ? 0.3 : 0.95))
-                    .frame(width: 36, height: 50)
+                    .frame(width: 32, height: 50)
                 Text("\(n)").font(.jk(10, .heavy)).foregroundColor(.black).frame(minWidth: 15, minHeight: 15)
                     .background(Circle().fill(n == 0 ? Color.white.opacity(0.4) : TUI.accent)).padding(2)
             }
@@ -2030,11 +2030,12 @@ struct TacticalPlay: View {
                     SF("scope", "circle.fill").font(.system(size: 10, weight: .bold)).foregroundColor(TUI.gold).padding(.leading, 4)
                     Text("\(me.kills)").font(.jk(12, .heavy)).foregroundColor(.white)
                 }
+                .padding(.horizontal, 8).frame(height: 20).background(Capsule().fill(Color.black.opacity(0.42)))
             }
             HStack(spacing: 3) {
-                hotCell(40, on: false) { KnifeShape().fill(Color.white.opacity(0.75)).frame(width: 24, height: 24) }
-                gunSlot(me.gun, mag: me.mag, spare: me.spare, reloading: reloading, on: true, w: 88, nil)
-                gunSlot(me.altGun, mag: me.altMag, spare: me.altSpare, reloading: false, on: false, w: 62) { e.wantSwap = true }
+                hotCell(34, on: false) { KnifeShape().fill(Color.white.opacity(0.75)).frame(width: 24, height: 24) }
+                gunSlot(me.gun, mag: me.mag, spare: me.spare, reloading: reloading, on: true, w: 78, nil)
+                gunSlot(me.altGun, mag: me.altMag, spare: me.altSpare, reloading: false, on: false, w: 54) { e.wantSwap = true }
                 nadeSlot("circle.hexagongrid.fill", me.nades) { e.wantNade = true }
                 nadeSlot("smoke.fill", me.smokes) { e.wantSmoke = true }
                 nadeSlot("sun.max.fill", me.flashes) { e.wantFlash = true }
@@ -2057,7 +2058,7 @@ struct TacticalPlay: View {
                 }
             }
         }
-        .frame(width: 305)
+        .frame(width: 280)
     }
 
     private func vbtn(_ icon: String, _ d: CGFloat, on: Bool = false, dim: Bool = false) -> some View {
@@ -2212,12 +2213,12 @@ struct TacticalPlay: View {
                         Button { e.jumpT = max(e.jumpT, 0.55) } label: { vbtn("arrow.up", 44) }
                             .buttonStyle(TuiPress()).position(x: W - 36, y: 361)
                         Button { e.wantReload = true } label: { vbtn("arrow.triangle.2.circlepath", 48) }
-                            .buttonStyle(TuiPress()).position(x: W - 232, y: H - 40)
+                            .buttonStyle(TuiPress()).position(x: W - 198, y: H - 34)
                         togglePill("target", "AIM", e.autoAim) { e.autoAim.toggle() }
-                            .position(x: W - 232, y: H - 100)
+                            .position(x: W - 198, y: H - 114)
                         togglePill("repeat", "AUTO", e.autoFire) { e.autoFire.toggle() }
-                            .position(x: W - 232, y: H - 70)
-                        hotbar(e).position(x: W / 2, y: H - 52)
+                            .position(x: W - 198, y: H - 82)
+                        hotbar(e).position(x: min(W / 2, W - 250 - 140), y: H - 52)
                     } else {
                         Button { e.fast.toggle() } label: {
                             HStack(spacing: 6) {
@@ -2227,7 +2228,7 @@ struct TacticalPlay: View {
                             .foregroundColor(.white).padding(.horizontal, 14).frame(height: 38).tuiGlass(19, fill: 0.55)
                         }
                         .buttonStyle(TuiPress())
-                        .position(x: W - 110, y: H - 40)
+                        .position(x: W / 2, y: H - 40)
                     }
 
                     if e.gameMode == 0 && e.buyT > 0 && e.me.alive {

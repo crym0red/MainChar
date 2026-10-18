@@ -57,6 +57,8 @@ final class TacScene {
     var pitch: CGFloat = 1.0
     var dist: CGFloat = 430
     var legLs: [MXNode] = []
+    var deadK = [Float](repeating: 0, count: 64)
+    var mvK = [Float](repeating: 0, count: 64)
     var legRs: [MXNode] = []
     var gunVars: [[MXNode]] = []
     var gunShown: [Int] = []
@@ -313,9 +315,9 @@ final class TacScene {
         func C(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> UIColor { UIColor(red: r, green: g, blue: b, alpha: 1) }
         let skyCols: [UIColor] = th == 1 ? [C(0.02, 0.04, 0.12), C(0.05, 0.09, 0.2), C(0.12, 0.16, 0.3)] : (th == 2 ? [C(0.18, 0.07, 0.28), C(0.65, 0.25, 0.2), C(0.95, 0.55, 0.2)] : [C(0.25, 0.52, 0.9), C(0.62, 0.8, 0.96), C(0.95, 0.88, 0.72)])
         let fogC: UIColor = th == 1 ? C(0.06, 0.09, 0.18) : (th == 2 ? C(0.4, 0.2, 0.18) : C(0.9, 0.82, 0.66))
-        let ambI: CGFloat = th == 1 ? 520 : (th == 2 ? 560 : 640)
+        let ambI: CGFloat = th == 1 ? 520 : (th == 2 ? 520 : 430)
         let ambC: UIColor = th == 1 ? C(0.55, 0.65, 0.95) : (th == 2 ? C(0.9, 0.65, 0.7) : C(0.78, 0.8, 0.9))
-        let sunI: CGFloat = th == 1 ? 500 : (th == 2 ? 800 : 1000)
+        let sunI: CGFloat = th == 1 ? 500 : (th == 2 ? 900 : 1500)
         let sunC: UIColor = th == 1 ? C(0.6, 0.75, 1) : (th == 2 ? C(1, 0.55, 0.3) : C(1, 0.93, 0.78))
         let skyImg = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 256)).image { c in
             let cs = CGColorSpaceCreateDeviceRGB()
@@ -325,8 +327,8 @@ final class TacScene {
         }
         scene.background.contents = skyImg
         scene.fogColor = fogC
-        scene.fogStartDistance = fpMode ? 650 : 900
-        scene.fogEndDistance = fpMode ? 1900 : 3200
+        scene.fogStartDistance = fpMode ? 900 : 1100
+        scene.fogEndDistance = fpMode ? 2700 : 3600
         scene.fogDensityExponent = 1.4
         let root = scene.rootNode
         floorRoot[1].position = MXVector3(-Float(TMap.off), 0, 0)
@@ -403,8 +405,8 @@ final class TacScene {
         cam.vignettingPower = 1.2
         cam.screenSpaceAmbientOcclusionIntensity = 0.9
         cam.screenSpaceAmbientOcclusionRadius = 10
-        cam.saturation = 1.12
-        cam.contrast = 0.15
+        cam.saturation = 1.28
+        cam.contrast = 0.24
         camNode.camera = cam
         root.addChildNode(camNode)
         camNode.addChildNode(vm.root)
@@ -956,8 +958,7 @@ final class TacScene {
             rt.eulerAngles = MXVector3(0, Float(-p.aim), 0)
             heads[i].eulerAngles = MXVector3(0, Float(p.aim), 0)
             if p.alive {
-                bodies[i].eulerAngles = MXVector3(0, 0, 0)
-                bodies[i].position = MXVector3(0, 0, 0)
+                deadK[i] = 0
                 heads[i].isHidden = true
                 guns[i].isHidden = false
                 flashes[i].isHidden = !(p.flash > 0)
@@ -966,9 +967,14 @@ final class TacScene {
                 let moved = hypot(dpx, dpy)
                 if moved < 40 { walkPh[i] += moved * 0.12 }
                 lastPos[i] = p.pos
-                let sw = Float(sin(walkPh[i])) * 0.7
+                mvK[i] += ((moved > 0.12 ? 1 : 0) - mvK[i]) * 0.18
+                let sw = Float(sin(walkPh[i])) * (0.2 + 0.65 * mvK[i])
                 legLs[i].eulerAngles = MXVector3(0, 0, sw)
                 legRs[i].eulerAngles = MXVector3(0, 0, -sw)
+                let bob = abs(Float(cos(walkPh[i]))) * 0.9 * mvK[i] + sin(Float(e.time) * 1.6 + Float(i)) * 0.12
+                let lean: Float = -0.1 * mvK[i] + (p.flash > 0 ? 0.045 : 0)
+                bodies[i].eulerAngles = MXVector3(0, 0, lean)
+                bodies[i].position = MXVector3(0, bob, 0)
                 var ek = 0
                 if p.rank == 0 && p.armor > 0 {
                     ek = p.armorKind > 0 ? p.armorKind : (e.gameMode != 0 ? [1, 2, 3, 1, 2][p.id % 5] : 0)
@@ -984,8 +990,10 @@ final class TacScene {
                     gunShown[i] = gi
                 }
             } else {
-                bodies[i].eulerAngles = MXVector3(0, 0, Float.pi / 2)
-                bodies[i].position = MXVector3(0, 8, 0)
+                deadK[i] = min(1, deadK[i] + 1 / 22)
+                let dk = 1 - pow(1 - deadK[i], 3)
+                bodies[i].eulerAngles = MXVector3(0, 0, dk * Float.pi / 2)
+                bodies[i].position = MXVector3(-dk * 3, dk * 8, 0)
                 heads[i].isHidden = true
                 flashes[i].isHidden = true
                 shirts[i].emission.contents = UIColor.black
