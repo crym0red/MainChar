@@ -17,50 +17,9 @@ extension BREngine {
         let hz = H * 0.5 + sin(bobT) * 4 * bobAmp
         let eye = BREngine.eyeH
 
-        // sky + ground
-        ctx.fill(Path(CGRect(x: 0, y: 0, width: W, height: hz + 1)),
-                 with: .linearGradient(Gradient(colors: [brc(0.3, 0.52, 0.82), brc(0.8, 0.88, 0.95)]), startPoint: CGPoint(x: 0, y: 0), endPoint: CGPoint(x: 0, y: hz)))
-        ctx.fill(Path(CGRect(x: 0, y: hz, width: W, height: H - hz + 1)),
-                 with: .linearGradient(Gradient(colors: [brc(0.55, 0.62, 0.45), brc(0.27, 0.36, 0.22)]), startPoint: CGPoint(x: 0, y: hz), endPoint: CGPoint(x: 0, y: H)))
-
-        // walls
-        let cols = 150
+        let zb = drawBase(&ctx, size, hz, focal)
+        let cols = zb.count
         let cw = W / CGFloat(cols)
-        var zb = [CGFloat](repeating: 9999, count: cols)
-        let nearW = world.near(m.p, 1100)
-        for i in 0..<cols {
-            let off = atan((CGFloat(i) + 0.5 - CGFloat(cols) / 2) * cw / focal)
-            let a = m.ang + off
-            let dx = cos(a), dy = sin(a)
-            var bt: CGFloat = 1100
-            var bi = -1
-            var bs = false
-            for wi in nearW {
-                if let h = brRay(m.p, dx, dy, world.walls[wi].r), h.0 < bt {
-                    bt = h.0
-                    bi = wi
-                    bs = h.1
-                }
-            }
-            if bi < 0 { continue }
-            let perp = max(bt * cos(off), 1)
-            zb[i] = perp
-            let w = world.walls[bi]
-            let top = hz - (w.h - eye) * focal / perp
-            let bot = hz + eye * focal / perp
-            let shade: CGFloat = bs ? 1 : 0.8
-            let fog = min(1, bt / 1100) * 0.75
-            let r = w.c.0 * shade * (1 - fog) + 0.74 * fog
-            let g = w.c.1 * shade * (1 - fog) + 0.83 * fog
-            let b = w.c.2 * shade * (1 - fog) + 0.9 * fog
-            let hh = bot - top
-            ctx.fill(Path(CGRect(x: CGFloat(i) * cw, y: top, width: cw + 0.6, height: hh)), with: .color(brc(r, g, b)))
-            ctx.fill(Path(CGRect(x: CGFloat(i) * cw, y: top, width: cw + 0.6, height: hh * 0.07)), with: .color(brc(1, 1, 1, 0.18)))
-            ctx.fill(Path(CGRect(x: CGFloat(i) * cw, y: bot - hh * 0.1, width: cw + 0.6, height: hh * 0.1)), with: .color(brc(0, 0, 0, 0.2)))
-            if w.h >= 100 && w.h < 200 {
-                ctx.fill(Path(CGRect(x: CGFloat(i) * cw, y: top + hh * 0.38, width: cw + 0.6, height: hh * 0.16)), with: .color(brc(0.12, 0.18, 0.26, 0.45 * (1 - fog))))
-            }
-        }
 
         // billboards
         var list: [BRBill] = []
@@ -101,10 +60,26 @@ extension BREngine {
             if !seen { continue }
             let fog = min(1, bb.d / 1100) * 0.6
             if bb.kind == 2 {
-                ctx.fill(Path(CGRect(x: sx - 4 * f, y: feet - 46 * f, width: 8 * f, height: 46 * f)), with: .color(brc(0.35, 0.24, 0.14)))
-                let cr = 30 * f
-                ctx.fill(Path(ellipseIn: CGRect(x: sx - cr, y: feet - 78 * f - cr, width: cr * 2, height: cr * 2)),
-                         with: .color(brc(0.16 + 0.5 * fog, 0.38 + 0.4 * fog, 0.17 + 0.5 * fog)))
+                if bb.idx % 3 != 0 {
+                    ctx.fill(Path(CGRect(x: sx - 3.5 * f, y: feet - 30 * f, width: 7 * f, height: 30 * f)), with: .color(brc(0.3, 0.2, 0.12)))
+                    for k in 0..<4 {
+                        let ty = feet - (24 + CGFloat(k) * 26) * f
+                        let tw = (36 - CGFloat(k) * 8) * f
+                        var tri = Path()
+                        tri.move(to: CGPoint(x: sx, y: ty - 44 * f))
+                        tri.addLine(to: CGPoint(x: sx + tw, y: ty))
+                        tri.addLine(to: CGPoint(x: sx - tw, y: ty))
+                        tri.closeSubpath()
+                        ctx.fill(tri, with: .color(brc(0.1 + 0.5 * fog + CGFloat(k) * 0.02, 0.3 + 0.4 * fog + CGFloat(k) * 0.03, 0.14 + 0.5 * fog)))
+                    }
+                } else {
+                    ctx.fill(Path(CGRect(x: sx - 5 * f, y: feet - 54 * f, width: 10 * f, height: 54 * f)), with: .color(brc(0.36, 0.26, 0.16)))
+                    let cr = 30 * f
+                    ctx.fill(Path(ellipseIn: CGRect(x: sx - cr, y: feet - 84 * f - cr, width: cr * 2, height: cr * 2)),
+                             with: .color(brc(0.2 + 0.5 * fog, 0.42 + 0.4 * fog, 0.18 + 0.5 * fog)))
+                    ctx.fill(Path(ellipseIn: CGRect(x: sx - cr * 0.8 - cr * 0.3, y: feet - 94 * f - cr * 0.8, width: cr * 1.3, height: cr * 1.3)),
+                             with: .color(brc(0.3 + 0.4 * fog, 0.55 + 0.3 * fog, 0.24 + 0.4 * fog)))
+                }
             } else if bb.kind == 1 {
                 let l = loot[bb.idx]
                 let sz = 15 * f
@@ -201,25 +176,20 @@ extension BREngine {
         guard m.alive, let s = m.slots[m.cur] else { return }
         let img = GunSprites.image(s.gun)
         let mz = GunSprites.muzzle(s.gun)
-        let gw = min(size.width * 0.4, size.height * 1.5)
-        let gh = gw / 2
+        let gw = min(size.width * 0.5, size.height * 1.6)
+        let gh = gw * 0.625
         let rec: CGFloat = m.flash > 0 ? 1 : 0
         let bob = sin(bobT) * 6 * bobAmp
-        let dip: CGFloat = m.reloadT > 0 ? min(1, m.reloadT * 2.5) * gh * 0.35 : 0
+        let sway = cos(bobT * 0.5) * 5 * bobAmp
+        let dip: CGFloat = m.reloadT > 0 ? min(1, m.reloadT * 2.5) * gh * 0.4 : 0
         let spr = ctx.resolve(Image(uiImage: img))
         let flashOn = m.flash > 0
-        let reloading = m.reloadT > 0
-        ctx.drawLayer { l in
-            l.translateBy(x: size.width * 0.93, y: size.height + 2 + dip + bob)
-            l.rotate(by: .degrees(reloading ? 16 : 8))
-            l.translateBy(x: rec * 16, y: rec * 8)
-            let rect = CGRect(x: -gw, y: -gh, width: gw, height: gh)
-            l.draw(spr, in: rect)
-            if flashOn {
-                let p = CGPoint(x: rect.minX + mz.x * gw, y: rect.minY + mz.y * gh)
-                l.fill(Path(ellipseIn: CGRect(x: p.x - 44, y: p.y - 44, width: 88, height: 88)), with: .color(.yellow.opacity(0.85)))
-                l.fill(Path(ellipseIn: CGRect(x: p.x - 22, y: p.y - 22, width: 44, height: 44)), with: .color(.white.opacity(0.95)))
-            }
+        let rect = CGRect(x: size.width - gw * 0.97 + sway + rec * 10, y: size.height - gh + 6 + dip + bob + rec * 12, width: gw, height: gh)
+        ctx.draw(spr, in: rect)
+        if flashOn {
+            let p = CGPoint(x: rect.minX + mz.x * gw, y: rect.minY + mz.y * gh)
+            ctx.fill(Path(ellipseIn: CGRect(x: p.x - 30, y: p.y - 30, width: 60, height: 60)), with: .color(.yellow.opacity(0.85)))
+            ctx.fill(Path(ellipseIn: CGRect(x: p.x - 14, y: p.y - 14, width: 28, height: 28)), with: .color(.white.opacity(0.95)))
         }
     }
 
@@ -268,8 +238,8 @@ extension BREngine {
 
     private func drawMinimap(_ ctx: inout GraphicsContext, _ size: CGSize) {
         let m = me
-        let mc = CGPoint(x: size.width - 80, y: 86)
-        let R: CGFloat = 62
+        let mc = CGPoint(x: size.width - 72, y: 70)
+        let R: CGFloat = 56
         let sc: CGFloat = 0.085
         let half = R / sc + 40
         let disc = Path(ellipseIn: CGRect(x: mc.x - R, y: mc.y - R, width: R * 2, height: R * 2))
@@ -294,6 +264,15 @@ extension BREngine {
                     y += step
                 }
                 x += step
+            }
+            for (pr, pc) in world.patches where abs(pr.midX - m.p.x) < half + pr.width / 2 && abs(pr.midY - m.p.y) < half + pr.height / 2 {
+                l.fill(Path(pr), with: .color(brc(pc.0, pc.1, pc.2, 0.7)))
+            }
+            for (ra, rb) in world.roadSegs {
+                var rp = Path()
+                rp.move(to: ra)
+                rp.addLine(to: rb)
+                l.stroke(rp, with: .color(brc(0.88, 0.85, 0.72)), lineWidth: 46)
             }
             for rw in world.runways where abs(rw.midX - m.p.x) < half + 1200 && abs(rw.midY - m.p.y) < half + 200 {
                 l.fill(Path(rw), with: .color(brc(0.3, 0.3, 0.32)))

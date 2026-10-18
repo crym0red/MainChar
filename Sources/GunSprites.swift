@@ -4,8 +4,16 @@ import UIKit
 enum GunSprites {
     private static var cache: [String: UIImage] = [:]
 
+    static func icon(_ id: String) -> UIImage {
+        UIImage(named: "gunicon_" + id) ?? image(id)
+    }
+
     static func image(_ id: String) -> UIImage {
         if let c = cache[id] { return c }
+        if let a = UIImage(named: "gun_" + id) {
+            cache[id] = a
+            return a
+        }
         let img = render(id)
         cache[id] = img
         return img
@@ -14,10 +22,7 @@ enum GunSprites {
     // muzzle position as a fraction of the sprite
     static func muzzle(_ id: String) -> CGPoint {
         switch id {
-        case "pistol": return CGPoint(x: 0.09, y: 0.45)
-        case "smg": return CGPoint(x: 0.05, y: 0.49)
-        case "shotgun": return CGPoint(x: 0.04, y: 0.47)
-        default: return CGPoint(x: 0.03, y: 0.49)
+        default: return CGPoint(x: 0.245, y: 0.165)
         }
     }
 
