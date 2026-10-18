@@ -109,8 +109,8 @@ extension BREngine {
             }
         }
 
-        drawViewGun(&ctx, size)
         drawADS(&ctx, size)
+        drawViewGun(&ctx, size)
 
         // crosshair
         let ch = CGPoint(x: W / 2, y: H / 2)
@@ -242,7 +242,7 @@ extension BREngine {
             rect.origin.y += sp * rect.height * 0.22
         }
         let isScope = s.gun == "rifle" || s.gun == "smg"
-        let gunA: CGFloat = isScope ? 1 - min(1, adsT * 1.6) : 1 - adsT * 0.6
+        let gunA: CGFloat = 1
         let spr = ctx.resolve(Image(uiImage: img))
         if gunA > 0.02 {
             ctx.drawLayer { l in
@@ -332,7 +332,7 @@ extension BREngine {
             var p = Path()
             p.addRect(CGRect(origin: .zero, size: size))
             p.addEllipse(in: CGRect(x: cx - R, y: cy - R, width: R * 2, height: R * 2))
-            ctx.fill(p, with: .color(brc(0, 0, 0, t)), style: FillStyle(eoFill: true))
+            ctx.fill(p, with: .color(brc(0, 0, 0, 0.7 * t)), style: FillStyle(eoFill: true))
             ctx.stroke(Path(ellipseIn: CGRect(x: cx - R, y: cy - R, width: R * 2, height: R * 2)), with: .color(brc(0.04, 0.04, 0.06, t)), lineWidth: 12)
             ctx.stroke(Path(ellipseIn: CGRect(x: cx - R + 8, y: cy - R + 8, width: R * 2 - 16, height: R * 2 - 16)), with: .color(brc(0.4, 0.5, 0.6, 0.18 * t)), lineWidth: 2)
             let ink = brc(0.02, 0.02, 0.03, 0.9 * t)

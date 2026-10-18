@@ -95,6 +95,7 @@ final class BREngine {
     var firing = false
     var crouch = false
     var prone = false
+    var fps: CGFloat = 60
     var sprintT: CGFloat = 0
     var eyeNow: CGFloat = 54
     var camDip: CGFloat = 0
@@ -237,6 +238,7 @@ final class BREngine {
         if paused || over || dt <= 0 || actors.isEmpty { return }
         time += dt
         lastDT = dt
+        if dt > 0 { fps += (1 / dt - fps) * 0.05 }
         updateZone()
         updateMe(dt)
         for a in actors where !a.isMe && a.alive { updateBot(a, dt) }
