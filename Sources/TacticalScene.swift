@@ -24,6 +24,7 @@ private func ui(_ c: (CGFloat, CGFloat, CGFloat), _ k: CGFloat = 1) -> UIColor {
 // MARK: - Scene bridge
 
 final class TacScene {
+    var dollhouse = false
     let scene = MXScene()
     let view = MXView(frame: .zero)
     let camNode = MXNode()
@@ -1293,7 +1294,6 @@ extension TacticalEngine {
 }
 
 extension TacScene {
-    private var dollhouse = false
 
     /// lobby hero shot: all three floors stacked like a cutaway dollhouse, slowly orbiting
     func orbit(_ time: Double) {
