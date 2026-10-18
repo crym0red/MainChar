@@ -92,6 +92,9 @@ final class BRWorld {
         return w
     }()
 
+    static let gulagRect = CGRect(x: 5280, y: 4560, width: 520, height: 420)
+    static let gulagA = CGPoint(x: 5335, y: 4770)
+    static let gulagB = CGPoint(x: 5745, y: 4770)
     var walls: [BRWall] = []
     var blds: [BRBuilding] = []
     var runways: [CGRect] = []
@@ -416,6 +419,16 @@ final class BRWorld {
             }
         }
 
+        // gulag arena (closed box with cover)
+        let gr = BRWorld.gulagRect
+        patches.append((gr, (0.38, 0.38, 0.42)))
+        hw(gr.minX, gr.maxX, gr.minY, nil, 130, (0.42, 0.42, 0.48))
+        hw(gr.minX, gr.maxX, gr.maxY, nil, 130, (0.42, 0.42, 0.48))
+        vw(gr.minY, gr.maxY, gr.minX, nil, 130, (0.42, 0.42, 0.48))
+        vw(gr.minY, gr.maxY, gr.maxX, nil, 130, (0.42, 0.42, 0.48))
+        for c in [CGRect(x: 5450, y: 4640, width: 34, height: 100), CGRect(x: 5576, y: 4800, width: 34, height: 100), CGRect(x: 5500, y: 4745, width: 70, height: 30), CGRect(x: 5400, y: 4880, width: 60, height: 34), CGRect(x: 5620, y: 4650, width: 60, height: 34)] {
+            addWall(c, 46, (0.55, 0.45, 0.3))
+        }
         buildGrid()
         bakeGround()
     }

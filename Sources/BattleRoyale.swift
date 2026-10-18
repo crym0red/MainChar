@@ -45,13 +45,16 @@ struct BattleRoyalePlay: View {
 
     // MARK: controls
 
+    private func mx(_ x: CGFloat, _ W: CGFloat) -> CGFloat { engine.lefty ? W - x : x }
+
     private var controls: some View {
         GeometryReader { g in
             let W = g.size.width, H = g.size.height
+            let e = engine
             ZStack {
                 Color.clear.contentShape(Rectangle())
                     .frame(width: W * 0.6, height: H)
-                    .position(x: W * 0.7, y: H / 2)
+                    .position(x: mx(W * 0.7, W), y: H / 2)
                     .gesture(DragGesture(minimumDistance: 0)
                         .onChanged { v in
                             engine.look += v.translation.width - lastLook
@@ -62,7 +65,7 @@ struct BattleRoyalePlay: View {
                         .onEnded { _ in lastLook = 0; lastLookY = 0 })
                 Color.clear.contentShape(Rectangle())
                     .frame(width: W * 0.4, height: H * 0.65)
-                    .position(x: W * 0.2, y: H * 0.675)
+                    .position(x: mx(W * 0.2, W), y: H * 0.675)
                     .gesture(DragGesture(minimumDistance: 0)
                         .onChanged { v in
                             lStart = v.startLocation
@@ -77,22 +80,52 @@ struct BattleRoyalePlay: View {
                             engine.move = .zero
                         })
                 stickView(W, H)
-                fireButton("capsule.portrait.fill", 76).position(x: W - 92, y: H - 120)
-                fireButton("capsule.portrait.fill", 52).position(x: 44, y: H - 178)
-                roundButton(engine.ads ? "scope" : "scope", engine.ads ? "AIMING" : "AIM") { engine.ads.toggle() }
-                    .scaleEffect(1.25).position(x: W - 92, y: H - 205)
-                roundButton("arrow.clockwise", "RELOAD") { engine.doReload() }.position(x: W - 160, y: H - 52)
-                roundButton("arrow.left.arrow.right", "SWAP") { engine.swapGun() }.position(x: W - 196, y: H - 112)
-                roundButton(engine.crouch ? "arrow.up.to.line" : "arrow.down.to.line", "CROUCH") { engine.crouch.toggle(); if engine.crouch { engine.prone = false } }.position(x: W - 28, y: H - 64)
-                roundButton(engine.prone ? "figure.stand" : "figure.fall", engine.me.sprinting ? "DIVE" : "PRONE") { engine.setProne() }.position(x: W - 28, y: H - 236)
-                roundButton("shield.lefthalf.filled", "PLATE \(engine.plates)") { engine.applyPlate() }.position(x: W - 28, y: H - 193)
-                roundButton("cross.case.fill", "HEAL \(engine.meds)") { engine.heal() }.position(x: W - 28, y: H - 150)
+                if e.phase == 1 {
+                    bigButton("JUMP", "arrow.down.to.line") { e.jump() }.position(x: W / 2, y: H * 0.74)
+                } else if e.phase == 2 {
+                    if !e.chute { bigButton("OPEN CHUTE", "arrow.down.circle.fill") { e.openChute() }.position(x: W / 2, y: H * 0.74) }
+                } else if e.inVeh >= 0 {
+                    bigButton("EXIT", "door.left.hand.open") { e.exitVehicle() }.position(x: mx(W - 92, W), y: H - 120)
+                } else {
+                    fireButton("capsule.portrait.fill", 76).position(x: mx(W - 92, W), y: H - 120)
+                    fireButton("capsule.portrait.fill", 52).position(x: mx(44, W), y: H - 178)
+                    roundButton("scope", e.ads ? "AIMING" : "AIM") { engine.ads.toggle() }
+                        .scaleEffect(1.25).position(x: mx(W - 92, W), y: H - 205)
+                    roundButton("arrow.clockwise", "RELOAD") { engine.doReload() }.position(x: mx(W - 160, W), y: H - 52)
+                    roundButton("arrow.left.arrow.right", "SWAP") { engine.swapGun() }.position(x: mx(W - 196, W), y: H - 112)
+                    roundButton(e.crouch ? "arrow.up.to.line" : "arrow.down.to.line", "CROUCH") { engine.crouch.toggle(); if engine.crouch { engine.prone = false } }.position(x: mx(W - 28, W), y: H - 64)
+                    roundButton(e.prone ? "figure.stand" : "figure.fall", e.me.sprinting ? "DIVE" : "PRONE") { engine.setProne() }.position(x: mx(W - 28, W), y: H - 236)
+                    roundButton("shield.lefthalf.filled", "PLATE \(e.plates)") { engine.applyPlate() }.position(x: mx(W - 28, W), y: H - 193)
+                    roundButton("cross.case.fill", "HEAL \(e.meds)") { engine.heal() }.position(x: mx(W - 28, W), y: H - 150)
+                    roundButton("scope", "PING", size: 40) { engine.ping() }.position(x: mx(W - 28, W), y: H - 107)
+                    roundButton(["flame.fill", "cloud.fill", "bolt.fill"][e.thrSel], ["FRAG", "SMOKE", "FLASH"][e.thrSel] + " \(e.throwCount(e.thrSel))") { engine.throwNow() }
+                        .position(x: mx(W - 250, W), y: H - 50)
+                    roundButton("arrow.triangle.2.circlepath", "TYPE", size: 34) { engine.cycleThrow() }.position(x: mx(W - 250, W), y: H - 98)
+                    if e.nearStation() {
+                        roundButton("dollarsign.circle.fill", "BUY") { engine.showBuy = true }.position(x: mx(W - 160, W), y: H - 168)
+                    } else if e.nearVehicle() != nil {
+                        roundButton("car.fill", "ENTER") { engine.enterVehicle() }.position(x: mx(W - 160, W), y: H - 168)
+                    }
+                }
             }
         }
     }
 
+    private func bigButton(_ t: String, _ icon: String, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            HStack(spacing: 8) {
+                Image(systemName: icon).font(.system(size: 18, weight: .heavy))
+                Text(t).font(.jk(16, .heavy))
+            }
+            .foregroundColor(.black).padding(.horizontal, 22).frame(height: 48)
+            .background(lime).clipShape(Capsule())
+            .overlay(Capsule().stroke(Color.white.opacity(0.8), lineWidth: 2))
+        }
+        .buttonStyle(.plain)
+    }
+
     private func stickView(_ W: CGFloat, _ H: CGFloat) -> some View {
-        let base = lStart ?? CGPoint(x: 100, y: H - 90)
+        let base = lStart ?? CGPoint(x: engine.lefty ? W - 100 : 100, y: H - 90)
         var knob = lKnob
         if lStart == nil { knob = base }
         let dx = knob.x - base.x, dy = knob.y - base.y
@@ -119,14 +152,14 @@ struct BattleRoyalePlay: View {
                 .onEnded { _ in engine.firing = false })
     }
 
-    private func roundButton(_ icon: String, _ label: String, _ act: @escaping () -> Void) -> some View {
+    private func roundButton(_ icon: String, _ label: String, size: CGFloat = 46, _ act: @escaping () -> Void) -> some View {
         Button(action: act) {
             VStack(spacing: 1) {
-                Image(systemName: icon).font(.system(size: 16, weight: .bold))
+                Image(systemName: icon).font(.system(size: size > 44 ? 16 : 13, weight: .bold))
                 Text(label).font(.jk(7, .heavy))
             }
             .foregroundColor(.white)
-            .frame(width: 46, height: 46)
+            .frame(width: size, height: size)
             .background(Color.black.opacity(0.5))
             .clipShape(Circle())
             .overlay(Circle().stroke(Color.white.opacity(0.5), lineWidth: 1.5))
@@ -191,8 +224,91 @@ struct BattleRoyalePlay: View {
                 }
 
                 loadout(e)
-                    .position(x: 340, y: H - 62)
+                    .position(x: e.lefty ? W - 340 : 340, y: H - 62)
+                extras(e, W, H)
             }
+        }
+    }
+
+    private func pill(_ t: String, _ c: Color = .white) -> some View {
+        Text(t).font(.jk(13, .heavy)).foregroundColor(c)
+            .padding(.horizontal, 14).frame(height: 28).background(Color.black.opacity(0.6)).clipShape(Capsule())
+    }
+
+    private func extras(_ e: BREngine, _ W: CGFloat, _ H: CGFloat) -> some View {
+        ZStack {
+            if e.phase == 1 {
+                pill("IN THE PLANE  -  JUMP WHEN READY").position(x: W / 2, y: H * 0.32).allowsHitTesting(false)
+            }
+            if e.phase == 2 {
+                pill("ALT \(Int(max(0, e.alt) * 0.2)) m" + (e.chute ? "  -  CHUTE" : "  -  FREEFALL")).position(x: W / 2, y: H * 0.32).allowsHitTesting(false)
+            }
+            if e.gulagOn {
+                VStack(spacing: 2) {
+                    Text("THE GULAG").font(.jk(20, .heavy)).foregroundColor(Color(red: 1, green: 0.7, blue: 0.2))
+                    Text("WIN THE 1V1  -  0:\(String(format: "%02d", max(0, Int(e.gulagT))))").font(.jk(12, .heavy)).foregroundColor(.white)
+                }
+                .position(x: W / 2, y: 78).allowsHitTesting(false)
+            }
+            if !e.me.alive && !e.gulagOn {
+                VStack(spacing: 2) {
+                    Text("ELIMINATED").font(.jk(22, .heavy)).foregroundColor(.red)
+                    if let k = e.killer, k !== e.me {
+                        Text("BY \(k.name)" + (e.killerHead ? "  -  HEADSHOT" : "") + "   HP \(Int(k.hp))").font(.jk(12, .heavy)).foregroundColor(.white)
+                    }
+                }
+                .padding(.horizontal, 18).padding(.vertical, 6).background(Color.black.opacity(0.55)).clipShape(RoundedRectangle(cornerRadius: 8))
+                .position(x: W / 2, y: H * 0.2).allowsHitTesting(false)
+            }
+            if e.uavT > 0 {
+                pill("UAV  \(Int(e.uavT))s", Color(red: 1, green: 0.4, blue: 0.4)).position(x: W - 72, y: 168).allowsHitTesting(false)
+            }
+            if e.inVeh >= 0 && e.inVeh < e.vehicles.count {
+                let v = e.vehicles[e.inVeh]
+                VStack(spacing: 3) {
+                    Text("\(Int(abs(v.speed) * 0.3)) KM/H").font(.jk(20, .heavy)).foregroundColor(.white)
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.black.opacity(0.55)).frame(width: 90, height: 5)
+                        Capsule().fill(v.hp > 35 ? lime : .red).frame(width: 90 * max(0, min(1, v.hp / 100)), height: 5)
+                    }
+                }
+                .position(x: W - 92, y: H - 190).allowsHitTesting(false)
+            }
+            if e.showBuy && e.nearStation() { buyMenu(e, W, H) }
+        }
+    }
+
+    private func buyMenu(_ e: BREngine, _ W: CGFloat, _ H: CGFloat) -> some View {
+        let items: [(String, Int, String)] = [("REVIVE ALLY", 300, "person.fill.checkmark"), ("ARMOR PLATES x3", 200, "shield.lefthalf.filled"), ("UAV 25s", 250, "dot.radiowaves.left.and.right"), ("LOADOUT DROP", 400, "shippingbox.fill"), ("GRENADE PACK", 150, "flame.fill"), ("MED KIT", 100, "cross.case.fill")]
+        return ZStack {
+            Color.black.opacity(0.55).ignoresSafeArea().onTapGesture { e.showBuy = false }
+            VStack(spacing: 8) {
+                HStack {
+                    Text("BUY STATION").font(.jk(16, .heavy)).foregroundColor(Color(red: 0.2, green: 0.9, blue: 1))
+                    Spacer()
+                    Text("$\(e.cash)").font(.jk(16, .heavy)).foregroundColor(Color(red: 0.4, green: 0.95, blue: 0.5))
+                    Button { e.showBuy = false } label: {
+                        Image(systemName: "xmark").font(.system(size: 12, weight: .bold)).foregroundColor(.white).frame(width: 28, height: 28).background(Color.white.opacity(0.15)).clipShape(Circle())
+                    }
+                }
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                    ForEach(Array(items.enumerated()), id: \.offset) { i, it in
+                        Button { e.buy(i) } label: {
+                            HStack {
+                                Image(systemName: it.2).font(.system(size: 14, weight: .bold)).frame(width: 22)
+                                Text(it.0).font(.jk(11, .heavy))
+                                Spacer(minLength: 2)
+                                Text("$\(it.1)").font(.jk(12, .heavy)).foregroundColor(e.cash >= it.1 ? Color(red: 0.4, green: 0.95, blue: 0.5) : .red)
+                            }
+                            .foregroundColor(.white).padding(.horizontal, 10).frame(height: 38)
+                            .background(Color.white.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 6))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(14).frame(width: 440).background(Color(red: 0.07, green: 0.09, blue: 0.12).opacity(0.95)).clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(red: 0.2, green: 0.9, blue: 1).opacity(0.6), lineWidth: 1.5))
         }
     }
 
@@ -202,7 +318,7 @@ struct BattleRoyalePlay: View {
             stat("person.3.fill", "\(squads)")
             stat("person.fill", "\(e.aliveCount)")
             stat("xmark.circle.fill", "\(e.kills)")
-            Text("\(Int(e.fps)) FPS").font(.jk(10, .heavy)).foregroundColor(.white.opacity(0.7))
+            if e.showFPS { Text("\(Int(e.fps)) FPS").font(.jk(10, .heavy)).foregroundColor(.white.opacity(0.7)) }
         }
         .padding(.horizontal, 10).frame(width: 236, height: 28, alignment: .leading)
         .background(Color.black.opacity(0.4)).clipShape(RoundedRectangle(cornerRadius: 6))
@@ -306,7 +422,7 @@ struct BattleRoyalePlay: View {
                 if let s = s {
                     Image(uiImage: GunSprites.icon(s.gun)).resizable().scaledToFit().frame(width: 50, height: 26)
                     VStack(alignment: .leading, spacing: 0) {
-                        Text(BRGuns.def(s.gun).name).font(.jk(7, .heavy)).foregroundColor(.white.opacity(0.85))
+                        Text(BRGuns.def(s.gun).name + (s.scope ? " O" : "") + (s.ext ? " E" : "") + (s.sup ? " S" : "")).font(.jk(7, .heavy)).foregroundColor(s.rar > 0 ? BRMeta.rarColor(s.rar) : .white.opacity(0.85))
                         Text("\(s.mag)/\(s.reserve)").font(.jk(11, .heavy)).foregroundColor(.white)
                     }
                 } else {
@@ -316,7 +432,7 @@ struct BattleRoyalePlay: View {
             .padding(.horizontal, 5)
             .frame(width: 124, height: 38)
             .background(on ? lime.opacity(0.3) : Color.black.opacity(0.55))
-            .overlay(RoundedRectangle(cornerRadius: 4).stroke(on ? lime : Color.white.opacity(0.2), lineWidth: 1.5))
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke((s?.rar ?? 0) > 0 ? BRMeta.rarColor(s?.rar ?? 0) : (on ? lime : Color.white.opacity(0.2)), lineWidth: 1.5))
             .clipShape(RoundedRectangle(cornerRadius: 4))
         }
         .buttonStyle(.plain)
@@ -326,22 +442,26 @@ struct BattleRoyalePlay: View {
 
     private var pauseView: some View {
         ZStack {
-            Color.black.opacity(0.7).ignoresSafeArea()
-            VStack(spacing: 14) {
-                Text("PAUSED").font(.jk(30, .heavy))
-                Button { engine.paused = false; engine.last = nil } label: {
-                    Text("Resume").font(.jk(18, .bold)).foregroundColor(.black).frame(width: 220, height: 50).background(Color.white).clipShape(Capsule())
+            Color.black.opacity(0.75).ignoresSafeArea()
+            HStack(spacing: 34) {
+                VStack(spacing: 14) {
+                    Text("PAUSED").font(.jk(30, .heavy))
+                    Button { engine.paused = false; engine.last = nil } label: {
+                        Text("Resume").font(.jk(18, .bold)).foregroundColor(.black).frame(width: 220, height: 50).background(Color.white).clipShape(Capsule())
+                    }
+                    Button {
+                        engine.me.hp = 0
+                        engine.me.place = engine.aliveCount
+                        engine.me.alive = false
+                        engine.gulagOn = false
+                        engine.won = false
+                        engine.over = true
+                        engine.paused = false
+                    } label: {
+                        Text("Leave match").font(.jk(16, .bold)).foregroundColor(.red).frame(width: 220, height: 46).background(Color.red.opacity(0.15)).clipShape(Capsule())
+                    }
                 }
-                Button {
-                    engine.me.hp = 0
-                    engine.me.place = engine.aliveCount
-                    engine.me.alive = false
-                    engine.over = true
-                    engine.won = false
-                    engine.paused = false
-                } label: {
-                    Text("Leave match").font(.jk(16, .bold)).foregroundColor(.red).frame(width: 220, height: 46).background(Color.red.opacity(0.15)).clipShape(Capsule())
-                }
+                BRSettingsPanel(onChange: { engine.reloadSettings() }).foregroundColor(.white).frame(width: 250)
             }
         }
     }
@@ -349,13 +469,22 @@ struct BattleRoyalePlay: View {
     private var overView: some View {
         let e = engine
         let place = e.me.place == 0 ? 30 : e.me.place
-        let gems = (e.won ? 80 : 0) + max(0, 30 - place) * 2 + e.kills * 5
+        let gems = (e.won ? 80 : 0) + max(0, 30 - place) * 2 + e.kills * 5 + e.contractGems
         return ZStack {
             Color.black.opacity(0.82).ignoresSafeArea()
             VStack(spacing: 12) {
                 Text(e.won ? "WINNER WINNER" : "ELIMINATED").font(.jk(38, .heavy)).foregroundColor(e.won ? lime : .red)
                 Text("PLACED #\(place) OF 30").font(.jk(24, .heavy))
-                Text("\(e.kills) kills   \(gems) gems").font(.jk(16, .semibold))
+                Text("\(e.kills) kills   \(e.heads) headshots   \(gems) gems").font(.jk(16, .semibold))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("DAILY CONTRACTS").font(.jk(10, .heavy)).foregroundColor(.white.opacity(0.6))
+                    ForEach(Array(e.contractLines.enumerated()), id: \.offset) { _, l in
+                        HStack(spacing: 6) {
+                            Image(systemName: l.1 ? "checkmark.circle.fill" : "circle").foregroundColor(l.1 ? lime : .white.opacity(0.5)).font(.system(size: 12))
+                            Text(l.0).font(.jk(11, .semibold)).foregroundColor(.white)
+                        }
+                    }
+                }
                 Button {
                     guard !collected else { return }
                     collected = true
