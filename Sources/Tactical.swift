@@ -95,7 +95,7 @@ enum TNav {
         let fl = TMap.floorOf(p)
         if p.x - TMap.origin(fl) > TMap.W - 20 || p.y > TMap.H - 20 { return true }
         for k in floorSolids[fl] where TMap.baseSolid[k].insetBy(dx: -18, dy: -18).contains(p) { return true }
-        return false
+        return TMap.stairBlocked(p)
     }
 
     static var blocked: [Bool] = {
@@ -265,6 +265,9 @@ final class TPlayer {
     var noiseT: CGFloat = 0
     var faction = 0
     var home = CGPoint.zero
+    var ambush = -1
+    var ambushPos = CGPoint.zero
+    var ambushAim: CGFloat = 0
     var respawn: CGFloat = 0
     var money = 800
     var armorKind = 0
@@ -290,6 +293,7 @@ final class TacticalEngine {
         var team: Int
         var inK = -1
         var pens = 0
+        var tf = -1
     }
     struct Nade {
         var pos: CGPoint
@@ -639,6 +643,7 @@ final class TacticalEngine {
             banner = TWeapons.modeNames[gameMode]
             tags = []
             if gameMode == 6 { raidStart() } else { for p in players { respawnPlayer(p) } }
+            assignAmbush()
         } else {
             timer = 6
             buyT = 16
@@ -739,7 +744,7 @@ final class TacticalEngine {
                 e.pingCd = max(0, e.pingCd - 0.1)
                 guard e.alive else { continue }
                 for a in players where a.team == me.team && a.alive {
-                    if tDist(a.pos, e.pos) < 900 && see(a.pos, e.pos) { e.spotted = true; e.seenEver = true; break }
+                    if TMap.pdist(a.pos, e.pos) < 900 && see(a.pos, e.pos) { e.spotted = true; e.seenEver = true; break }
                 }
                 if e.spotted && !was && e.pingCd <= 0 {
                     e.pingCd = 4
@@ -1056,12 +1061,12 @@ final class TacticalEngine {
             let fx = cos(p.aim), fy = sin(p.aim)
             mv = CGVector(dx: fx * (-move.dy) - fy * move.dx, dy: fy * (-move.dy) + fx * move.dx)
             if let e = tgt {
-                let want = atan2(e.pos.y - p.pos.y, e.pos.x - p.pos.x)
+                let want = TMap.pang(p.pos, e.pos)
                 aligned = abs(angWrap(want - p.aim)) < 0.09
             }
         } else if let a = aimIn { p.aim = a }
         else if let e = tgt {
-            let want = atan2(e.pos.y - p.pos.y, e.pos.x - p.pos.x)
+            let want = TMap.pang(p.pos, e.pos)
             p.aim = turnToward(p.aim, want, 13 * dt)
             aligned = abs(angWrap(want - p.aim)) < 0.09
         } else if hypot(mv.dx, mv.dy) > 0.2 {
@@ -1108,7 +1113,7 @@ final class TacticalEngine {
         var best: TPlayer? = nil
         var bd: CGFloat = .greatestFiniteMagnitude
         for e in players where e.alive && e.team != p.team {
-            let d = tDist(p.pos, e.pos)
+            let d = TMap.pdist(p.pos, e.pos)
             if d < range && d < bd && see(p.pos, e.pos) { bd = d; best = e }
         }
         return best
@@ -1190,11 +1195,12 @@ final class TacticalEngine {
         if p.blind > 0 { sprd += p.isPlayer ? 0.05 : 0.35 }
         p.noiseT = am.silenced ? 0.45 : 1.5
         if p.isPlayer { noiseR = am.silenced ? 230 : 720 }
+        let tfl = shootTargetFloor(p)
         for _ in 0..<g.pellets {
             let a = p.aim + CGFloat.random(in: -sprd...sprd)
             bullets.append(Bullet(pos: CGPoint(x: p.pos.x + cos(a) * muzzle, y: p.pos.y + sin(a) * muzzle),
                                   vel: CGVector(dx: cos(a) * spd, dy: sin(a) * spd), dmg: g.dmg * (p.isPlayer ? am.dmgMul * gm.dmg : [0.85, 1, 1][diff]),
-                                  life: g.range * am.rangeMul / spd + 0.15, owner: p.id, team: p.team))
+                                  life: g.range * am.rangeMul / spd + 0.15, owner: p.id, team: p.team, tf: tfl))
         }
         p.mag -= 1
         p.fireCd = (1 / g.rate) * (p.isPlayer ? 1 : 1.15)
@@ -1252,7 +1258,7 @@ final class TacticalEngine {
                     if k.ladder < TWeapons.ladder.count { setGun(k, TWeapons.ladder[k.ladder]) }
                 }
             }
-            let kn = killer?.name ?? (owner == -1 ? "The Storm" : (owner == -2 ? "Bleeding" : (owner == -3 ? "Toxic Gas" : "?")))
+            let kn = killer?.name ?? (owner == -1 ? "The Storm" : (owner == -2 ? "Bleeding" : (owner == -3 ? "Toxic Gas" : (owner == -4 ? "Fall" : "?"))))
             feed.append(Feed(text: "\(kn)  >  \(victim.name)", life: 5, mine: killer?.isPlayer == true || victim.isPlayer, k: kn, v: victim.name, kTeam: killer?.team ?? 0, gun: knifeKill ? "knife" : (killer?.gun ?? "pistol"), head: knifeKill ? false : amt >= 45))
             if feed.count > 4 { feed.removeFirst() }
             pop(victim.pos, "X", .red)
@@ -1296,6 +1302,11 @@ final class TacticalEngine {
                     dead = true
                     break
                 }
+            }
+            if !dead && b.tf >= 0, let sh = TMap.hopShift(b.pos, to: b.tf) {
+                b.pos.x += sh
+                b.tf = -1
+                b.inK = -1
             }
             if !dead { keep.append(b) }
         }
@@ -1356,10 +1367,22 @@ final class TacticalEngine {
                 p.path = []
                 p.pathT = 0
                 p.targetID = -1
-                if p.isPlayer { pop(p.pos, up ? "UPSTAIRS" : "DOWNSTAIRS", .white) }
             }
         } else {
             p.onStair = false
+            if let h = TMap.holeAt(p.pos) {
+                // the staircase is gone: you drop to the floor below
+                let r = TMap.stairRect(h, floor: TMap.stairLo[h])
+                var np = CGPoint(x: r.midX, y: r.maxY + 34)
+                np = TNav.center(TNav.nearestFree(TNav.idx(np)))
+                p.pos = np
+                p.path = []
+                p.pathT = 0
+                p.targetID = -1
+                p.onStair = true
+                if p.isPlayer { pop(p.pos, "FELL", .red) }
+                damage(p, 22, by: -4)
+            }
         }
     }
 
@@ -1370,7 +1393,7 @@ final class TacticalEngine {
         let lo = min(pf, nf)
         var best = dest
         var bd = CGFloat.greatestFiniteMagnitude
-        for i in TMap.stairs.indices where TMap.stairLo[i] == lo {
+        for i in TMap.stairs.indices where TMap.stairLo[i] == lo && TMap.stairIntact(i) {
             let here = TMap.stairRect(i, floor: pf)
             let there = TMap.stairRect(i, floor: nf)
             let tail = nf == df ? tDist(CGPoint(x: there.midX, y: there.midY), dest) : CGFloat(abs(df - nf)) * 900
@@ -1483,7 +1506,7 @@ final class TacticalEngine {
             var best: TPlayer? = nil
             var bd = CGFloat.greatestFiniteMagnitude
             for e in players where e.team != p.team && e.alive {
-                let d = tDist(p.pos, e.pos)
+                let d = TMap.pdist(p.pos, e.pos)
                 if d < raidSight(p) && d < bd && see(p.pos, e.pos) { best = e; bd = d }
             }
             if let b = best {
@@ -1495,11 +1518,12 @@ final class TacticalEngine {
             }
         }
         var speed: CGFloat = 150
-        var dest = objective(p)
+        if p.ambush >= 0 && !TMap.stairIntact(p.ambush) { p.ambush = -1; p.crouch = false }
+        var dest = p.ambush >= 0 ? p.ambushPos : objective(p)
         let atk = gameMode != 0 || p.team == atkTeam
         if p.targetID >= 0, let e = players.first(where: { $0.id == p.targetID }), e.alive {
-            let d = tDist(p.pos, e.pos)
-            let ang = atan2(e.pos.y - p.pos.y, e.pos.x - p.pos.x)
+            let d = TMap.pdist(p.pos, e.pos)
+            let ang = TMap.pang(p.pos, e.pos)
             let df = tAngDiff(ang, p.aim)
             let mt = turn[diff] * dt
             p.aim += max(-mt, min(mt, df))
@@ -1507,9 +1531,10 @@ final class TacticalEngine {
             if p.reactT <= 0 && abs(df) < 0.14 && p.fireCd <= 0 && p.reloadT <= 0 && p.mag > 0 {
                 if d < 46 && Int.random(in: 0..<100) < 70 { slash(p) } else { shoot(p, aimErr[diff]) }
             }
-            if p.nades > 0 && d > 220 && Double.random(in: 0...1) < Double(dt) * 0.12 {
+            if p.nades > 0 && d > 220 && TMap.floorOf(e.pos) == TMap.floorOf(p.pos) && Double.random(in: 0...1) < Double(dt) * 0.12 {
                 throwNade(p, ang, min(d / 1.4, 470))
             }
+            if p.ambush >= 0 && tDist(p.pos, p.ambushPos) < 60 { p.crouch = true; return }
             let pc = TWeapons.cls(p.gun)
             let pref: CGFloat = pc == "shotgun" ? 200 : (pc == "smg" ? 320 : (pc == "rifle" ? 460 : (pc == "sniper" ? 700 : 380)))
             p.strafeT -= dt
@@ -1570,7 +1595,14 @@ final class TacticalEngine {
         dest = routed(p, dest)
         let atDest = tDist(p.pos, dest) < 26
         if atDest {
-            if p.targetID < 0 { p.aim += sin(time * 1.3 + CGFloat(p.id)) * dt * 0.8 }
+            if p.targetID < 0 {
+                if p.ambush >= 0 {
+                    p.crouch = true
+                    p.aim += max(-3 * dt, min(3 * dt, tAngDiff(p.ambushAim, p.aim)))
+                } else {
+                    p.aim += sin(time * 1.3 + CGFloat(p.id)) * dt * 0.8
+                }
+            }
             return
         }
         p.pathT -= dt

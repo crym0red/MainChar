@@ -118,7 +118,7 @@ struct LobbyView: View {
         Button(action: act) {
             HStack(spacing: 8) {
                 SF(icon, "circle.fill").font(.system(size: 13, weight: .bold)).foregroundColor(col).frame(width: 22)
-                Text(label).font(.jk(13, .heavy)).foregroundColor(col).lineLimit(1)
+                Text(label).font(.jk(13, .heavy)).foregroundColor(col).lineLimit(1).fixedSize()
                 if dot { Text("!").font(.jk(8, .heavy)).foregroundColor(.white).frame(width: 12, height: 12).background(Rectangle().fill(Color.red)).offset(y: -5) }
                 Spacer(minLength: 0)
             }
@@ -203,27 +203,22 @@ struct LobbyView: View {
                     .padding(.horizontal, 6).frame(width: 200, height: 24).background(CS.panel.opacity(0.75)).overlay(Rectangle().stroke(CS.gold.opacity(0.7), lineWidth: 1))
                 }
                 .buttonStyle(TuiPress())
-                HStack(alignment: .top, spacing: 10) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        menuRow("cart.fill", "SHOP", col: CS.orange) { seasonTab = 2; showSeason = true }
-                        menuRow("scope", "MISSIONS") { seasonTab = 0; showSeason = true }
-                        menuRow("person.3.fill", "FRIENDS") { showAdmin = true }
-                        menuRow("shield.lefthalf.filled", "MY CLAN", dot: true) { showRanks = true }
-                        menuRow("trophy.fill", "LEADERBOARD", dot: true) { showRanks = true }
-                    }
-                    .frame(width: 142, alignment: .leading)
-                    VStack(alignment: .leading, spacing: 1) {
-                        menuRow("wrench.and.screwdriver.fill", "GUNSMITH", col: CS.gold) { gsBack = 0; screen = 7 }
-                        menuRow("cart.badge.plus", "MARKET", col: CS.gold) { screen = 10 }
-                        menuRow("doc.text.fill", "OPERATIONS") { opsBack = 0; screen = 9 }
-                        menuRow("bag.fill", "STASH") { screen = 8 }
-                    }
-                    .frame(width: 118, alignment: .leading)
+                VStack(alignment: .leading, spacing: 0) {
+                    menuRow("cart.fill", "SHOP", col: CS.orange) { seasonTab = 2; showSeason = true }
+                    menuRow("scope", "MISSIONS") { seasonTab = 0; showSeason = true }
+                    menuRow("wrench.and.screwdriver.fill", "GUNSMITH", col: CS.gold) { gsBack = 0; screen = 7 }
+                    menuRow("cart.badge.plus", "MARKET", col: CS.gold) { screen = 10 }
+                    menuRow("doc.text.fill", "OPERATIONS") { opsBack = 0; screen = 9 }
+                    menuRow("bag.fill", "STASH") { screen = 8 }
+                    menuRow("person.3.fill", "FRIENDS") { showAdmin = true }
+                    menuRow("shield.lefthalf.filled", "MY CLAN", dot: true) { showRanks = true }
+                    menuRow("trophy.fill", "LEADERBOARD", dot: true) { showRanks = true }
                 }
-                .padding(.top, 4)
+                .frame(width: 200, alignment: .leading)
+                .padding(.top, 2)
             }
-            .frame(width: 280, height: 240, alignment: .topLeading)
-            .position(x: 16 + 140, y: 58 + 120)
+            .frame(width: 220, height: 268, alignment: .topLeading)
+            .position(x: 16 + 110, y: 58 + 134)
             // right column
             VStack(spacing: 6) {
                 Button { nav.tacMode = 6; screen = 1 } label: {

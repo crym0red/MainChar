@@ -200,6 +200,7 @@ enum TMap {
         doorWant = [Bool](repeating: false, count: d.layout.doors.count)
         doorHold = [CGFloat](repeating: 0, count: d.layout.doors.count)
         resetTick += 1
+        stairsReset()
         TNav.reload()
     }
     private static var needsApply = false
@@ -236,6 +237,7 @@ enum TMap {
     }
 
     static func blast(_ c: CGPoint, radius: CGFloat, dmg: CGFloat) {
+        stairDamage(near: c, radius: radius, dmg: dmg)
         let fl = floorOf(c)
         for k in 0..<baseSolid.count where hp[k] > 0 {
             let r = baseSolid[k]
@@ -252,7 +254,9 @@ enum TMap {
         broken = []
         brokenAll = []
         breaches = []
-        if any { TNav.rebuild(); resetTick += 1 }
+        let stairsWere = !stairBrokenAll.isEmpty
+        if stairsWere { stairsReset() }
+        if any || stairsWere { TNav.rebuild(); resetTick += 1 }
         refreshDoors()
     }
 
@@ -269,6 +273,7 @@ enum TMap {
     static func stairAt(_ p: CGPoint) -> (Int, Int)? {
         let st = stairs, lo = stairLo
         for i in st.indices {
+            if !stairIntact(i) { continue }
             if stairRect(i, floor: lo[i]).contains(p) { return (i, lo[i]) }
             if stairRect(i, floor: lo[i] + 1).contains(p) { return (i, lo[i] + 1) }
         }
@@ -278,7 +283,7 @@ enum TMap {
     // MARK: queries
 
     static func los(_ a: CGPoint, _ b: CGPoint) -> Bool {
-        if floorOf(a) != floorOf(b) { return false }
+        if floorOf(a) != floorOf(b) { return crossLink(a, b) }
         for k in floorIdx[floorOf(a)] where solidMat[k] != .glass && tSegT(a, b, solid[k]) != nil { return false }
         return true
     }
@@ -306,6 +311,7 @@ enum TMap {
                 else { p.y -= r }
             }
         }
+        pushRubble(&p, r)
     }
 
     static func inSolid(_ p: CGPoint) -> Bool { solid.contains { $0.contains(p) } }

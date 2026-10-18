@@ -42,6 +42,12 @@ final class TacScene {
     var debrisMats: [MXMaterial] = []
     var lastResetTick = 0
     var focusFloor = 0
+    var stackAnim: Float = 0
+    var stackPrev = -1
+    var stackT: Double = 0
+    let stackH: Float = 82
+    var stairNodes: [Int: [MXNode]] = [:]
+    var rubbleNodes: [Int: MXNode] = [:]
     var camFloor = 0
     var fpMode = false
     var fpFwd = CGPoint(x: 1, y: 0)
@@ -591,7 +597,15 @@ final class TacScene {
             debrisFloor.append(0)
         }
         // stairs
+        stairNodes = [:]
+        rubbleNodes = [:]
         for i in TMap.stairs.indices {
+            var stepNodes: [MXNode] = []
+            let lr = TMap.stairRect(i, floor: TMap.stairLo[i])
+            let rub = solid(lr.insetBy(dx: 3, dy: 3), h: 26, color: UIColor(red: 0.32, green: 0.29, blue: 0.26, alpha: 1), top: UIColor(red: 0.4, green: 0.37, blue: 0.33, alpha: 1))
+            rub.isHidden = true
+            fr(lr.midX).addChildNode(rub)
+            rubbleNodes[i] = rub
             for fl in TMap.stairLo[i]...(TMap.stairLo[i] + 1) {
                 let r = TMap.stairRect(i, floor: fl)
                 if fl == TMap.stairLo[i] {
@@ -603,6 +617,7 @@ final class TacScene {
                         let n = solid(sr, h: 3 + CGFloat(k) * 4.5, color: c, top: c)
                         n.castsShadow = false
                         fr(r.midX).addChildNode(n)
+                        stepNodes.append(n)
                     }
                 } else {
                     let hole = solid(r, h: 1.2, y0: 0.4, color: UIColor(red: 0.04, green: 0.05, blue: 0.08, alpha: 1), top: UIColor(red: 0.04, green: 0.05, blue: 0.08, alpha: 1))
@@ -616,7 +631,9 @@ final class TacScene {
                 l.castsShadow = false; rr.castsShadow = false
                 fr(r.midX).addChildNode(l)
                 fr(r.midX).addChildNode(rr)
+                stepNodes.append(l); stepNodes.append(rr)
             }
+            stairNodes[i] = stepNodes
         }
         // props
         let prG = [MXNode(), MXNode(), MXNode()]
@@ -997,6 +1014,16 @@ final class TacScene {
             lastResetTick = TMap.resetTick
             for k in brokenSet { if let v = breakNodes[k] { v.1.addChildNode(v.0) } }
             brokenSet = []
+            for (_, v) in stairNodes { for n in v { n.isHidden = false } }
+            for (_, v) in rubbleNodes { v.isHidden = true }
+        }
+        if !TMap.stairBroken.isEmpty {
+            let sl = TMap.stairBroken
+            TMap.stairBroken = []
+            for i in sl {
+                for n in stairNodes[i] ?? [] { n.isHidden = true }
+                rubbleNodes[i]?.isHidden = false
+            }
         }
         if !TMap.broken.isEmpty {
             let list = TMap.broken
@@ -1111,8 +1138,22 @@ final class TacScene {
         let rsv = e.beginReplayView()
         defer { e.endReplayView(rsv) }
         let focus: TPlayer = e.replayOn ? (e.players.first { $0.id == e.replayKiller } ?? e.me) : e.me.alive ? e.me : (e.gameMode != 6 ? e.players.first { $0.id == e.lastKiller && $0.alive && !$0.isPlayer } : nil) ?? (e.players.first { $0.team == e.me.team && $0.alive } ?? e.me)
-        focusFloor = TMap.floorOf(focus.pos)
-        for i in 0..<3 { floorRoot[i].isHidden = focusFloor != i }
+        // floors are stacked vertically, so taking stairs glides the world up/down instead of cutting to another floor
+        let nf = TMap.floorOf(focus.pos)
+        if stackPrev >= 0 && nf != stackPrev && !e.replayOn { stackAnim = Float(nf - stackPrev) * stackH }
+        if e.replayOn { stackAnim = 0 }
+        stackPrev = nf
+        let nowT = CACurrentMediaTime()
+        let sdt = Float(max(0.001, min(0.1, nowT - stackT)))
+        stackT = nowT
+        stackAnim -= stackAnim * min(1, sdt * 7)
+        if abs(stackAnim) < 0.5 { stackAnim = 0 }
+        focusFloor = nf
+        for i in 0..<3 {
+            let dy = Float(i - nf) * stackH + stackAnim
+            floorRoot[i].position = MXVector3(-Float(TMap.origin(i)), dy, 0)
+            floorRoot[i].isHidden = i != nf && (stackAnim == 0 || abs(i - nf) != 1)
+        }
         applyDestruction(Float(max(0.001, min(0.05, CACurrentMediaTime() - lastDestroyT))))
         lastDestroyT = CACurrentMediaTime()
         for (i, l) in e.loot.enumerated() where i < lootNodes.count { lootNodes[i].isHidden = l.taken }
