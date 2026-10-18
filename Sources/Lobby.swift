@@ -180,7 +180,7 @@ struct LobbyView: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 6).frame(width: w, height: 46).background(Color.black.opacity(0.7))
-            Button { if nav.lobbyMode == 1 { nav.brMap = (nav.brMap + 1) % TowerMaps.all.count } else { diff = (diff + 1) % 3 } } label: {
+            Button { nav.lobbyMode = 0; diff = (diff + 1) % 3 } label: {
                 HStack {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(nav.lobbyMode == 1 ? "BATTLE ROYALE" : "5V5 BOMB DEFUSAL").font(.jk(16, .heavy)).foregroundColor(.white)
@@ -193,7 +193,7 @@ struct LobbyView: View {
             }
             .buttonStyle(.plain)
             HStack(spacing: 0) {
-                ForEach(Array(["5V5 TOP-DOWN", "BR"].enumerated()), id: \.offset) { i, n in
+                ForEach(Array(["5V5 TOP-DOWN"].enumerated()), id: \.offset) { i, n in
                     let on = nav.lobbyMode == i
                     Button {
                         nav.lobbyMode = i
@@ -204,16 +204,14 @@ struct LobbyView: View {
                     }
                     .buttonStyle(.plain)
                 }
-                if nav.lobbyMode == 1 {
-                    Button { showLocker = true } label: {
-                        Image(systemName: "lock.open.fill").font(.system(size: 13, weight: .bold)).foregroundColor(.white)
-                            .frame(width: 44, height: 32).background(Color.black.opacity(0.7))
-                    }
-                    .buttonStyle(.plain)
+                Button { showLocker = true } label: {
+                    Image(systemName: "lock.open.fill").font(.system(size: 13, weight: .bold)).foregroundColor(.white)
+                        .frame(width: 44, height: 32).background(Color.black.opacity(0.7))
                 }
+                .buttonStyle(.plain)
             }
             .frame(width: w)
-            Button { if nav.lobbyMode == 1 { nav.brPlay = true } else { nav.tacPlay = diff } } label: {
+            Button { nav.lobbyMode = 0; nav.tacPlay = diff } label: {
                 VStack(spacing: 0) {
                     HStack {
                         Image(systemName: "play.fill").font(.system(size: 12)).foregroundColor(.black.opacity(0.7))

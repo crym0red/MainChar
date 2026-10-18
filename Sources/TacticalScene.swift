@@ -66,15 +66,48 @@ final class TacScene {
     let bombNode = SCNNode()
 
     private var texCache: [String: UIImage] = [:]
+    private let props = TwProps()
+    private var doorLeaves: [[SCNNode]] = []
+    private var doorHoriz: [Bool] = []
+    private var doorAngShown: [Float] = []
+    private var sunNode: SCNNode? = nil
+    private var lastT = CACurrentMediaTime()
+    private var fpsEMA: CGFloat = 60
+    private var lowT: CGFloat = 0
+    private var qual = 2
 
     // MARK: textures
 
     private func makeTex(_ key: String, _ draw: (CGContext, CGFloat) -> Void) -> UIImage {
         if let t = texCache[key] { return t }
         let s: CGFloat = 128
-        let img = UIGraphicsImageRenderer(size: CGSize(width: s, height: s)).image { c in draw(c.cgContext, s) }
+        let fmt = UIGraphicsImageRendererFormat()
+        fmt.scale = 2
+        fmt.opaque = false
+        let img = UIGraphicsImageRenderer(size: CGSize(width: s, height: s), format: fmt).image { c in
+            draw(c.cgContext, s)
+            grimeOverlay(c.cgContext, s, key)
+        }
         texCache[key] = img
         return img
+    }
+
+    private func grimeOverlay(_ g: CGContext, _ s: CGFloat, _ key: String) {
+        var r = LCG(s: UInt64(abs(key.hashValue) % 100000) + 17)
+        for _ in 0..<9 {
+            let w = 18 + r.next() * 60, h = 12 + r.next() * 44
+            g.setFillColor(UIColor.black.withAlphaComponent(0.03 + r.next() * 0.05).cgColor)
+            g.fillEllipse(in: CGRect(x: r.next() * s - w / 2, y: r.next() * s - h / 2, width: w, height: h))
+        }
+        for _ in 0..<260 {
+            g.setFillColor(UIColor.black.withAlphaComponent(0.08 + r.next() * 0.14).cgColor)
+            let d = 0.5 + r.next() * 0.9
+            g.fill(CGRect(x: r.next() * s, y: r.next() * s, width: d, height: d))
+        }
+        for _ in 0..<90 {
+            g.setFillColor(UIColor.white.withAlphaComponent(0.05 + r.next() * 0.09).cgColor)
+            g.fill(CGRect(x: r.next() * s, y: r.next() * s, width: 0.6, height: 0.6))
+        }
     }
 
     private func woodTex(_ base: (CGFloat, CGFloat, CGFloat), _ key: String) -> UIImage {
@@ -194,12 +227,17 @@ final class TacScene {
             m.diffuse.wrapS = .repeat
             m.diffuse.wrapT = .repeat
             m.diffuse.contentsTransform = SCNMatrix4MakeScale(Float(sx), Float(sy), 1)
+            m.normal.contents = i
+            m.normal.intensity = 0.7
+            m.normal.wrapS = .repeat
+            m.normal.wrapT = .repeat
+            m.normal.contentsTransform = SCNMatrix4MakeScale(Float(sx), Float(sy), 1)
         } else {
             m.diffuse.contents = color
         }
         m.lightingModel = .blinn
-        m.specular.contents = UIColor(white: 0.12, alpha: 1)
-        m.shininess = 0.15
+        m.specular.contents = UIColor(white: img == nil ? 0.15 : 0.22, alpha: 1)
+        m.shininess = 0.3
         if let e = emission { m.emission.contents = e }
         return m
     }
@@ -232,25 +270,26 @@ final class TacScene {
         let amb = SCNNode()
         amb.light = SCNLight()
         amb.light?.type = .ambient
-        amb.light?.intensity = 330
+        amb.light?.intensity = 250
         amb.light?.color = UIColor(red: 0.55, green: 0.62, blue: 0.82, alpha: 1)
         root.addChildNode(amb)
 
         let sun = SCNNode()
         let sl = SCNLight()
         sl.type = .directional
-        sl.intensity = 820
-        sl.color = UIColor(red: 1, green: 0.94, blue: 0.84, alpha: 1)
+        sl.intensity = 720
+        sl.color = UIColor(red: 0.95, green: 0.96, blue: 1, alpha: 1)
         sl.castsShadow = true
         sl.shadowMode = .deferred
         sl.shadowRadius = 5
         sl.shadowSampleCount = 8
-        sl.shadowColor = UIColor(white: 0, alpha: 0.6)
+        sl.shadowColor = UIColor(white: 0, alpha: 0.72)
         sl.maximumShadowDistance = 1200
         sun.light = sl
         sun.position = SCNVector3(-300, 650, -300)
         root.addChildNode(sun)
         sun.look(at: SCNVector3(0, 0, 0))
+        sunNode = sun
 
         let lamps: [(CGFloat, CGFloat, UIColor)] = [
             (850, 900, UIColor(red: 1, green: 0.82, blue: 0.55, alpha: 1)),
@@ -279,6 +318,16 @@ final class TacScene {
         cam.fieldOfView = 52
         cam.zNear = 10
         cam.zFar = 3000
+        cam.wantsHDR = true
+        cam.bloomIntensity = 0.7
+        cam.bloomThreshold = 0.75
+        cam.bloomBlurRadius = 6
+        cam.vignettingIntensity = 0.7
+        cam.vignettingPower = 1.2
+        cam.screenSpaceAmbientOcclusionIntensity = 0.9
+        cam.screenSpaceAmbientOcclusionRadius = 10
+        cam.saturation = 1.12
+        cam.contrast = 0.15
         camNode.camera = cam
         root.addChildNode(camNode)
 
@@ -340,22 +389,27 @@ final class TacScene {
         // doors
         let doorTop = UIColor(red: 0.62, green: 0.5, blue: 0.32, alpha: 1)
         let frame = UIColor(red: 0.3, green: 0.2, blue: 0.1, alpha: 1)
+        _ = doorTop
         for d in TMap.doors {
-            let n = solid(d, h: 2.4, color: doorTop, top: doorTop)
-            n.castsShadow = false
-            fr(d.midX).addChildNode(n)
+            let leaves = props.door(d)
+            for lf in leaves { fr(d.midX).addChildNode(lf) }
+            doorLeaves.append(leaves)
+            doorHoriz.append(d.width > d.height)
+            doorAngShown.append(-9)
             let horiz = d.width > d.height
             let p1 = horiz ? CGRect(x: d.minX - 3, y: d.midY - 6, width: 8, height: 12) : CGRect(x: d.midX - 6, y: d.minY - 3, width: 12, height: 8)
             let p2 = horiz ? CGRect(x: d.maxX - 5, y: d.midY - 6, width: 8, height: 12) : CGRect(x: d.midX - 6, y: d.maxY - 5, width: 12, height: 8)
             fr(d.midX).addChildNode(solid(p1, h: TMap.wallH, color: frame, top: frame, chamfer: 1.5))
             fr(d.midX).addChildNode(solid(p2, h: TMap.wallH, color: frame, top: frame, chamfer: 1.5))
+            let lin = horiz ? CGRect(x: d.minX, y: d.midY - 6, width: d.width, height: 12) : CGRect(x: d.midX - 6, y: d.minY, width: 12, height: d.height)
+            fr(d.midX).addChildNode(solid(lin, h: 10, y0: 71, color: frame, top: frame, chamfer: 1))
         }
         // walls
         let brick = brickTex()
         let concrete = noiseTex((0.58, 0.6, 0.64), "conc", dots: 900, grid: true)
         let wood = woodTex((0.5, 0.36, 0.22), "wallwood")
         let wallH = TMap.wallH
-        let cap = mat(nil, color: UIColor(red: 0.66, green: 0.69, blue: 0.74, alpha: 1))
+        let cap = mat(nil, color: UIColor(red: 0.05, green: 0.055, blue: 0.07, alpha: 1))
         for (k, o) in TMap.walls.enumerated() {
             let mt = TMap.wallMats[k]
             let front: SCNMaterial
@@ -410,7 +464,14 @@ final class TacScene {
             }
         }
         // props
-        for pr in TMap.props { fr(pr.r.midX).addChildNode(buildProp(pr)) }
+        let pr0 = SCNNode(), pr1 = SCNNode()
+        for pr in TMap.props { (pr.r.midX >= TMap.off ? pr1 : pr0).addChildNode(props.build(pr.k, pr.r)) }
+        floorRoot[0].addChildNode(pr0.flattenedClone())
+        floorRoot[1].addChildNode(pr1.flattenedClone())
+        let rooms0 = TMap.rooms.filter { $0.r.midX < TMap.off }.map { $0.r }
+        let rooms1 = TMap.rooms.filter { $0.r.midX >= TMap.off }.map { $0.r }
+        floorRoot[0].addChildNode(props.decals(in: rooms0, avoid: TMap.baseSolid, seed: 1).flattenedClone())
+        floorRoot[1].addChildNode(props.decals(in: rooms1, avoid: TMap.baseSolid, seed: 2).flattenedClone())
         // health packs
         for k in e.packs {
             let g = SCNNode()
@@ -636,6 +697,32 @@ final class TacScene {
         focusFloor = TMap.floorOf(focus.pos)
         floorRoot[0].isHidden = focusFloor != 0
         floorRoot[1].isHidden = focusFloor != 1
+        for i in doorLeaves.indices where i < TMap.doorOpen.count {
+            let ang = Float(TMap.doorOpen[i]) * 1.65
+            if abs(doorAngShown[i] - ang) > 0.004 {
+                doorAngShown[i] = ang
+                for (k, lf) in doorLeaves[i].enumerated() {
+                    let sg: Float = k == 0 ? 1 : -1
+                    lf.eulerAngles = SCNVector3(0, (doorHoriz[i] ? -ang : ang) * sg, 0)
+                }
+            }
+        }
+        let tnow = CACurrentMediaTime()
+        let fdt = CGFloat(min(0.1, max(0.001, tnow - lastT)))
+        lastT = tnow
+        fpsEMA = fpsEMA * 0.95 + (1 / fdt) * 0.05
+        if fpsEMA < 42 { lowT += fdt } else { lowT = max(0, lowT - fdt) }
+        if lowT > 2.5 && qual > 0 {
+            qual -= 1
+            lowT = 0
+            fpsEMA = 60
+            if qual <= 1 { camNode.camera?.screenSpaceAmbientOcclusionIntensity = 0 }
+            if qual <= 0 {
+                camNode.camera?.wantsHDR = false
+                camNode.camera?.bloomIntensity = 0
+                sunNode?.light?.shadowSampleCount = 2
+            }
+        }
         let fx = sx(focus.pos)
         if !started || camFloor != focusFloor { camX = fx; camZ = focus.pos.y; started = true; camFloor = focusFloor }
         camX += (fx - camX) * 0.2
@@ -659,15 +746,10 @@ final class TacScene {
             camNode.camera?.fieldOfView = 52
             let pr: [(CGFloat, CGFloat, CGFloat, CGFloat)] = [(300, 170, 60, 30), (400, 250, 70, 40), (520, 70, 70, 50), (640, 400, 90, 60)]
             let c = pr[max(0, min(3, preset))]
-            if lookOn {
-                let cp = cos(pitch), sp = sin(pitch)
-                camNode.position = SCNVector3(Float(camX + dist * sin(yaw) * cp + jx), Float(dist * sp), Float(camZ + dist * cos(yaw) * cp + jz))
-                camNode.look(at: SCNVector3(Float(camX), 20, Float(camZ)))
-            } else {
-                let lx = camX + cos(focus.aim) * c.2, lz = camZ + sin(focus.aim) * c.3
-                camNode.position = SCNVector3(Float(lx + jx), Float(c.0), Float(lz + c.1 + jz))
-                camNode.look(at: SCNVector3(Float(lx), 0, Float(lz)))
-            }
+            // always the same top-down pitch; yaw just spins the view around the player
+            let lx = camX + cos(focus.aim) * c.2, lz = camZ + sin(focus.aim) * c.3
+            camNode.position = SCNVector3(Float(lx + jx + c.1 * sin(yaw)), Float(c.0), Float(lz + jz + c.1 * cos(yaw)))
+            camNode.look(at: SCNVector3(Float(lx), 0, Float(lz)))
         }
 
         for (i, p) in e.players.enumerated() {
@@ -675,6 +757,7 @@ final class TacScene {
             let show = (p.team == e.me.team || p.spotted || (!p.alive && p.seenEver)) && TMap.floorOf(p.pos) == focusFloor
             rt.isHidden = !show || (fpMode && p.id == focus.id)
             if !show { continue }
+            rt.scale = SCNVector3(1, p.crouch ? 0.74 : 1, 1)
             rt.position = SCNVector3(Float(sx(p.pos)), 0, Float(p.pos.y))
             rt.eulerAngles = SCNVector3(0, Float(-p.aim), 0)
             heads[i].eulerAngles = SCNVector3(0, Float(p.aim), 0)
