@@ -460,6 +460,12 @@ final class TPlayer {
     var hideT: CGFloat = 0
     var cover: CGPoint? = nil
     var noiseT: CGFloat = 0
+    var respawn: CGFloat = 0
+    var ladder = 0
+    var roam = CGPoint.zero
+    var altGun = "pistol"
+    var altMag = 15
+    var altSpare = 99
 
     init(id: Int, team: Int, name: String, handle: String, emoji: String, isPlayer: Bool) {
         self.id = id; self.team = team; self.name = name; self.handle = handle; self.emoji = emoji; self.isPlayer = isPlayer
@@ -514,6 +520,11 @@ final class TacticalEngine {
         var text: String
         var life: CGFloat
         var mine: Bool
+        var k = ""
+        var v = ""
+        var kTeam = 0
+        var gun = "pistol"
+        var head = false
     }
 
     var players: [TPlayer] = []
@@ -562,6 +573,11 @@ final class TacticalEngine {
     var lookDelta: CGFloat = 0
     var hitT: CGFloat = 0
     var wantReload = false
+    var wantSwap = false
+    var gameMode = 0
+    var killTarget = 30
+    struct Tag { var pos: CGPoint; var team: Int; var life: CGFloat }
+    var tags: [Tag] = []
     var fast = false
     var paused = false
     var won = false
@@ -570,6 +586,7 @@ final class TacticalEngine {
     var spotT: CGFloat = 0
     var shake: CGFloat = 0
     var recoil: CGFloat = 0
+    var jumpT: CGFloat = 0
     var kick: CGFloat = 0
     var moving: Bool { hypot(move.dx, move.dy) > 0.1 }
     var myGun = "pistol"
@@ -579,8 +596,10 @@ final class TacticalEngine {
     private let turn: [CGFloat] = [5, 8, 12]
     private let aimErr: [CGFloat] = [0.13, 0.07, 0.035]
 
-    func setup(cast: [NPC], persona: Persona, gun: String, diff: Int) {
+    func setup(cast: [NPC], persona: Persona, gun: String, diff: Int, mode: Int = 0) {
         self.diff = diff
+        gameMode = mode
+        tags = []
         myGun = gun
         var names: [(String, String, String)] = []
         for n in cast.shuffled().prefix(9) { names.append((n.name, n.handle, n.emoji)) }
@@ -602,10 +621,11 @@ final class TacticalEngine {
 
     private func gunPick() -> String {
         let r = Int.random(in: 0..<100)
-        if r < 35 { return "rifle" }
-        if r < 65 { return "smg" }
-        if r < 80 { return "shotgun" }
-        return "pistol"
+        if r < 6 { return "awp" }
+        if r < 40 { return ["rifle", "ak", "m4"].randomElement()! }
+        if r < 68 { return ["smg", "mp7", "p90"].randomElement()! }
+        if r < 82 { return ["shotgun", "pump"].randomElement()! }
+        return ["pistol", "eagle"].randomElement()!
     }
 
     func startRound() {
@@ -649,8 +669,15 @@ final class TacticalEngine {
             p.pos = spot
             p.aim = atan2(TMap.H / 2 - spot.y, TMap.floorW / 2 - spot.x)
             p.gun = p.isPlayer ? myGun : gunPick()
+            if gameMode == 3 { p.gun = TWeapons.ladder[0]; p.ladder = 0 }
             p.mag = TGuns.get(p.gun).mag
-            p.spare = p.gun == "pistol" ? 99 : 2
+            p.spare = TWeapons.isPistol(p.gun) ? 99 : 2
+            p.respawn = 0
+            if p.isPlayer {
+                p.altGun = p.gun == "pistol" ? "eagle" : "pistol"
+                p.altMag = TGuns.get(p.altGun).mag
+                p.altSpare = 99
+            }
             p.role = 0
             if !atk && !p.isPlayer { p.site = defBots % 2; defBots += 1 }
             p.site = atk ? atkSite : p.site
@@ -659,6 +686,11 @@ final class TacticalEngine {
         phase = 0
         timer = 4
         banner = me.team == atkTeam ? "PREPARE TO ATTACK" : "PREPARE TO DEFEND"
+        if gameMode != 0 {
+            atkTeam = 0
+            banner = TWeapons.modeNames[gameMode]
+            tags = []
+        }
         bannerT = 3.5
     }
 
@@ -679,6 +711,7 @@ final class TacticalEngine {
         hitT = max(0, hitT - dt)
         shake = max(0, shake - dt * 30)
         recoil = max(0, recoil - dt * 2.4)
+        jumpT = max(0, jumpT - dt)
         kick = max(0, kick - dt * (22 + kick * 3))
         for i in feed.indices { feed[i].life -= dt }
         feed.removeAll { $0.life <= 0 }
@@ -706,7 +739,7 @@ final class TacticalEngine {
         }
         if phase == 0 {
             timer -= dt
-            if timer <= 0 { phase = 1; timer = 100; banner = "GO"; bannerT = 1 }
+            if timer <= 0 { phase = 1; timer = gameMode == 0 ? 100 : 240; banner = "GO"; bannerT = 1 }
             for p in players where !p.isPlayer { botLook(p, dt) }
             return
         }
@@ -746,6 +779,7 @@ final class TacticalEngine {
                 }
             }
         }
+        if gameMode != 0 { dmTick(dt); return }
         // objectives
         if !planted {
             if planting { plantProg += dt } else { plantProg = max(0, plantProg - dt * 2) }
@@ -778,6 +812,90 @@ final class TacticalEngine {
         if defAlive == 0 { endRound(winner: atkTeam, text: "DEFENDERS ELIMINATED"); return }
         if atkAlive == 0 && !planted { endRound(winner: 1 - atkTeam, text: "ATTACKERS ELIMINATED"); return }
         if !planted && timer <= 0 { endRound(winner: 1 - atkTeam, text: "TIME RAN OUT") }
+    }
+
+    // MARK: deathmatch-style modes
+
+    private func setGun(_ p: TPlayer, _ id: String) {
+        p.gun = id
+        p.mag = TGuns.get(id).mag
+        p.spare = TWeapons.isPistol(id) ? 99 : 2
+        p.reloadT = 0
+    }
+
+    private func respawnPlayer(_ p: TPlayer) {
+        let list = p.team == 0 ? TMap.atkSpawn : TMap.defSpawn
+        var best = list[0], bd: CGFloat = -1
+        for c in list {
+            var near = CGFloat.greatestFiniteMagnitude
+            for e in players where e.alive && e.team != p.team { near = min(near, tDist(c, e.pos)) }
+            near += CGFloat.random(in: 0...120)
+            if near > bd { bd = near; best = c }
+        }
+        p.pos = CGPoint(x: best.x + CGFloat.random(in: -18...18), y: best.y + CGFloat.random(in: -18...18))
+        p.hp = 100; p.armor = 100; p.alive = true; p.blind = 0; p.crouch = false
+        p.path = []; p.targetID = -1; p.hunt = 0; p.reloadT = 0; p.fireCd = 0; p.hiding = false; p.cover = nil
+        p.nades = 1; p.smokes = 1; p.flashes = 1
+        p.aim = atan2(TMap.H / 2 - p.pos.y, TMap.floorW / 2 - p.pos.x)
+        if gameMode == 3 { setGun(p, TWeapons.ladder[min(p.ladder, TWeapons.ladder.count - 1)]) }
+        else { setGun(p, p.isPlayer ? myGun : gunPick()) }
+        if p.isPlayer {
+            scoped = false; pitch = 0
+            p.altGun = p.gun == "pistol" ? "eagle" : "pistol"
+            p.altMag = TGuns.get(p.altGun).mag
+            p.altSpare = 99
+        }
+    }
+
+    private func finishMatch(_ winner: Int) {
+        phase = 4
+        over = true
+        won = winner == me.team
+        banner = won ? "VICTORY" : "DEFEAT"
+        bannerT = 3
+    }
+
+    private func dmTick(_ dt: CGFloat) {
+        for p in players where !p.alive && p.respawn > 0 {
+            p.respawn -= dt
+            if p.respawn <= 0 { respawnPlayer(p) }
+        }
+        if gameMode == 2 {
+            for i in tags.indices { tags[i].life -= dt }
+            tags.removeAll { $0.life <= 0 }
+            var rest: [Tag] = []
+            for t in tags {
+                var taken = false
+                for p in players where p.alive && tDist(p.pos, t.pos) < 30 {
+                    if p.team != t.team { scores[p.team] += 1; pop(t.pos, "CONFIRMED", .yellow) }
+                    else { pop(t.pos, "DENIED", .red) }
+                    taken = true
+                    break
+                }
+                if !taken { rest.append(t) }
+            }
+            tags = rest
+        }
+        if gameMode == 3 {
+            if let w = players.first(where: { $0.ladder >= TWeapons.ladder.count }) { finishMatch(w.team); return }
+        } else if scores[0] >= killTarget || scores[1] >= killTarget {
+            finishMatch(scores[0] >= scores[1] ? 0 : 1); return
+        }
+        if timer <= 0 {
+            if gameMode == 3 {
+                let a = players.filter { $0.team == 0 }.map { $0.ladder }.reduce(0, +)
+                let b = players.filter { $0.team == 1 }.map { $0.ladder }.reduce(0, +)
+                finishMatch(a >= b ? 0 : 1)
+            } else { finishMatch(scores[0] >= scores[1] ? 0 : 1) }
+        }
+    }
+
+    private func swapGun(_ p: TPlayer) {
+        guard gameMode != 3, p.reloadT <= 0 else { return }
+        let g = p.gun, m = p.mag, s = p.spare
+        p.gun = p.altGun; p.mag = p.altMag; p.spare = p.altSpare
+        p.altGun = g; p.altMag = m; p.altSpare = s
+        p.fireCd = 0.35
     }
 
     func see(_ a: CGPoint, _ b: CGPoint) -> Bool {
@@ -907,6 +1025,7 @@ final class TacticalEngine {
         TMap.push(&p.pos, 14)
         p.fireCd -= dt
         if wantReload { wantReload = false; startReload(p) }
+        if wantSwap { wantSwap = false; swapGun(p) }
         if p.reloadT > 0 {
             p.reloadT -= dt
             if p.reloadT <= 0 { finishReload(p) }
@@ -954,7 +1073,7 @@ final class TacticalEngine {
 
     private func finishReload(_ p: TPlayer) {
         p.mag = TGuns.get(p.gun).mag
-        if p.gun != "pistol" { p.spare -= 1 }
+        if !TWeapons.isPistol(p.gun) { p.spare -= 1 }
     }
 
     private func shoot(_ p: TPlayer, _ err: CGFloat) {
@@ -962,6 +1081,7 @@ final class TacticalEngine {
         let spd: CGFloat = 1100
         var muzzle: CGFloat = 20
         var sprd = g.spread + err
+        if TWeapons.cls(p.gun) == "sniper" && !(p.isPlayer && scoped) { sprd += 0.06 }
         if p.isPlayer {
             sprd += recoil * 0.045 + (moving ? 0.03 : 0) + (p.crouch ? -0.004 : 0)
             if scoped { sprd *= 0.35 }
@@ -1014,8 +1134,18 @@ final class TacticalEngine {
             victim.alive = false
             let killer = players.first { $0.id == owner }
             if let k = killer, k.team != victim.team { k.kills += 1 }
+            if gameMode != 0 {
+                victim.respawn = 3
+                if gameMode == 1, let k = killer, k.team != victim.team { scores[k.team] += 1 }
+                if gameMode == 2 { tags.append(Tag(pos: victim.pos, team: victim.team, life: 25)) }
+                if gameMode == 3, let k = killer, k.team != victim.team {
+                    k.ladder += 1
+                    scores[k.team] += 1
+                    if k.ladder < TWeapons.ladder.count { setGun(k, TWeapons.ladder[k.ladder]) }
+                }
+            }
             let kn = killer?.name ?? "?"
-            feed.append(Feed(text: "\(kn)  >  \(victim.name)", life: 5, mine: killer?.isPlayer == true || victim.isPlayer))
+            feed.append(Feed(text: "\(kn)  >  \(victim.name)", life: 5, mine: killer?.isPlayer == true || victim.isPlayer, k: kn, v: victim.name, kTeam: killer?.team ?? 0, gun: killer?.gun ?? "pistol", head: amt >= 45))
             if feed.count > 4 { feed.removeFirst() }
             pop(victim.pos, "X", .red)
         }
@@ -1137,6 +1267,17 @@ final class TacticalEngine {
     }
 
     private func objective(_ p: TPlayer) -> CGPoint {
+        if gameMode != 0 {
+            if gameMode == 2, let t = tags.min(by: { tDist($0.pos, p.pos) < tDist($1.pos, p.pos) }), tDist(t.pos, p.pos) < 900 { return t.pos }
+            if p.roam == .zero || tDist(p.pos, p.roam) < 50 {
+                if Int.random(in: 0..<100) < 40, let en = players.filter({ $0.alive && $0.team != p.team }).randomElement() { p.roam = en.pos }
+                else if let w = TMap.walkable.randomElement() {
+                    let r = w.1
+                    p.roam = CGPoint(x: r.minX + r.width * CGFloat.random(in: 0.2...0.8), y: r.minY + r.height * CGFloat.random(in: 0.2...0.8))
+                }
+            }
+            return p.roam
+        }
         let atk = p.team == atkTeam
         let o = CGPoint(x: cos(CGFloat(p.id) * 1.7) * 70, y: sin(CGFloat(p.id) * 2.3) * 45)
         if planted {
@@ -1154,7 +1295,7 @@ final class TacticalEngine {
             if p.reloadT <= 0 { finishReload(p) }
         }
         if p.mag <= 0 && p.reloadT <= 0 {
-            if p.spare > 0 { startReload(p) } else { p.gun = "pistol"; p.mag = 12; p.spare = 99 }
+            if p.spare > 0 { startReload(p) } else { p.gun = "pistol"; p.mag = 15; p.spare = 99 }
         }
         p.seeT -= dt
         p.hunt = max(0, p.hunt - dt)
@@ -1176,7 +1317,7 @@ final class TacticalEngine {
         }
         var speed: CGFloat = 150
         var dest = objective(p)
-        let atk = p.team == atkTeam
+        let atk = gameMode != 0 || p.team == atkTeam
         if p.targetID >= 0, let e = players.first(where: { $0.id == p.targetID }), e.alive {
             let d = tDist(p.pos, e.pos)
             let ang = atan2(e.pos.y - p.pos.y, e.pos.x - p.pos.x)
@@ -1190,7 +1331,8 @@ final class TacticalEngine {
             if p.nades > 0 && d > 220 && Double.random(in: 0...1) < Double(dt) * 0.12 {
                 throwNade(p, ang, min(d / 1.4, 470))
             }
-            let pref: CGFloat = p.gun == "shotgun" ? 200 : (p.gun == "smg" ? 320 : (p.gun == "rifle" ? 460 : 380))
+            let pc = TWeapons.cls(p.gun)
+            let pref: CGFloat = pc == "shotgun" ? 200 : (pc == "smg" ? 320 : (pc == "rifle" ? 460 : (pc == "sniper" ? 700 : 380)))
             p.strafeT -= dt
             if p.strafeT <= 0 { p.strafe = Bool.random() ? 1 : -1; p.strafeT = CGFloat.random(in: 0.5...1.4) }
             p.hideT -= dt
@@ -1232,7 +1374,7 @@ final class TacticalEngine {
                 }
             }
         }
-        if atk && !planted && p.smokes > 0 && p.targetID < 0 && smokeClouds.isEmpty {
+        if gameMode == 0 && atk && !planted && p.smokes > 0 && p.targetID < 0 && smokeClouds.isEmpty {
             let sc = TMap.site(atkSite)
             let c = CGPoint(x: sc.midX, y: sc.midY)
             let dd = tDist(p.pos, c)
@@ -1896,7 +2038,7 @@ final class TacticalEngine {
 
     private func drawMinimap(_ ctx: inout GraphicsContext) {
         let s: CGFloat = 0.055
-        let ox: CGFloat = fp ? 12 : 10, oy: CGFloat = fp ? 34 : 26
+        let ox: CGFloat = fp ? 12 : 10, oy: CGFloat = fp ? 58 : 26
         let focus: TPlayer = me.alive ? me : (players.first { $0.team == me.team && $0.alive } ?? me)
         let fl = TMap.floorOf(focus.pos)
         let fo: CGFloat = fl == 1 ? TMap.off : 0
@@ -2006,6 +2148,9 @@ final class TacticalEngine {
     var allyAlive: Int { players.filter { $0.team == me.team && $0.alive }.count }
     var enemyAlive: Int { players.filter { $0.team != me.team && $0.alive }.count }
     var objectiveText: String {
+        if gameMode == 1 { return "First to \(killTarget) kills" }
+        if gameMode == 2 { return "Collect enemy tags, deny yours" }
+        if gameMode == 3 { return "Arms Race  \(min(me.ladder + 1, TWeapons.ladder.count))/\(TWeapons.ladder.count)  \(TGuns.get(me.gun).name)" }
         if phase == 0 { return me.team == atkTeam ? "Attack: plant at \(atkSite == 0 ? "A" : "B")" : "Defend both sites" }
         if planted { return me.team == atkTeam ? "Protect the bomb" : "Defuse the bomb" }
         return me.team == atkTeam ? "Plant the bomb at \(atkSite == 0 ? "A" : "B")" : "Hold the sites"
@@ -2019,6 +2164,7 @@ struct TacticalPlay: View {
     @Environment(\.dismiss) private var dismiss
     var diff: Int
     var fpMode = false
+    var modeId = 0
     @State private var engine = TacticalEngine()
     @State private var lStart: CGPoint? = nil
     @State private var lKnob: CGPoint = .zero
@@ -2068,7 +2214,7 @@ struct TacticalPlay: View {
             let cast = st.npcs.filter { $0.id != "newsdesk" }
             let owned = (st.ex.surv ?? SurvData()).guns
             let gun = owned.contains("rifle") ? "rifle" : (owned.contains("smg") ? "smg" : "pistol")
-            engine.setup(cast: cast, persona: st.persona, gun: gun, diff: diff)
+            engine.setup(cast: cast, persona: st.persona, gun: gun, diff: diff, mode: modeId)
             let b = TacScene()
             b.fpMode = fpMode
             b.build(engine)
@@ -2146,7 +2292,7 @@ struct TacticalPlay: View {
                         Spacer()
                         HStack {
                             Spacer()
-                            fireButton.padding(.trailing, 72).padding(.bottom, 62)
+                            fireButton.padding(.trailing, 150).padding(.bottom, 8)
                         }
                     }
                 }
@@ -2227,120 +2373,196 @@ struct TacticalPlay: View {
         }
     }
 
+    private func gridIcon(_ p: TPlayer?, ally: Bool) -> some View {
+        let navy = Color(red: 0.09, green: 0.13, blue: 0.27)
+        let lblue = Color(red: 0.68, green: 0.82, blue: 0.98)
+        let gold = Color(red: 0.89, green: 0.69, blue: 0.27)
+        let alive = p?.alive ?? false
+        return ZStack {
+            Rectangle().fill(ally ? navy : gold)
+            Rectangle().stroke(ally ? lblue : Color(red: 0.97, green: 0.85, blue: 0.55), lineWidth: 1.5)
+            if p == nil {
+                Color.black.opacity(0.35)
+            } else if !alive {
+                Text("\u{2620}\u{FE0E}").font(.system(size: 22, weight: .black)).foregroundColor(.white)
+            } else if ally {
+                Image(systemName: "chevron.up.2").font(.system(size: 17, weight: .black)).foregroundColor(lblue)
+            } else {
+                Image(systemName: "star.fill").font(.system(size: 15, weight: .black)).foregroundColor(Color(red: 0.2, green: 0.14, blue: 0.05))
+            }
+        }
+        .frame(width: 36, height: 30)
+    }
+
+    private func teamGrid(_ list: [TPlayer], ally: Bool) -> some View {
+        VStack(spacing: 2) {
+            ForEach(0..<2, id: \.self) { r in
+                HStack(spacing: 2) {
+                    ForEach(0..<3, id: \.self) { c in
+                        let i = r * 3 + c
+                        gridIcon(i < list.count ? list[i] : nil, ally: ally)
+                    }
+                }
+            }
+        }
+    }
+
+    private func vbtn(_ icon: String, _ d: CGFloat, on: Bool = false, dim: Bool = false) -> some View {
+        Image(systemName: icon).font(.system(size: d * 0.42, weight: .semibold))
+            .foregroundColor(on ? .black : .white.opacity(dim ? 0.35 : 0.95))
+            .frame(width: d, height: d)
+            .background(on ? Color.white.opacity(0.9) : Color.black.opacity(0.38))
+            .clipShape(Circle())
+            .overlay(Circle().stroke(Color.white.opacity(0.55), lineWidth: 1.5))
+    }
+
+    private func nadeBubble(_ icon: String, _ n: Int) -> some View {
+        ZStack(alignment: .bottomTrailing) {
+            Image(systemName: icon).font(.system(size: 26, weight: .bold)).foregroundColor(.white.opacity(n == 0 ? 0.3 : 0.95))
+                .frame(width: 64, height: 64)
+                .background(Color.black.opacity(0.4))
+                .clipShape(Circle())
+                .overlay(Circle().stroke(Color.white.opacity(0.5), lineWidth: 1.5))
+            Text("\(n)").font(.jk(11, .heavy)).foregroundColor(.white).padding(.horizontal, 5).background(Color.black.opacity(0.7)).clipShape(Capsule())
+        }
+    }
+
+    private func statBar(_ icon: String, _ v: CGFloat, _ col: Color) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).font(.system(size: 14, weight: .black)).foregroundColor(.white).frame(width: 18)
+            Capsule().fill(Color.white.opacity(0.25)).frame(width: 110, height: 6)
+                .overlay(alignment: .leading) { Capsule().fill(col).frame(width: 110 * max(0, min(1, v / 100)), height: 6) }
+            Text("\(Int(max(0, v)))").font(.system(size: 20, weight: .heavy, design: .rounded)).foregroundColor(.white)
+        }
+    }
+
     private var fpHud: some View {
         TimelineView(.periodic(from: .now, by: 0.1)) { _ in
             let e = engine
-            let blue = Color(red: 0.2, green: 0.55, blue: 0.95)
-            let orange = Color(red: 0.95, green: 0.6, blue: 0.1)
+            let blue = Color(red: 0.25, green: 0.6, blue: 1.0)
+            let orange = Color(red: 0.96, green: 0.62, blue: 0.16)
             let allies = e.players.filter { $0.team == e.me.team }
             let foes = e.players.filter { $0.team != e.me.team }
             let t = Int(max(0, e.timer))
             let g = TGuns.get(e.me.gun)
-            ZStack {
-                // top-left: HP / kills + pause
-                VStack {
-                    HStack(spacing: 8) {
-                        Image(systemName: "cross.fill").font(.system(size: 12, weight: .black)).foregroundColor(.white)
-                        Text("\(Int(max(0, e.me.hp)))").font(.jk(15, .heavy)).foregroundColor(e.me.hp < 35 ? .red : .white)
-                        Image(systemName: "shield.fill").font(.system(size: 12, weight: .black)).foregroundColor(.white.opacity(0.85))
-                        Text("\(Int(max(0, e.me.armor)))").font(.jk(15, .heavy)).foregroundColor(.white)
-                        Image(systemName: "star.fill").font(.system(size: 11, weight: .black)).foregroundColor(.yellow)
-                        Text("\(e.me.kills)").font(.jk(15, .heavy)).foregroundColor(.white)
-                        Button { e.paused = true } label: {
-                            Image(systemName: "pause.fill").font(.system(size: 11, weight: .bold)).foregroundColor(.white)
-                                .frame(width: 22, height: 20).background(Color.black.opacity(0.5)).clipShape(RoundedRectangle(cornerRadius: 4))
-                        }
+            let navy = Color(red: 0.09, green: 0.13, blue: 0.27)
+            GeometryReader { geo in
+                let W = geo.size.width, H = geo.size.height
+                ZStack(alignment: .topLeading) {
+                    // top-left: health + armor, then minimap (canvas) + gear
+                    VStack(alignment: .leading, spacing: 3) {
+                        statBar("plus", e.me.hp, e.me.hp < 35 ? .red : .white)
+                        statBar("shield.fill", e.me.armor, .white)
                     }
-                    .padding(.leading, 12).padding(.top, 4)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    Spacer()
-                }
-                VStack {
-                    Spacer().frame(height: 148)
+                    .padding(.leading, 14).padding(.top, 2)
+                    .shadow(color: .black.opacity(0.6), radius: 3)
+                    VStack(spacing: 8) {
+                        Button { e.paused = true } label: { vbtn("gearshape.fill", 34) }
+                    }
+                    .position(x: 12 + 165 + 34, y: 58 + 22)
                     Text(TMap.roomName(e.me.pos).uppercased()).font(.jk(11, .heavy)).foregroundColor(Color(red: 1, green: 0.93, blue: 0.7))
-                        .shadow(radius: 3).padding(.leading, 14).frame(maxWidth: .infinity, alignment: .leading)
-                    Spacer()
-                }
-                // top-center: scoreboard
-                VStack(spacing: 3) {
-                    HStack(spacing: 4) {
-                        teamBox(allies, blue)
-                        VStack(spacing: 0) {
-                            Text(String(format: "%02d:%02d", t / 60, t % 60)).font(.system(size: 17, weight: .heavy, design: .monospaced))
-                                .foregroundColor(e.planted ? .red : Color(red: 1, green: 0.2, blue: 0.2))
-                                .padding(.horizontal, 8).background(Color.black.opacity(0.75))
-                            HStack(spacing: 8) {
-                                Text("\(e.scores[0])").foregroundColor(blue)
-                                Text("\(e.scores[1])").foregroundColor(orange)
+                        .shadow(radius: 3).position(x: 14 + 40, y: 58 + 99 + 18)
+
+                    // top-center: scoreboard
+                    VStack(spacing: 4) {
+                        HStack(spacing: 2) {
+                            teamGrid(allies, ally: true)
+                            VStack(spacing: 2) {
+                                Text(String(format: "%02d:%02d", t / 60, t % 60))
+                                    .font(.system(size: 22, weight: .heavy, design: .monospaced))
+                                    .foregroundColor(e.planted ? .red : .white)
+                                    .frame(width: 84, height: 30).background(navy.opacity(0.92))
+                                HStack(spacing: 2) {
+                                    Text("\(e.scores[0])").foregroundColor(blue).frame(width: 41, height: 30).background(navy.opacity(0.92))
+                                    Text("\(e.scores[1])").foregroundColor(orange).frame(width: 41, height: 30).background(navy.opacity(0.92))
+                                }
+                                .font(.system(size: 24, weight: .heavy, design: .rounded))
                             }
-                            .font(.jk(14, .heavy)).padding(.horizontal, 12).background(Color.black.opacity(0.6))
+                            teamGrid(foes, ally: false)
                         }
-                        teamBox(foes, orange)
-                    }
-                    Text(e.objectiveText).font(.jk(11, .semibold)).foregroundColor(.white.opacity(0.9)).shadow(radius: 3)
-                    if e.bannerT > 0 {
-                        Text(e.banner).font(.jk(24, .heavy)).foregroundColor(.white).shadow(radius: 6).multilineTextAlignment(.center)
-                            .padding(.top, 20).opacity(Double(min(1, e.bannerT)))
-                    }
-                    if e.plantProg > 0 || e.defuseProg > 0 {
-                        let pr = e.plantProg > 0 ? e.plantProg / 3 : e.defuseProg / 4
-                        VStack(spacing: 3) {
-                            Text(e.plantProg > 0 ? "PLANTING" : "DEFUSING").font(.jk(11, .heavy)).foregroundColor(.white)
-                            Capsule().fill(Color.white.opacity(0.25)).frame(width: 150, height: 7)
-                                .overlay(alignment: .leading) { Capsule().fill(Color.yellow).frame(width: 150 * min(1, pr), height: 7) }
+                        Text(e.objectiveText).font(.jk(11, .semibold)).foregroundColor(.white.opacity(0.9)).shadow(radius: 3)
+                        if e.bannerT > 0 {
+                            Text(e.banner).font(.jk(24, .heavy)).foregroundColor(.white).shadow(radius: 6).multilineTextAlignment(.center)
+                                .padding(.top, 20).opacity(Double(min(1, e.bannerT)))
                         }
-                        .padding(.top, 60)
-                    }
-                    Spacer()
-                }
-                .padding(.top, 4).frame(maxWidth: .infinity)
-                // top-right: weapon, ammo, feed
-                VStack {
-                    VStack(alignment: .trailing, spacing: 1) {
-                        Text(g.name.uppercased()).font(.jk(12, .heavy)).foregroundColor(.white.opacity(0.9))
-                        HStack(alignment: .lastTextBaseline, spacing: 3) {
-                            Text(e.me.reloadT > 0 ? "RELOAD" : "\(e.me.mag)").font(.jk(24, .heavy)).foregroundColor(e.me.mag == 0 ? .red : .white)
-                            Text("/ \(e.me.gun == "pistol" ? "∞" : "\(e.me.spare * g.mag)")").font(.jk(13, .bold)).foregroundColor(.white.opacity(0.7))
-                        }
-                        ForEach(Array(e.feed.enumerated()), id: \.offset) { _, f in
-                            Text(f.text).font(.jk(10, .bold)).foregroundColor(f.mine ? .yellow : .white.opacity(0.85))
-                                .padding(.horizontal, 6).padding(.vertical, 2).background(Color.black.opacity(0.5)).clipShape(RoundedRectangle(cornerRadius: 4))
-                        }
-                    }
-                    .padding(.trailing, 14).padding(.top, 4)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    Spacer()
-                }
-                // bottom-right: button cluster (fire button lives in controls)
-                VStack {
-                    Spacer()
-                    HStack(alignment: .bottom, spacing: 10) {
-                        Spacer()
-                        if e.me.alive {
-                            HStack(alignment: .bottom, spacing: 10) {
-                                Button { e.wantReload = true } label: { roundBtn("arrow.triangle.2.circlepath", 44) }
-                                Button { e.toggleCover() } label: { roundBtn("figure.stand", 44, on: e.me.crouch) }
-                                Button { e.scoped.toggle() } label: { roundBtn("scope", 44, on: e.scoped) }
+                        if e.plantProg > 0 || e.defuseProg > 0 {
+                            let pr = e.plantProg > 0 ? e.plantProg / 3 : e.defuseProg / 4
+                            VStack(spacing: 3) {
+                                Text(e.plantProg > 0 ? "PLANTING" : "DEFUSING").font(.jk(11, .heavy)).foregroundColor(.white)
+                                Capsule().fill(Color.white.opacity(0.25)).frame(width: 150, height: 7)
+                                    .overlay(alignment: .leading) { Capsule().fill(Color.yellow).frame(width: 150 * min(1, pr), height: 7) }
                             }
-                            .padding(.trailing, 168)
-                            VStack(spacing: 10) {
-                                Button { e.wantSmoke = true } label: { roundBtn("smoke.fill", 44, dim: e.me.smokes == 0) }
-                                Button { e.wantNade = true } label: { roundBtn("circle.hexagongrid.fill", 44, dim: e.me.nades == 0) }
-                                Button { e.wantFlash = true } label: { roundBtn("bolt.fill", 44, dim: e.me.flashes == 0) }
+                            .padding(.top, 30)
+                        }
+                    }
+                    .frame(width: W).padding(.top, 2)
+
+                    // top-right: weapon panel + feed bar
+                    VStack(alignment: .trailing, spacing: 0) {
+                        Image(uiImage: GunSprites.icon(TWeapons.rig(e.me.gun))).renderingMode(.template).resizable().scaledToFit()
+                            .foregroundColor(.white).frame(width: 130, height: 46).shadow(color: .black.opacity(0.5), radius: 2)
+                        HStack {
+                            Button { e.wantSwap = true } label: {
+                                Image(systemName: "arrow.2.squarepath").font(.system(size: 15, weight: .bold)).foregroundColor(.white).frame(width: 34, height: 24)
                             }
-                            .padding(.trailing, 2)
-                        } else {
-                            Button { e.fast.toggle() } label: {
-                                Text(e.fast ? "Normal speed" : "Skip ahead").font(.jk(13, .bold)).foregroundColor(.white)
-                                    .padding(.horizontal, 14).frame(height: 38).background(Color.black.opacity(0.55)).clipShape(Capsule())
+                            Spacer()
+                            HStack(spacing: 3) {
+                                Image(systemName: "star.fill").font(.system(size: 11)).foregroundColor(.yellow)
+                                Text("\(e.me.kills)").font(.jk(13, .heavy)).foregroundColor(.white)
                             }
                         }
+                        .frame(width: 190).padding(.top, 2)
+                        Rectangle().fill(Color.white.opacity(0.25)).frame(width: 200, height: 1).padding(.vertical, 4)
+                        HStack(alignment: .lastTextBaseline, spacing: 4) {
+                            Text(e.me.reloadT > 0 ? "RELOAD" : "\(e.me.mag)").font(.system(size: 26, weight: .medium, design: .rounded)).foregroundColor(e.me.mag == 0 ? .red : .white)
+                            Text("/ \(TWeapons.isPistol(e.me.gun) ? "\u{221E}" : "\(e.me.spare * g.mag)")").font(.jk(13, .bold)).foregroundColor(.white.opacity(0.8))
+                            Text("////").font(.system(size: 14, weight: .black).italic()).foregroundColor(.white)
+                        }
+                        VStack(alignment: .trailing, spacing: 0) {
+                            ForEach(Array(e.feed.suffix(2).enumerated()), id: \.offset) { _, f in
+                                HStack(spacing: 10) {
+                                    Text(f.k).font(.jk(15, .medium)).foregroundColor(f.kTeam == e.me.team ? blue : orange)
+                                    Image(uiImage: GunSprites.icon(TWeapons.rig(f.gun))).renderingMode(.template).resizable().scaledToFit()
+                                        .foregroundColor(.white).frame(width: 40, height: 16)
+                                    if f.head { Text("\u{2620}\u{FE0E}").font(.system(size: 14, weight: .black)).foregroundColor(.white) }
+                                    Text(f.v).font(.jk(15, .medium)).foregroundColor(f.kTeam == e.me.team ? orange : blue)
+                                }
+                                .padding(.horizontal, 10).frame(height: 28)
+                            }
+                        }
+                        .frame(minWidth: 230, alignment: .trailing)
+                        .background(Color.black.opacity(e.feed.isEmpty ? 0 : 0.55))
+                        .padding(.top, 4)
                     }
-                    .padding(.trailing, 12).padding(.bottom, 14)
-                }
-                // bottom-center: contextual
-                VStack {
-                    Spacer()
+                    .padding(.trailing, 20).padding(.top, 4)
+                    .frame(width: W, alignment: .trailing)
+
+                    if e.me.alive {
+                        // right-middle: grenade bubbles
+                        Button { e.wantSmoke = true } label: { nadeBubble("smoke.fill", e.me.smokes) }
+                            .position(x: W * 0.86, y: H * 0.50)
+                        Button { e.wantNade = true } label: { nadeBubble("circle.hexagongrid.fill", e.me.nades) }
+                            .position(x: W * 0.78, y: H * 0.62)
+                        Button { e.wantFlash = true } label: { nadeBubble("bolt.fill", e.me.flashes) }
+                            .position(x: W * 0.86, y: H * 0.74)
+                        // bottom-right: scope + reload + crouch + jump (fire is in controls)
+                        Button { e.scoped.toggle() } label: { vbtn("scope", 52, on: e.scoped) }
+                            .position(x: W - 186, y: H - 122)
+                        Button { e.wantReload = true } label: { vbtn("arrow.triangle.2.circlepath", 58) }
+                            .position(x: W - 290, y: H - 50)
+                        Button { e.toggleCover() } label: { vbtn("figure.stand", 56, on: e.me.crouch) }
+                            .position(x: W - 100, y: H - 128)
+                        Button { e.jumpT = max(e.jumpT, 0.55) } label: { vbtn("figure.jumprope", 56) }
+                            .position(x: W - 44, y: H - 200)
+                    } else {
+                        Button { e.fast.toggle() } label: {
+                            Text(e.fast ? "Normal speed" : "Skip ahead").font(.jk(13, .bold)).foregroundColor(.white)
+                                .padding(.horizontal, 14).frame(height: 38).background(Color.black.opacity(0.55)).clipShape(Capsule())
+                        }
+                        .position(x: W - 110, y: H - 40)
+                    }
+
+                    // bottom-center: contextual
                     HStack(spacing: 10) {
                         if let di = e.nearestDoor() {
                             Button { e.toggleDoor() } label: {
@@ -2354,7 +2576,7 @@ struct TacticalPlay: View {
                                 .gesture(DragGesture(minimumDistance: 0).onChanged { _ in e.actHeld = true }.onEnded { _ in e.actHeld = false })
                         }
                     }
-                    .padding(.bottom, 18)
+                    .position(x: W * 0.5, y: H - 40)
                 }
             }
             .ignoresSafeArea()
@@ -2428,7 +2650,7 @@ struct TacticalPlay: View {
                             Text("Smoke \(e.me.smokes)").font(.jk(12, .bold)).foregroundColor(e.me.smokes > 0 ? .white : .white.opacity(0.4))
                                 .padding(.horizontal, 12).frame(height: 38).background(Color.black.opacity(0.55)).clipShape(Capsule())
                         }
-                        Text(e.me.reloadT > 0 ? "RELOADING" : "\(e.me.mag) / \(e.me.gun == "pistol" ? "∞" : "\(e.me.spare * TGuns.get(e.me.gun).mag)")")
+                        Text(e.me.reloadT > 0 ? "RELOADING" : "\(e.me.mag) / \(TWeapons.isPistol(e.me.gun) ? "∞" : "\(e.me.spare * TGuns.get(e.me.gun).mag)")")
                             .font(.jk(17, .heavy)).foregroundColor(e.me.mag == 0 ? .red : .white)
                         Button { e.wantReload = true } label: {
                             Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 14, weight: .bold)).foregroundColor(.white)

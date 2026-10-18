@@ -81,7 +81,7 @@ enum TwRig {
     }
 
     static func gunIdx(_ id: String) -> Int {
-        switch id {
+        switch TWeapons.rig(id) {
         case "smg": return 1
         case "rifle": return 2
         case "shotgun": return 3
@@ -246,10 +246,8 @@ enum TwRig {
 }
 
 enum TGuns {
-    /// 5v5 uses the exact BR weapons (damage, rate, mag, range, names).
     static func get(_ id: String) -> GunDef {
-        let b = BRGuns.def(id)
-        let o = Guns.get(id)
-        return GunDef(id: b.id, name: b.name, emoji: o.emoji, dmg: b.dmg, rate: 1 / b.rate, mag: b.mag, reload: b.reload, spread: b.spread, pellets: b.pellets, speed: o.speed, range: b.range, price: o.price)
+        let w = TWeapons.w(id)
+        return GunDef(id: w.id, name: w.name, emoji: "", dmg: w.dmg, rate: 1 / w.interval, mag: w.mag, reload: w.reload, spread: w.spread, pellets: w.pellets, speed: 1100, range: w.range, price: w.price)
     }
 }
