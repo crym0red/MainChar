@@ -730,26 +730,76 @@ final class BREngine {
 
     func shoot(_ a: BRActor, _ ang: CGFloat, _ g: BRGunDef) {
         let dx = cos(ang), dy = sin(ang)
-        let wd = world.rayDist(a.p, dx, dy, g.range)
-        var best: BRActor? = nil
-        var bt = wd
-        var bp: CGFloat = 99
-        for b in actors where targetable(b) && b !== a && b.team != a.team {
-            let rx = b.p.x - a.p.x, ry = b.p.y - a.p.y
-            let t = rx * dx + ry * dy
-            if t < 0 || t > bt { continue }
-            let perp = abs(rx * dy - ry * dx)
-            if perp < (b.stance == 2 || b.diveT > 0 ? 8 : (b.stance == 1 ? 11 : 14)) {
-                best = b
-                bt = t
-                bp = perp
+        var origin = a.p
+        var travelled: CGFloat = 0
+        var mul: CGFloat = 1
+        var passes = 0
+        let maxPass = g.id == "rifle" ? 2 : (g.id == "shotgun" ? 0 : 1)
+        let thick: CGFloat = g.id == "rifle" ? 40 : (g.id == "smg" ? 26 : (g.id == "pistol" ? 18 : 0))
+        let penMul: CGFloat = g.id == "rifle" ? 0.62 : (g.id == "smg" ? 0.5 : 0.45)
+        var guardN = 0
+        while guardN < 6 {
+            guardN += 1
+            let rem = g.range - travelled
+            if rem <= 0 { break }
+            let wallHit = world.rayHit(origin, dx, dy, rem)
+            let wd = wallHit?.0 ?? rem
+            let treeHit = world.treeHit(origin, dx, dy, wd)
+            var stopD = wd
+            if let th = treeHit { stopD = min(stopD, th.0) }
+            var best: BRActor? = nil
+            var bt = stopD
+            var bp: CGFloat = 99
+            for b in actors where targetable(b) && b !== a && b.team != a.team {
+                let rx = b.p.x - origin.x, ry = b.p.y - origin.y
+                let t = rx * dx + ry * dy
+                if t < 0 || t > bt { continue }
+                let perp = abs(rx * dy - ry * dx)
+                if perp < (b.stance == 2 || b.diveT > 0 ? 8 : (b.stance == 1 ? 11 : 14)) {
+                    best = b
+                    bt = t
+                    bp = perp
+                }
             }
-        }
-        if let b = best {
-            let rar = CGFloat(a.slots[a.cur]?.rar ?? 0)
-            let head = bp < 4.2
-            let d = g.dmg * (1 + 0.07 * rar) * (1 - 0.45 * bt / g.range) * (head ? 1.6 : 1)
-            damage(b, d, by: a, head: head)
+            if let b = best {
+                let rar = CGFloat(a.slots[a.cur]?.rar ?? 0)
+                let head = bp < 4.2
+                let total = travelled + bt
+                let d = g.dmg * (1 + 0.07 * rar) * max(0.3, 1 - 0.45 * total / g.range) * (head ? 1.6 : 1) * mul
+                damage(b, d, by: a, head: head)
+                break
+            }
+            if let th = treeHit, th.0 <= wd {
+                let hp = CGPoint(x: origin.x + dx * th.0, y: origin.y + dy * th.0)
+                fxDust(hp, big: false)
+                if th.1 < world.treeHP.count {
+                    world.treeHP[th.1] -= 1 + Int(g.dmg / 12)
+                    if world.treeHP[th.1] <= 0 {
+                        world.felled(th.1)
+                        fxDust(hp, big: true)
+                        sfx("pop", at: hp, vol: 0.5)
+                    }
+                }
+                break
+            }
+            guard let wh = wallHit else { break }
+            let hp = CGPoint(x: origin.x + dx * wh.0, y: origin.y + dy * wh.0)
+            fxDust(hp, big: false)
+            if world.hurtWall(wh.2, at: hp, dmg: g.dmg * mul) {
+                fxDust(hp, big: true)
+                sfx("pop", at: hp, vol: 0.7)
+                travelled += wh.0
+                origin = hp
+                continue
+            }
+            if passes < maxPass && wh.1 - wh.0 <= thick {
+                passes += 1
+                mul *= penMul
+                origin = CGPoint(x: origin.x + dx * (wh.1 + 0.5), y: origin.y + dy * (wh.1 + 0.5))
+                travelled += wh.1 + 0.5
+                continue
+            }
+            break
         }
     }
 

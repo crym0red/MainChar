@@ -32,6 +32,33 @@ extension BREngine {
         BRAudio.shared.play(n, vol: vol * fall, pan: Float(sin(rel)))
     }
 
+    // MARK: destruction
+
+    func fxDust(_ p: CGPoint, big: Bool) {
+        if blasts.count > 70 { blasts.removeFirst() }
+        blasts.append(BRBlast(p: p, t: big ? 1.0 : 0.3, kind: big ? 3 : 4))
+    }
+
+    /// blow a hole in nearby walls and fell nearby trees
+    func wreck(at p: CGPoint, radius: CGFloat) {
+        for i in world.near(p, radius + 20) {
+            let r = world.walls[i].r
+            if r.width <= 0 { continue }
+            let cx = max(r.minX, min(p.x, r.maxX)), cy = max(r.minY, min(p.y, r.maxY))
+            if hypot(p.x - cx, p.y - cy) > radius { continue }
+            if world.breach(i, at: CGPoint(x: cx, y: cy), radius: 44) { fxDust(CGPoint(x: cx, y: cy), big: true) }
+        }
+        var ti = world.trees.count - 1
+        while ti >= 0 {
+            let t = world.trees[ti]
+            if hypot(t.x - p.x, t.y - p.y) < radius + 10 {
+                world.felled(ti)
+                fxDust(t, big: true)
+            }
+            ti -= 1
+        }
+    }
+
     // MARK: drop
 
     func jump() {
@@ -175,11 +202,48 @@ extension BREngine {
         var np = CGPoint(x: v.p.x + cos(v.ang) * v.speed * dt, y: v.p.y + sin(v.ang) * v.speed * dt)
         var blocked = false
         if v.kind == 0 {
+            // smash trees
+            if abs(v.speed) > 110 {
+                var ti = world.trees.count - 1
+                while ti >= 0 {
+                    let t = world.trees[ti]
+                    if hypot(t.x - np.x, t.y - np.y) < 32 {
+                        world.felled(ti)
+                        fxDust(t, big: true)
+                        sfx("pop", vol: 0.5)
+                        v.speed *= 0.94
+                        v.hp -= 1.5
+                        shake = max(shake, 5)
+                    }
+                    ti -= 1
+                }
+            }
             if BRWorld.water(np) { blocked = true; np = v.p }
             else {
-                let q = world.push(np, 24)
-                if hypot(q.x - np.x, q.y - np.y) > 3 { blocked = true }
-                np = q
+                let cand = np
+                let q = world.push(np, 24, trees: false)
+                if hypot(q.x - np.x, q.y - np.y) > 3 {
+                    var smashed = false
+                    if let wi = world.wallNear(cand, 40) {
+                        let w = world.walls[wi]
+                        let small = world.isSmall(w.r)
+                        let ok = small ? abs(v.speed) > 230 : (w.h <= 140 ? abs(v.speed) > 210 : abs(v.speed) > 330)
+                        if ok {
+                            let cx = max(w.r.minX, min(cand.x, w.r.maxX)), cy = max(w.r.minY, min(cand.y, w.r.maxY))
+                            if world.breach(wi, at: CGPoint(x: cx, y: cy), radius: 44) {
+                                smashed = true
+                                fxDust(CGPoint(x: cx, y: cy), big: true)
+                                sfx("boom", vol: 0.6)
+                                v.speed *= 0.6
+                                v.hp -= 12
+                                shake = max(shake, 14)
+                            }
+                        }
+                    }
+                    if smashed { np = cand } else { blocked = true; np = q }
+                } else {
+                    np = q
+                }
             }
         } else if !BRWorld.water(np) || world.insideBuilding(np, pad: 10) {
             blocked = true
@@ -222,6 +286,7 @@ extension BREngine {
             m.p = world.push(p, 14)
             blasts.append(BRBlast(p: p, t: 0.7, kind: 0))
             sfx("boom")
+            wreck(at: p, radius: 120)
             m.hp -= 45
             m.hurt = 1
             if m.hp <= 0 { eliminate(m, by: nil) }
@@ -303,6 +368,7 @@ extension BREngine {
         case 0:
             blasts.append(BRBlast(p: p, t: 0.55, kind: 0))
             sfx("boom", at: p)
+            defer { wreck(at: p, radius: 110) }
             let md = hypot(p.x - me.p.x, p.y - me.p.y)
             if md < 500 { shake = max(shake, 16 * (1 - md / 500)) }
             for b in actors where b.alive && !b.air {
@@ -458,6 +524,7 @@ extension BREngine {
         thrCD = max(0, thrCD - dt)
         landGrace = max(0, landGrace - dt)
         shake = max(0, shake - dt * 30)
+        world.refreshMap()
         flashT = max(0, flashT - dt)
         uavT = max(0, uavT - dt)
         for i in nums.indices { nums[i].t -= dt }

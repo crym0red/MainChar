@@ -44,6 +44,7 @@ struct LobbyView: View {
         }
         .onAppear {
             OrientationLock.set(landscape: true)
+            nav.tacFP = false
             ensureBg()
         }
         .onChange(of: nav.brPlay) { v in
@@ -60,7 +61,7 @@ struct LobbyView: View {
             BRLockerView().environmentObject(game)
         })
         .background(Color.clear.fullScreenCover(isPresented: $nav.brPlay) {
-            BattleRoyalePlay().environmentObject(game).environmentObject(nav).preferredColorScheme(.dark)
+            TowerPlay().environmentObject(game).environmentObject(nav).preferredColorScheme(.dark)
         })
         .onChange(of: nav.tacPlay) { v in
             if v != nil {
@@ -183,7 +184,7 @@ struct LobbyView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(nav.lobbyMode == 1 ? "BATTLE ROYALE" : "5V5 BOMB DEFUSAL").font(.jk(16, .heavy)).foregroundColor(.white)
-                        Text(nav.lobbyMode == 1 ? "Port Ridge  |  30 players  |  FIRST PERSON" : "Safehouse  |  \(diffNames[diff])  |  \(nav.tacFP ? "FIRST PERSON" : "3D")").font(.jk(12, .semibold)).foregroundColor(.white.opacity(0.8))
+                        Text(nav.lobbyMode == 1 ? "The Spire  |  24 players  |  6 FLOORS  |  TOP-DOWN" : "Safehouse  |  \(diffNames[diff])  |  \(nav.tacFP ? "FIRST PERSON" : "3D")").font(.jk(12, .semibold)).foregroundColor(.white.opacity(0.8))
                     }
                     Spacer()
                     Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold)).foregroundColor(.white.opacity(0.7))
@@ -192,11 +193,11 @@ struct LobbyView: View {
             }
             .buttonStyle(.plain)
             HStack(spacing: 0) {
-                ForEach(Array(["5V5 3D", "5V5 FP", "BR"].enumerated()), id: \.offset) { i, n in
-                    let on = (nav.lobbyMode == 1 ? 2 : (nav.tacFP ? 1 : 0)) == i
+                ForEach(Array(["5V5 TOP-DOWN", "BR"].enumerated()), id: \.offset) { i, n in
+                    let on = nav.lobbyMode == i
                     Button {
-                        nav.lobbyMode = i == 2 ? 1 : 0
-                        if i < 2 { nav.tacFP = (i == 1) }
+                        nav.lobbyMode = i
+                        nav.tacFP = false
                     } label: {
                         Text(n).font(.jk(12, .heavy)).foregroundColor(on ? .black : .white.opacity(0.8))
                             .frame(maxWidth: .infinity).frame(height: 32).background(on ? lime : Color.black.opacity(0.7))

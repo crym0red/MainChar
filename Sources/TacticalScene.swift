@@ -34,6 +34,10 @@ final class TacScene {
     let floorRoot = [SCNNode(), SCNNode()]
     var focusFloor = 0
     var camFloor = 0
+    var fpMode = false
+    var fpFwd = CGPoint(x: 1, y: 0)
+    var fpEye = CGPoint.zero
+    var ceilNodes: [SCNNode] = []
 
     var roots: [SCNNode] = []
     var bodies: [SCNNode] = []
@@ -264,6 +268,23 @@ final class TacScene {
         cam.zFar = 3000
         camNode.camera = cam
         root.addChildNode(camNode)
+
+        // ceilings (only shown in first person)
+        for i in 0..<2 {
+            let pl = SCNPlane(width: 1900, height: 1300)
+            let cm = SCNMaterial()
+            cm.diffuse.contents = UIColor(red: 0.16, green: 0.17, blue: 0.2, alpha: 1)
+            cm.emission.contents = UIColor(red: 0.05, green: 0.05, blue: 0.06, alpha: 1)
+            cm.isDoubleSided = true
+            pl.firstMaterial = cm
+            let cn = SCNNode(geometry: pl)
+            cn.position = SCNVector3(950, Float(TMap.wallH) + 0.5, 600)
+            cn.eulerAngles = SCNVector3(Float.pi / 2, 0, 0)
+            cn.castsShadow = false
+            cn.isHidden = true
+            floorRoot[i].addChildNode(cn)
+            ceilNodes.append(cn)
+        }
 
         // floors
         let floorCols: [(CGFloat, CGFloat, CGFloat)] = [(0.45, 0.31, 0.19), (0.34, 0.36, 0.38), (0.27, 0.24, 0.33), (0.5, 0.54, 0.56), (0.28, 0.19, 0.13), (0.4, 0.4, 0.42)]
@@ -584,6 +605,10 @@ final class TacScene {
 
     func project(_ p: CGPoint, _ h: CGFloat) -> CGPoint? {
         if TMap.floorOf(p) != focusFloor { return nil }
+        if fpMode {
+            let dx = sx(p) - fpEye.x, dz = p.y - fpEye.y
+            if dx * fpFwd.x + dz * fpFwd.y <= 2 { return nil }
+        }
         let v = view.projectPoint(SCNVector3(Float(sx(p)), Float(h), Float(p.y)))
         if v.z > 1 || v.z < 0 { return nil }
         return CGPoint(x: CGFloat(v.x), y: CGFloat(v.y))
@@ -604,14 +629,29 @@ final class TacScene {
         let sh = e.shake
         let jx: CGFloat = sh > 0 ? CGFloat.random(in: -sh...sh) * 0.6 : 0
         let jz: CGFloat = sh > 0 ? CGFloat.random(in: -sh...sh) * 0.6 : 0
-        let lx = camX + cos(focus.aim) * 70, lz = camZ + sin(focus.aim) * 40
-        camNode.position = SCNVector3(Float(lx + jx), 400, Float(lz + 250 + jz))
-        camNode.look(at: SCNVector3(Float(lx), 0, Float(lz)))
+        for c in ceilNodes { c.isHidden = !fpMode }
+        if fpMode {
+            let ex = fx, ez = focus.pos.y
+            let dxv = cos(focus.aim), dzv = sin(focus.aim)
+            let eh = CGFloat(TMap.eyeH) + (sh > 0 ? CGFloat.random(in: -sh...sh) * 0.25 : 0)
+            fpFwd = CGPoint(x: dxv, y: dzv)
+            fpEye = CGPoint(x: ex, y: ez)
+            camNode.camera?.zNear = 2
+            camNode.camera?.fieldOfView = 62
+            camNode.position = SCNVector3(Float(ex + jx * 0.3), Float(eh), Float(ez + jz * 0.3))
+            camNode.look(at: SCNVector3(Float(ex + dxv * 100), Float(eh), Float(ez + dzv * 100)))
+        } else {
+            camNode.camera?.zNear = 10
+            camNode.camera?.fieldOfView = 52
+            let lx = camX + cos(focus.aim) * 70, lz = camZ + sin(focus.aim) * 40
+            camNode.position = SCNVector3(Float(lx + jx), 400, Float(lz + 250 + jz))
+            camNode.look(at: SCNVector3(Float(lx), 0, Float(lz)))
+        }
 
         for (i, p) in e.players.enumerated() {
             let rt = roots[i]
             let show = (p.team == e.me.team || p.spotted || (!p.alive && p.seenEver)) && TMap.floorOf(p.pos) == focusFloor
-            rt.isHidden = !show
+            rt.isHidden = !show || (fpMode && p.id == focus.id)
             if !show { continue }
             rt.position = SCNVector3(Float(sx(p.pos)), 0, Float(p.pos.y))
             rt.eulerAngles = SCNVector3(0, Float(-p.aim), 0)
@@ -698,19 +738,19 @@ extension TacticalEngine {
     func drawOverlay3D(_ ctx: inout GraphicsContext, _ size: CGSize) {
         guard let pr = project else { return }
         let focus: TPlayer = me.alive ? me : (players.first { $0.team == me.team && $0.alive } ?? me)
-        // fog of war
+        // fog of war (top-down view only)
         let vp = focus.pos
         var poly = Path()
         var ok = true
         let n = 120
-        for i in 0...n {
+        for i in 0...(fp ? 0 : n) {
             let a = CGFloat(i) / CGFloat(n) * 2 * .pi
             let d = TMap.rayDist(vp, a, 700)
             let hit = d < 699
             guard let pt = pr(CGPoint(x: vp.x + cos(a) * d, y: vp.y + sin(a) * d), hit ? TMap.wallH - 8 : 0) else { ok = false; break }
             if i == 0 { poly.move(to: pt) } else { poly.addLine(to: pt) }
         }
-        if ok {
+        if ok && !fp {
             poly.closeSubpath()
             var dark = Path(CGRect(x: -60, y: -60, width: size.width + 120, height: size.height + 120))
             dark.addPath(poly)
@@ -764,6 +804,29 @@ extension TacticalEngine {
         }
         let vg = Gradient(colors: [Color.clear, Color.black.opacity(0.5)])
         ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .radialGradient(vg, center: CGPoint(x: size.width / 2, y: size.height / 2), startRadius: min(size.width, size.height) * 0.45, endRadius: max(size.width, size.height) * 0.72))
+        if fp {
+            var inSmoke: CGFloat = 0
+            for sm in smokeClouds where hypot(sm.pos.x - focus.pos.x, sm.pos.y - focus.pos.y) < sm.r * 0.8 {
+                inSmoke = max(inSmoke, min(1, sm.life / 1.5))
+            }
+            if inSmoke > 0 {
+                ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(white: 0.72).opacity(0.92 * Double(inSmoke))))
+            }
+            let cx = size.width / 2, hz = size.height / 2
+            var ch = Path()
+            ch.move(to: CGPoint(x: cx - 14, y: hz)); ch.addLine(to: CGPoint(x: cx - 5, y: hz))
+            ch.move(to: CGPoint(x: cx + 5, y: hz)); ch.addLine(to: CGPoint(x: cx + 14, y: hz))
+            ch.move(to: CGPoint(x: cx, y: hz - 14)); ch.addLine(to: CGPoint(x: cx, y: hz - 5))
+            ch.move(to: CGPoint(x: cx, y: hz + 5)); ch.addLine(to: CGPoint(x: cx, y: hz + 14))
+            ctx.stroke(ch, with: .color(.white.opacity(0.85)), lineWidth: 2)
+            if hitT > 0 {
+                var hm = Path()
+                hm.move(to: CGPoint(x: cx - 9, y: hz - 9)); hm.addLine(to: CGPoint(x: cx + 9, y: hz + 9))
+                hm.move(to: CGPoint(x: cx + 9, y: hz - 9)); hm.addLine(to: CGPoint(x: cx - 9, y: hz + 9))
+                ctx.stroke(hm, with: .color(.red), lineWidth: 3)
+            }
+            if me.alive { drawViewGun(&ctx, size) }
+        }
         drawMinimapPublic(&ctx)
         if me.hurt > 0 {
             ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color.red.opacity(Double(me.hurt) * 0.45)))
