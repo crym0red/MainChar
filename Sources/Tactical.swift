@@ -410,6 +410,18 @@ final class TacticalEngine {
     private let stormR: [CGFloat] = [1800, 1050, 640, 360, 170, 50]
     private var stormCs: [CGPoint] = []
     var brPlace = 0
+    // extraction raid
+    var raidBag: [RaidItem] = []
+    var raidHasKey = false
+    var raidZoneT: CGFloat = 0
+    var raidZoneIdx = -1
+    var raidExtracted = false
+    var raidLoudT: CGFloat = 0
+    var raidMsg = ""
+    var raidMsgT: CGFloat = 0
+    var contractKind = 0
+    var contractDone = false
+    var contractReward = 50
     var brEndT: CGFloat = 3
     var brAlive: Int { players.filter { $0.alive }.count }
     var stormDps: CGFloat { [1.5, 3, 5, 8, 12, 16][min(stormStage, 5)] }
@@ -473,10 +485,10 @@ final class TacticalEngine {
     func setup(gun: String, diff: Int, mode: Int = 0) {
         self.diff = diff
         gameMode = mode
-        TMap.load(mode == 6 ? 1 : mapPick)
+        TMap.load(mode == 6 ? 2 : mapPick)
         tags = []
         myGun = gun
-        let nb = mode == 6 ? 19 : 9
+        let nb = mode == 6 ? 11 : 9
         var names: [(String, String, String)] = TacRoster.pick(nb)
         while names.count < nb { let k = names.count + 1; names.append(("Recruit \(k)", "recruit\(k)", "")) }
         players = [TPlayer(id: 0, team: 0, name: TacProfile.name, handle: "you", emoji: "", isPlayer: true)]
@@ -493,7 +505,7 @@ final class TacticalEngine {
             for p in players { p.team = p.id }
             scores = Array(repeating: 0, count: 10)
         }
-        if mode == 6 { for p in players { p.team = p.id } }
+        if mode == 6 { for p in players { p.team = p.isPlayer ? 0 : 1 } }
         round = 0
         phase = 0
         over = false
@@ -556,7 +568,13 @@ final class TacticalEngine {
             let atk = p.team == atkTeam
             var spot = atk ? TMap.atkSpawn[ai % 5] : TMap.defSpawn[di % 5]
             if atk { ai += 1 } else { di += 1 }
-            if gameMode == 6 { spot = brSpawns[p.id % brSpawns.count] }
+            if gameMode == 6 {
+                let home = TMap.atkSpawn[2]
+                if p.isPlayer { spot = home } else {
+                    let far = brSpawns.filter { tDist($0, home) > 700 }
+                    spot = far.isEmpty ? brSpawns[p.id % brSpawns.count] : far[p.id % far.count]
+                }
+            }
             p.pos = spot
             p.aim = TMap.aimAtCenter(spot)
             p.respawn = 0
@@ -569,7 +587,11 @@ final class TacticalEngine {
             } else {
                 p.gun = p.isPlayer ? myGun : gunPick()
                 if gameMode == 3 { p.gun = TWeapons.ladder[0]; p.ladder = 0 }
-                if gameMode == 6 { p.gun = "pistol"; p.armor = 0; p.armorKind = 0; p.nades = 0; p.smokes = 0; p.flashes = 0 }
+                if gameMode == 6 {
+                    p.smokes = 0; p.flashes = 0
+                    if p.isPlayer { p.armorKind = 1; p.armor = 60; p.nades = 1 }
+                    else { p.armorKind = [1, 1, 2, 3][p.id % 4]; p.armor = p.armorKind >= 3 ? 150 : (p.armorKind == 2 ? 100 : 60); p.nades = p.id % 3 == 0 ? 1 : 0 }
+                }
                 p.mag = magSize(p, p.gun)
                 p.spare = TWeapons.isPistol(p.gun) ? 99 : 2
                 if p.isPlayer {
@@ -591,7 +613,7 @@ final class TacticalEngine {
             atkTeam = 0
             banner = TWeapons.modeNames[gameMode]
             tags = []
-            if gameMode == 6 { brStart() } else { for p in players { respawnPlayer(p) } }
+            if gameMode == 6 { raidStart() } else { for p in players { respawnPlayer(p) } }
         } else {
             timer = 6
             buyT = 16
@@ -660,7 +682,7 @@ final class TacticalEngine {
         }
         if phase == 0 {
             timer -= dt
-            if timer <= 0 { phase = 1; timer = gameMode == 0 ? 100 : (gameMode == 6 ? 99999 : 240); banner = gameMode == 6 ? "DROP IN" : "GO"; bannerT = 1 }
+            if timer <= 0 { phase = 1; timer = gameMode == 0 ? 100 : (gameMode == 6 ? 99999 : 240); banner = gameMode == 6 ? "DEPLOYED" : "GO"; bannerT = 1 }
             for p in players where !p.isPlayer { botLook(p, dt) }
             return
         }
@@ -840,7 +862,7 @@ final class TacticalEngine {
     }
 
     private func dmTick(_ dt: CGFloat) {
-        if gameMode == 6 { brTick(dt); return }
+        if gameMode == 6 { raidTick(dt); return }
         for p in players where !p.alive && p.respawn > 0 && !(p.isPlayer && replayOn) {
             p.respawn -= dt
             if p.respawn <= 0 { respawnPlayer(p) }
@@ -1187,7 +1209,7 @@ final class TacticalEngine {
             if gameMode != 0 {
                 victim.respawn = gameMode == 6 ? 0 : (victim.isPlayer && replayOn ? 999 : 3)
                 if gameMode == 6 && victim.isPlayer { brPlace = players.filter { $0.alive }.count + 1; brEndT = 3 }
-                if gameMode == 1, let k = killer, k.team != victim.team { scores[k.team] += 1 }
+                if (gameMode == 1 || gameMode == 4), let k = killer, k.team != victim.team { scores[k.team] += 1 }
                 if gameMode == 2 { tags.append(Tag(pos: victim.pos, team: victim.team, life: 25)) }
                 if gameMode == 3, let k = killer, k.team != victim.team {
                     k.ladder += 1
@@ -1360,7 +1382,7 @@ final class TacticalEngine {
     }
 
     private func objective(_ p: TPlayer) -> CGPoint {
-        if gameMode == 6 { return brGoal(p) }
+        if gameMode == 6 { return raidGoal(p) }
         if gameMode == 5 {
             let zs = cpZones
             let notMine = (0..<3).filter { !(p.team == 0 ? cpProg[$0] >= 1 : cpProg[$0] <= -1) }
@@ -1536,6 +1558,7 @@ final class TacticalEngine {
     // MARK: drawing
 
     func draw(_ ctx: inout GraphicsContext, _ size: CGSize) {
+        if replayOn && !me.alive { return }
         drawOverlay3D(&ctx, size)
     }
 
@@ -1618,12 +1641,13 @@ final class TacticalEngine {
             g.fill(Path(ellipseIn: CGRect(x: c.x - sm.r * s, y: c.y - sm.r * s, width: sm.r * 2 * s, height: sm.r * 2 * s)), with: .color(.white.opacity(0.4)))
         }
         if gameMode == 6 {
-            let oc = P(stormC.x + TMap.origin(rf), stormC.y)
-            let rr = stormRad * s
-            var sp = Path(CGRect(x: cx - 400, y: cy - 400, width: 800, height: 800))
-            sp.addEllipse(in: CGRect(x: oc.x - rr, y: oc.y - rr, width: rr * 2, height: rr * 2))
-            g.fill(sp, with: .color(Color(red: 0.62, green: 0.2, blue: 0.95).opacity(0.34)), style: FillStyle(eoFill: true))
-            g.stroke(Path(ellipseIn: CGRect(x: oc.x - rr, y: oc.y - rr, width: rr * 2, height: rr * 2)), with: .color(Color(red: 0.85, green: 0.6, blue: 1).opacity(0.9)), lineWidth: 1.5)
+            for z in TacticalEngine.raidZones where TMap.floorOf(z.pos) == rf {
+                let c = P(z.pos.x, z.pos.y)
+                if hypot(c.x - cx, c.y - cy) > R - 6 { continue }
+                let zc: Color = z.key ? TUI.gold : TUI.green
+                g.stroke(Path(ellipseIn: CGRect(x: c.x - 6, y: c.y - 6, width: 12, height: 12)), with: .color(zc), lineWidth: 2)
+                g.fill(Path(ellipseIn: CGRect(x: c.x - 2, y: c.y - 2, width: 4, height: 4)), with: .color(zc))
+            }
             for l in loot where !l.taken && TMap.floorOf(l.pos) == rf {
                 let c = P(l.pos.x, l.pos.y)
                 if hypot(c.x - cx, c.y - cy) > R - 4 { continue }
@@ -1690,7 +1714,7 @@ final class TacticalEngine {
     var allyAlive: Int { players.filter { $0.team == me.team && $0.alive }.count }
     var enemyAlive: Int { players.filter { $0.team != me.team && $0.alive }.count }
     var objectiveText: String {
-        if gameMode == 6 { return "Last one alive wins  ·  \(brAlive) left" }
+        if gameMode == 6 { return contractText }
         if gameMode == 1 { return "First to \(killTarget) kills" }
         if gameMode == 2 { return "Collect enemy tags, deny yours" }
         if gameMode == 3 { return "Arms Race  \(min(me.ladder + 1, TWeapons.ladder.count))/\(TWeapons.ladder.count)  \(TGuns.get(me.gun).name)" }
@@ -1800,6 +1824,8 @@ extension TacticalEngine {
             guard p.armorKind < k || p.armor < 30 else { return false }
             if apply { p.armorKind = k; p.armor = k >= 3 ? 150 : (k == 2 ? 100 : 60); if p.isPlayer { pop(p.pos, "ARMOR", .blue) } }
             return true
+        case "val", "part", "intel", "key":
+            return p.isPlayer
         case "g":
             let np = TWeapons.w(arg).price
             if TWeapons.isPistol(arg) {
@@ -1923,9 +1949,15 @@ struct TacticalPlay: View {
                 }
             }
             .ignoresSafeArea()
-            controls
-            hud
-            buyLayer
+            TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+                ZStack {
+                    if !(engine.replayOn && !engine.me.alive && !engine.over) {
+                        controls
+                        hud
+                        buyLayer
+                    }
+                }
+            }
             stateLayer
         }
         .statusBarHidden(true)
@@ -2336,7 +2368,6 @@ struct TacticalPlay: View {
                 let W = geo.size.width, H = geo.size.height
                 ZStack(alignment: .topLeading) {
                     HudVignette(e: e)
-                    if e.gameMode == 6 { HudStormTint(e: e) }
                     // top-left: settings; the radar is drawn by the canvas
                     Button { e.paused = true } label: { vbtn("gearshape.fill", 34) }
                         .buttonStyle(TuiPress())
@@ -2504,17 +2535,21 @@ struct TacticalPlay: View {
 
     private var overView: some View {
         let e = engine
-        let gems = ((e.won ? 25 : 8) + e.kills * 2 + e.scores[0] * 3 + (e.gameMode == 6 ? max(0, 20 - e.brPlace) : 0)) * TacRank.mult(game.s.ex.tac?.prestige ?? 0)
+        let gems = (e.gameMode == 6 ? e.raidGems : ((e.won ? 25 : 8) + e.kills * 2 + e.scores[0] * 3)) * TacRank.mult(game.s.ex.tac?.prestige ?? 0)
         let xp = 40 + e.kills * 10 + (e.won ? 60 : 0)
         let col = e.won ? TUI.green : TUI.red
         return ZStack {
             Color.black.opacity(0.78).ignoresSafeArea()
             VStack(spacing: 12) {
                 SF(e.won ? "trophy.fill" : "xmark.octagon.fill", "star.fill").font(.system(size: 34)).foregroundColor(col)
-                Text(e.gameMode == 6 ? (e.won ? "VICTORY ROYALE" : "ELIMINATED") : (e.won ? "VICTORY" : "DEFEAT")).font(.jk(38, .heavy)).tracking(3).foregroundColor(col)
+                Text(e.gameMode == 6 ? (e.won ? "EXTRACTED" : "K.I.A.") : (e.won ? "VICTORY" : "DEFEAT")).font(.jk(38, .heavy)).tracking(3).foregroundColor(col)
                 if e.gameMode == 6 {
-                    Text(e.won ? "LAST ONE STANDING" : "PLACED #\(e.brPlace) OF 20")
-                        .font(.system(size: 24, weight: .heavy, design: .rounded)).foregroundColor(.white)
+                    VStack(spacing: 3) {
+                        Text(e.won ? "LOOT SECURED  ·  \(e.raidBag.filter { $0.kind != "intel" }.count) ITEMS  ·  $\(e.bagValue)" : "BAG LOST  ·  \(e.raidBag.count) ITEMS")
+                            .font(.system(size: 20, weight: .heavy, design: .rounded)).foregroundColor(.white)
+                        Text(e.contractDone ? (e.won ? "CONTRACT COMPLETE  +\(e.contractReward) GEMS" : "CONTRACT COMPLETE (NOT EXTRACTED)") : "CONTRACT: \(e.contractText)")
+                            .font(.jk(12, .heavy)).foregroundColor(e.contractDone ? TUI.green : .white.opacity(0.6))
+                    }
                 } else {
                     HStack(spacing: 14) {
                         Text("\(e.scores[0])").foregroundColor(TUI.blue)
@@ -2531,7 +2566,9 @@ struct TacticalPlay: View {
                 Button {
                     guard !collected else { return }
                     collected = true
-                    game.tacticalFinish(won: e.won, kills: e.kills, gems: gems)
+                    var extra = 0
+                    if e.gameMode == 6 && e.won { extra = TacStash.commit(e.raidBag) }
+                    game.tacticalFinish(won: e.won, kills: e.kills, gems: gems + extra)
                     dismiss()
                 } label: {
                     HStack(spacing: 8) {

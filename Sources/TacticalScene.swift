@@ -658,6 +658,7 @@ final class TacScene {
         func lootColor(_ id: String) -> UIColor {
             if id == "g:awp" || id == "g:ak" || id == "g:m4" || id == "armor:3" { return C(1, 0.78, 0.2) }
             if id.hasPrefix("g:") || id.hasPrefix("armor") { return C(0.35, 0.65, 1) }
+            if id.hasPrefix("val") || id.hasPrefix("part") || id == "intel" || id == "key" { return C(1, 0.82, 0.2) }
             if id == "med" { return C(0.3, 0.95, 0.45) }
             if id == "nade" { return C(1, 0.55, 0.2) }
             return C(0.92, 0.92, 0.92)
@@ -685,24 +686,27 @@ final class TacScene {
             lootNodes.append(g)
         }
         if e.gameMode == 6 {
-            let sm = mat(nil, color: C(0.55, 0.2, 0.95), emission: C(0.5, 0.15, 0.9))
-            sm.lightingModel = .constant
-            sm.isDoubleSided = true
-            sm.transparency = 0.3
-            sm.writesToDepthBuffer = false
-            for f in 0..<3 {
-                let hold = MXNode()
-                for _ in 0..<64 {
-                    let n = MXNode(geometry: MXBox(width: 1, height: 420, length: 1, chamferRadius: 0))
-                    n.geometry?.firstMaterial = sm
-                    n.castsShadow = false
-                    n.renderingOrder = 8
-                    hold.addChildNode(n)
-                    stormSegs[f].append(n)
-                }
-                floorRoot[f].addChildNode(hold)
+            for z in TacticalEngine.raidZones {
+                let col = z.key ? C(1, 0.75, 0.2) : C(0.2, 1, 0.5)
+                let bm = mat(nil, color: col, emission: col)
+                bm.lightingModel = .constant
+                bm.isDoubleSided = true
+                bm.transparency = 0.22
+                bm.writesToDepthBuffer = false
+                let beam = MXNode(geometry: MXCylinder(radius: 52, height: 260))
+                beam.geometry?.firstMaterial = bm
+                beam.position = MXVector3(Float(z.pos.x), 130, Float(z.pos.y))
+                beam.castsShadow = false
+                beam.renderingOrder = 8
+                let pm = mat(nil, color: col, emission: col)
+                pm.lightingModel = .constant
+                let pad = MXNode(geometry: MXCylinder(radius: 55, height: 0.8))
+                pad.geometry?.firstMaterial = pm
+                pad.position = MXVector3(Float(z.pos.x), 1, Float(z.pos.y))
+                pad.castsShadow = false
+                floorRoot[TMap.floorOf(z.pos)].addChildNode(beam)
+                floorRoot[TMap.floorOf(z.pos)].addChildNode(pad)
             }
-            updateStormRing(e, force: true)
         }
         // bomb
         let bb = MXNode(geometry: MXBox(width: 18, height: 10, length: 14, chamferRadius: 2))
@@ -738,6 +742,16 @@ final class TacScene {
             lastPos.append(.zero)
             let head = sol.face
             faceMats.append(sol.faceMat)
+            let blob = MXNode(geometry: MXCylinder(radius: 13, height: 0.2))
+            let bm = MXMaterial()
+            bm.lightingModel = .constant
+            bm.diffuse.contents = UIColor.black
+            bm.transparency = 0.42
+            bm.writesToDepthBuffer = false
+            blob.geometry?.firstMaterial = bm
+            blob.position = MXVector3(0, 0.3, 0)
+            blob.castsShadow = false
+            rt.addChildNode(blob)
             rt.addChildNode(body)
             root.addChildNode(rt)
             roots.append(rt); bodies.append(body); heads.append(head); guns.append(gun); flashes.append(fl)
@@ -1046,7 +1060,6 @@ final class TacScene {
         applyDestruction(Float(max(0.001, min(0.05, CACurrentMediaTime() - lastDestroyT))))
         lastDestroyT = CACurrentMediaTime()
         for (i, l) in e.loot.enumerated() where i < lootNodes.count { lootNodes[i].isHidden = l.taken }
-        if e.gameMode == 6 { updateStormRing(e, force: false) }
         for i in doorLeaves.indices where i < TMap.doorOpen.count {
             let ang = Float(TMap.doorOpen[i]) * 1.65
             if abs(doorAngShown[i] - ang) > 0.004 {

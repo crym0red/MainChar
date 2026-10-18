@@ -38,6 +38,7 @@ struct LobbyView: View {
                         CSArsenal(gun: $nav.tacGun, rank: TacRank.index(TacRank.totalXP(t)), cash: game.s.ex.gems, coins: t.wins, back: { screen = 0 },
                                   editLoadout: { fromMatch = false; screen = 6 }, editChar: { showAvatar = true }, editCos: { seasonTab = 1; showSeason = true }, offer: { seasonTab = 2; showSeason = true })
                     case 7: CSGunsmith(back: { screen = 6 })
+                    case 8: CSStash(back: { screen = 0 })
                     case 5: CSLeague(rating: t.rating, cash: game.s.ex.gems, coins: t.wins) { screen = 0 }
                     case 6:
                         CSLoadout(gun: $nav.tacGun, countdown: fromMatch ? cd : nil, showBattle: fromMatch, gunsmith: fromMatch ? nil : { screen = 7 }, ok: { if fromMatch { beginMatch() } else { screen = 4 } }, battle: { beginMatch() })
@@ -97,7 +98,7 @@ struct LobbyView: View {
     }
 
     private func startLoading() {
-        TMap.load(nav.tacMode == 6 ? 1 : nav.tacMap)
+        TMap.load(nav.tacMode == 6 ? 2 : nav.tacMap)
         mapImg = TacRadar.image(1)
         loadP = 0
         screen = 3
@@ -204,7 +205,7 @@ struct LobbyView: View {
                     menuRow("person.3.fill", "FRIENDS") { showAdmin = true }
                     menuRow("shield.lefthalf.filled", "MY CLAN", dot: true) { showRanks = true }
                     menuRow("trophy.fill", "LEADERBOARD", dot: true) { showRanks = true }
-                    menuRow("gift.fill", "DAILY REWARDS") { seasonTab = 2; showSeason = true }
+                    menuRow("bag.fill", "STASH") { screen = 8 }
                 }
                 .padding(.top, 4)
             }
@@ -216,8 +217,8 @@ struct LobbyView: View {
                     HStack(spacing: 0) {
                         VStack(alignment: .leading, spacing: 3) {
                             Text("NEW MODE").font(.jk(9, .heavy)).foregroundColor(.white).padding(.horizontal, 6).padding(.vertical, 2).background(Rectangle().fill(Color.red))
-                            Text("BATTLE ROYALE").font(.jk(17, .heavy)).foregroundColor(CS.orange).lineLimit(1).minimumScaleFactor(0.7)
-                            Text("20 players · woods + bunker").font(.jk(9, .bold)).foregroundColor(.white.opacity(0.8)).lineLimit(1)
+                            Text("EXTRACTION").font(.jk(17, .heavy)).foregroundColor(CS.orange).lineLimit(1).minimumScaleFactor(0.7)
+                            Text("Warehouse Yard · loot · extract alive").font(.jk(9, .bold)).foregroundColor(.white.opacity(0.8)).lineLimit(1)
                         }
                         Spacer(minLength: 0)
                         SF("scope", "circle.fill").font(.system(size: 40, weight: .bold)).foregroundColor(Color(red: 0.55, green: 0.9, blue: 0.2).opacity(0.9))
@@ -338,7 +339,7 @@ struct LobbyView: View {
                 }
                 .position(x: W / 2, y: H - 80)
             } else {
-                Text("MAP: THE WOODS").font(.jk(11, .heavy)).foregroundColor(CS.gold).position(x: W / 2, y: H - 80)
+                Text("MAP: WAREHOUSE YARD").font(.jk(11, .heavy)).foregroundColor(CS.gold).position(x: W / 2, y: H - 80)
             }
             CSButton(title: "CREATE SQUAD", w: 180, h: 40, size: 16) { showAdmin = true }.position(x: 100, y: H - 30)
             CSButton(title: "PLAY", col: CS.orange, dark: CS.orangeDark, w: 180, h: 42, size: 26) { searchT = 0; screen = 2 }
@@ -405,7 +406,7 @@ struct LobbyView: View {
         let W = size.width, H = size.height
         let woods = nav.tacMode == 6
         let m = nav.tacMode
-        let tips = ["Pistols are very useful weapons that can save you from a lot of trouble.", "Walls and props can be shot apart. Break cover to flush enemies out.", "Doors can be closed to slow pushes and hide sound.", "The storm shrinks toward the bunker. Best loot is underground."]
+        let tips = ["Pistols are very useful weapons that can save you from a lot of trouble.", "Walls and props can be shot apart. Break cover to flush enemies out.", "Doors can be closed to slow pushes and hide sound.", "Loot the yard, finish your contract and reach an extraction zone alive. Die and you lose the bag."]
         return VStack(spacing: 10) {
             HStack(spacing: 12) {
                 SF("info.circle.fill").font(.system(size: 24)).foregroundColor(.white)
@@ -424,16 +425,16 @@ struct LobbyView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(TMap.mapNames[woods ? 1 : nav.tacMap]).font(.jk(34, .heavy)).lineLimit(1).minimumScaleFactor(0.6).foregroundColor(.white)
+                                Text(TMap.mapNames[woods ? 2 : nav.tacMap]).font(.jk(34, .heavy)).lineLimit(1).minimumScaleFactor(0.6).foregroundColor(.white)
                                 Text(TWeapons.modeNames[m]).font(.jk(22, .heavy)).foregroundColor(CS.modeCols[m])
                             }
                             Spacer()
                             SF(CS.modeIcons[m], "circle.fill").font(.system(size: 40, weight: .bold)).foregroundColor(CS.modeCols[m])
                         }
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("• \(m == 6 ? "Last player alive wins" : (m == 0 ? "First to 3 rounds wins" : "First to the kill target wins"))")
-                            Text("• \(m == 6 ? "Storm closes in on the bunker" : "5 minutes time limit")")
-                            Text("• Up to \(m == 6 ? 20 : 10) players")
+                            Text("• \(m == 6 ? "Extract with your loot to keep it" : (m == 0 ? "First to 3 rounds wins" : "First to the kill target wins"))")
+                            Text("• \(m == 6 ? "Die and the bag is lost" : "5 minutes time limit")")
+                            Text("• \(m == 6 ? "Solo raid vs AI squads" : "Up to 10 players")")
                         }
                         .font(.jk(14, .semibold)).foregroundColor(.white).padding(.top, 8)
                         Spacer(minLength: 0)

@@ -15,7 +15,7 @@ enum CS {
         Color(red: 0.2, green: 0.85, blue: 0.4), Color(red: 1, green: 0.25, blue: 0.25), Color(red: 0.2, green: 0.85, blue: 0.9), Color(red: 0.55, green: 0.9, blue: 0.2)
     ]
     static let modeIcons = ["timer", "person.2.fill", "tag.fill", "arrow.up.forward.circle.fill", "person.3.fill", "flag.fill", "scope"]
-    static let modeInfo = ["Plant or defuse the bomb.", "Team to 30 kills wins.", "Collect dog tags.", "Every kill upgrades your gun.", "Everyone for themselves.", "Hold zones A, B and C.", "20 players. Last one alive."]
+    static let modeInfo = ["Plant or defuse the bomb.", "Team to 30 kills wins.", "Collect dog tags.", "Every kill upgrades your gun.", "Everyone for themselves.", "Hold zones A, B and C.", "Loot, fight AI, extract alive."]
     static let modeReward = [(16, 24), (10, 14), (16, 20), (17, 20), (10, 14), (16, 20), (30, 40)]
 }
 
@@ -115,6 +115,7 @@ struct HudCSVitals: View {
                 cell("cross.fill", hp, me.hp / 100, me.hp < 35 ? TUI.red : .white)
                 cell("shield.fill", ar, me.armor / 100, .white)
             }
+            Text("KILLS \(me.kills)").font(.system(size: 13, weight: .heavy, design: .rounded)).foregroundColor(.white.opacity(0.9))
             if e.gameMode == 0 {
                 Text("$\(me.money)").font(.system(size: 14, weight: .heavy, design: .rounded)).foregroundColor(TUI.green)
             }

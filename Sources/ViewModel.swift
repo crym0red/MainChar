@@ -13,7 +13,7 @@ final class TwViewModel {
         let groups: [String: MXNode]
         let dirs: [String: MXVector3]
         let flash: MXNode?
-        var sil: MXNode? = nil
+        var att: TAttNodes? = nil
     }
 
     private var rigs: [String: Rig] = [:]
@@ -34,6 +34,8 @@ final class TwViewModel {
         root.scale = MXVector3(k, k, k)
         root.isHidden = true
         TwGunLib.load()
+        TwGunLib.vmMode = true
+        defer { TwGunLib.vmMode = false }
         buildKnife()
         guard let rs = TwGunLib.rigs else { return }
         for (id, v) in rs {
@@ -67,7 +69,6 @@ final class TwViewModel {
                 for (key, a) in an where a.count == 3 { dirs[key] = MXVector3(Float(a[0]), Float(a[1]), Float(a[2])) }
             }
             var fl: MXNode? = nil
-            var silNode: MXNode? = nil
             if let mz = rig["muzzle"] as? [Double], mz.count == 3 {
                 let f = MXNode(geometry: MXSphere(radius: 2.0))
                 let fm = MXMaterial()
@@ -83,18 +84,10 @@ final class TwViewModel {
                 f.castsShadow = false
                 gun.addChildNode(f)
                 fl = f
-                let sn = MXNode(geometry: MXCylinder(radius: 1.25, height: 9))
-                sn.geometry?.firstMaterial = TwGunLib.material("dark")
-                sn.eulerAngles = MXVector3(Float.pi / 2, 0, 0)
-                sn.position = MXVector3(Float(mz[0]), Float(mz[1]), Float(mz[2]) - 4.5)
-                sn.isHidden = true
-                sn.castsShadow = false
-                sn.renderingOrder = 1000
-                gun.addChildNode(sn)
-                silNode = sn
             }
             root.addChildNode(gun)
-            rigs[id] = Rig(node: gun, groups: groups, dirs: dirs, flash: fl, sil: silNode)
+            let attNodes = TAttBuild.build(id, into: gun, magHolder: groups["mag"], order: 1000)
+            rigs[id] = Rig(node: gun, groups: groups, dirs: dirs, flash: fl, att: attNodes)
         }
     }
 
@@ -103,7 +96,7 @@ final class TwViewModel {
     private var swing: Float = 0
 
     private func kMat(_ key: String, _ r: Float, _ g: Float, _ b: Float) -> MXMaterial {
-        if let m = TwGunLib.mats[key] { return m }
+        if let m = TwGunLib.vmMats[key] ?? TwGunLib.mats[key] { return m }
         let m = MXMaterial()
         m.diffuse.contents = UIColor(red: CGFloat(r), green: CGFloat(g), blue: CGFloat(b), alpha: 1)
         return m
@@ -160,14 +153,13 @@ final class TwViewModel {
         let gid = rigs[id] != nil ? id : "pistol"
         if TwViewModel.gloveColor != lastGlove {
             lastGlove = TwViewModel.gloveColor
-            TwGunLib.mats["glove"]?.diffuse.contents = TwViewModel.gloveColor
+            TwGunLib.vmMats["glove"]?.diffuse.contents = TwViewModel.gloveColor
         }
         let attKey = gid + "|" + TAtt.viewSig(gid)
         if attKey != lastAtt {
             lastAtt = attKey
-            TAtt.applyCamo(gid)
-            let sil = TAtt.mods(gid).silenced
-            for (key, r) in rigs { r.sil?.isHidden = !(key == gid && sil) }
+            TAtt.applyCamo(gid, set: 1)
+            for (key, r) in rigs { r.att?.apply(key) }
         }
         if gid == shown { return }
         shown = gid
@@ -271,7 +263,12 @@ final class TwViewModel {
 /// Shared weapon data: materials, parts and the third-person (soldier) gun templates.
 enum TwGunLib {
     static var defs: [String: [String: Any]] = [:]
-    static var mats: [String: MXMaterial] = [:]
+    /// 0 = shared (bots/world), 1 = first-person gun, 2 = gunsmith preview; separate instances so camo never leaks between them
+    static var sets: [[String: MXMaterial]] = [[:], [:], [:]]
+    static var setIdx = 0
+    static var mats: [String: MXMaterial] { get { sets[0] } set { sets[0] = newValue } }
+    static var vmMats: [String: MXMaterial] { get { sets[1] } set { sets[1] = newValue } }
+    static var vmMode: Bool { get { setIdx == 1 } set { setIdx = newValue ? 1 : 0 } }
     static var rigs: [String: Any]? = nil
     private static var worldCache: [String: MXNode] = [:]
     private static var worldMuzzle: [String: Float] = [:]
@@ -360,7 +357,7 @@ enum TwGunLib {
     }
 
     static func material(_ name: String) -> MXMaterial {
-        if let m = mats[name] { return m }
+        if let m = sets[setIdx][name] { return m }
         let d = defs[name] ?? [:]
         let c = (d["c"] as? [Double]) ?? [0.5, 0.5, 0.5]
         let m = MXMaterial()
@@ -389,7 +386,7 @@ enum TwGunLib {
             m.writesToDepthBuffer = false
             m.isDoubleSided = true
         }
-        mats[name] = m
+        sets[setIdx][name] = m
         return m
     }
 

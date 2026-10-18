@@ -82,7 +82,7 @@ struct HudScoreboard: View {
         let t = Int(max(0, e.timer))
         let focus: TPlayer = e.me.alive ? e.me : (allies.first { $0.alive } ?? e.me)
         return VStack(spacing: 4) {
-            if e.gameMode == 6 { brBar } else {
+            if e.gameMode == 6 { HudRaidBar(e: e) } else {
             HudCSScore(e: e)
             }
             if e.gameMode != 6 && e.gameMode != 0 && e.gameMode != 1 && e.gameMode != 2 && false {

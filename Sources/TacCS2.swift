@@ -457,7 +457,6 @@ struct CSKillcam: View {
     private func header(_ W: CGFloat, _ H: CGFloat) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                SF("skull.fill", "scope").font(.system(size: 20)).foregroundColor(.white)
                 Text("KILLCAM").font(.jk(22, .heavy)).foregroundColor(.white)
                 Spacer()
             }
@@ -485,7 +484,7 @@ struct CSKillcam: View {
                         Text(nm).font(.jk(15, .semibold)).foregroundColor(.white).lineLimit(1).minimumScaleFactor(0.6)
                         LeagueBadge(rating: tro, size: 16)
                     }
-                    SF("skull.fill", "scope").font(.system(size: 22)).foregroundColor(.white.opacity(0.85))
+                    SF("xmark.circle.fill").font(.system(size: 22)).foregroundColor(.white.opacity(0.85))
                 }
                 .frame(width: 150, height: 58).background(Color(red: 0.14, green: 0.12, blue: 0.1))
                 ZStack {
@@ -515,8 +514,8 @@ struct CSKillcam: View {
         ZStack {
             CSButton(title: "CHANGE LOADOUT", w: 150, h: 30, size: 11) { changeLoadout() }.position(x: W - 100, y: 70)
             if e.replayOn {
-                CSButton(title: "REPLAY", w: 130, h: 40, size: 15) { e.replayAgain() }.position(x: W - 250, y: H - 40)
-                CSButton(title: "RESPAWN", col: CS.orange, dark: CS.orangeDark, w: 150, h: 40, size: 16) { e.respawnNow() }.position(x: W - 100, y: H - 40)
+                CSButton(title: "REPLAY", w: 120, h: 36, size: 14) { e.replayAgain() }.position(x: W / 2 - 75, y: H - 128)
+                CSButton(title: "RESPAWN", col: CS.orange, dark: CS.orangeDark, w: 130, h: 36, size: 14) { e.respawnNow() }.position(x: W / 2 + 70, y: H - 128)
             }
         }
         .frame(width: W, height: H)
