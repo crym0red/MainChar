@@ -26,7 +26,7 @@ struct RootView: View {
             game.resume(first.id)
         } else {
             let p = Persona(name: "Player One", handle: "MainShot", bio: "", emoji: "😎", vibe: .menace)
-            game.start(world: Worlds.presets[0], persona: p)
+            game.start(world: WorldDef.presets[0], persona: p)
         }
         var s2 = game.s
         s2.intro?.done = true
