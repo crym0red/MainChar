@@ -61,7 +61,7 @@ struct LobbyView: View {
             BRLockerView().environmentObject(game)
         })
         .background(Color.clear.fullScreenCover(isPresented: $nav.brPlay) {
-            TowerPlay().environmentObject(game).environmentObject(nav).preferredColorScheme(.dark)
+            TowerPlay(mapId: nav.brMap).environmentObject(game).environmentObject(nav).preferredColorScheme(.dark)
         })
         .onChange(of: nav.tacPlay) { v in
             if v != nil {
@@ -180,11 +180,11 @@ struct LobbyView: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 6).frame(width: w, height: 46).background(Color.black.opacity(0.7))
-            Button { diff = (diff + 1) % 3 } label: {
+            Button { if nav.lobbyMode == 1 { nav.brMap = (nav.brMap + 1) % TowerMaps.all.count } else { diff = (diff + 1) % 3 } } label: {
                 HStack {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(nav.lobbyMode == 1 ? "BATTLE ROYALE" : "5V5 BOMB DEFUSAL").font(.jk(16, .heavy)).foregroundColor(.white)
-                        Text(nav.lobbyMode == 1 ? "The Spire  |  24 players  |  6 FLOORS  |  TOP-DOWN" : "Safehouse  |  \(diffNames[diff])  |  \(nav.tacFP ? "FIRST PERSON" : "3D")").font(.jk(12, .semibold)).foregroundColor(.white.opacity(0.8))
+                        Text(nav.lobbyMode == 1 ? "\(TowerMaps.all[nav.brMap].name)  |  \(TowerMaps.all[nav.brMap].players) players  |  \(TowerMaps.all[nav.brMap].nF) floors" : "Safehouse  |  \(diffNames[diff])  |  \(nav.tacFP ? "FIRST PERSON" : "3D")").font(.jk(12, .semibold)).foregroundColor(.white.opacity(0.8))
                     }
                     Spacer()
                     Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold)).foregroundColor(.white.opacity(0.7))

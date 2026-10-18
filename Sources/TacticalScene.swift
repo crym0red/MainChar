@@ -45,6 +45,13 @@ final class TacScene {
     var guns: [SCNNode] = []
     var flashes: [SCNNode] = []
     var headKey: [String] = []
+    var shirts: [SCNMaterial] = []
+    var legLs: [SCNNode] = []
+    var legRs: [SCNNode] = []
+    var gunVars: [[SCNNode]] = []
+    var gunShown: [Int] = []
+    var walkPh: [CGFloat] = []
+    var lastPos: [CGPoint] = []
     var bulletPool: [SCNNode] = []
     var nadePool: [SCNNode] = []
     var boomPool: [SCNNode] = []
@@ -433,22 +440,30 @@ final class TacScene {
         bombNode.isHidden = true
         root.addChildNode(bombNode)
         // players
+        let skinTints: [UIColor] = [UIColor(red: 0.9, green: 0.72, blue: 0.58, alpha: 1), UIColor(red: 0.65, green: 0.45, blue: 0.32, alpha: 1), UIColor(red: 0.45, green: 0.3, blue: 0.22, alpha: 1), UIColor(red: 0.95, green: 0.8, blue: 0.68, alpha: 1)]
         for p in e.players {
             let rt = SCNNode()
             let col: UIColor = p.isPlayer ? UIColor(red: 0.3, green: 0.9, blue: 0.45, alpha: 1) : (p.team == e.me.team ? UIColor(red: 0.25, green: 0.6, blue: 1, alpha: 1) : UIColor(red: 1, green: 0.25, blue: 0.3, alpha: 1))
-            let body = SCNNode(geometry: SCNCapsule(capRadius: 11, height: 46))
-            body.geometry?.firstMaterial = mat(nil, color: col)
-            body.position = SCNVector3(0, 23, 0)
-            let gun = SCNNode(geometry: SCNBox(width: 26, height: 5, length: 5, chamferRadius: 1))
-            gun.geometry?.firstMaterial = mat(nil, color: UIColor(white: 0.25, alpha: 1))
-            gun.position = SCNVector3(18, 30, 5)
-            let fl = SCNNode(geometry: SCNSphere(radius: 7))
-            fl.geometry?.firstMaterial = mat(nil, color: .yellow, emission: .yellow)
-            fl.position = SCNVector3(36, 30, 5)
-            fl.isHidden = true
-            fl.castsShadow = false
-            let head = SCNNode(geometry: SCNPlane(width: 32, height: 32))
-            head.position = SCNVector3(0, 58, 0)
+            var shirtC = col
+            var tint: UIColor? = nil
+            if p.isPlayer {
+                let oc = BRMeta.outfitColor()
+                shirtC = UIColor(red: oc.0, green: oc.1, blue: oc.2, alpha: 1)
+                if let sk = BRMeta.skinTint() { tint = UIColor(sk) }
+            }
+            let sol = TwRig.soldier(shirt: shirtC, skin: skinTints[p.id % skinTints.count], tint: tint)
+            let body = sol.root
+            let gun = sol.holder
+            let fl = sol.flash
+            shirts.append(sol.shirt)
+            legLs.append(sol.legL)
+            legRs.append(sol.legR)
+            gunVars.append(sol.variants)
+            gunShown.append(0)
+            walkPh.append(0)
+            lastPos.append(.zero)
+            let head = SCNNode(geometry: SCNPlane(width: 28, height: 28))
+            head.position = SCNVector3(0, 66, 0)
             head.castsShadow = false
             let bbc = SCNBillboardConstraint()
             head.constraints = [bbc]
@@ -457,7 +472,7 @@ final class TacScene {
             hm.isDoubleSided = true
             hm.diffuse.contents = ringed(nil, emoji: p.emoji, color: col)
             head.geometry?.firstMaterial = hm
-            rt.addChildNode(body); rt.addChildNode(gun); rt.addChildNode(fl); rt.addChildNode(head)
+            rt.addChildNode(body); rt.addChildNode(head)
             root.addChildNode(rt)
             roots.append(rt); bodies.append(body); heads.append(head); guns.append(gun); flashes.append(fl)
             headKey.append("")
@@ -657,18 +672,30 @@ final class TacScene {
             rt.eulerAngles = SCNVector3(0, Float(-p.aim), 0)
             if p.alive {
                 bodies[i].eulerAngles = SCNVector3(0, 0, 0)
-                bodies[i].position = SCNVector3(0, 23, 0)
+                bodies[i].position = SCNVector3(0, 0, 0)
                 heads[i].isHidden = false
                 guns[i].isHidden = false
                 flashes[i].isHidden = !(p.flash > 0)
-                bodies[i].geometry?.firstMaterial?.emission.contents = p.hurt > 0 ? UIColor(red: 0.8, green: 0.1, blue: 0.1, alpha: 1) : UIColor.black
+                shirts[i].emission.contents = p.hurt > 0 ? UIColor(red: 0.8, green: 0.1, blue: 0.1, alpha: 1) : UIColor.black
+                let dpx = p.pos.x - lastPos[i].x, dpy = p.pos.y - lastPos[i].y
+                let moved = hypot(dpx, dpy)
+                if moved < 40 { walkPh[i] += moved * 0.12 }
+                lastPos[i] = p.pos
+                let sw = Float(sin(walkPh[i])) * 0.7
+                legLs[i].eulerAngles = SCNVector3(0, 0, sw)
+                legRs[i].eulerAngles = SCNVector3(0, 0, -sw)
+                let gi = TwRig.gunIdx(p.gun)
+                if gunShown[i] != gi {
+                    for (k, g) in gunVars[i].enumerated() { g.isHidden = k != gi }
+                    flashes[i].position = SCNVector3(TwRig.flashX[gi], 1, 0)
+                    gunShown[i] = gi
+                }
             } else {
                 bodies[i].eulerAngles = SCNVector3(0, 0, Float.pi / 2)
-                bodies[i].position = SCNVector3(0, 11, 0)
+                bodies[i].position = SCNVector3(0, 8, 0)
                 heads[i].isHidden = true
-                guns[i].isHidden = true
                 flashes[i].isHidden = true
-                bodies[i].geometry?.firstMaterial?.emission.contents = UIColor.black
+                shirts[i].emission.contents = UIColor.black
             }
             let img = e.sprites[p.handle]
             let key = p.handle + (img == nil ? "-n" : "-y")

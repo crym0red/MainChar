@@ -460,6 +460,7 @@ final class Nav: ObservableObject {
     @Published var tacPlay: Int? = nil
     @Published var tacFP = false
     @Published var brPlay = false
+    @Published var brMap = 0
     @Published var lobbyMode = 0
 }
 
