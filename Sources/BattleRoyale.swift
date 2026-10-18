@@ -74,16 +74,12 @@ struct BattleRoyalePlay: View {
                             engine.move = .zero
                         })
                 stickView(W, H)
-                fireButton.position(x: W - 72, y: H - 82)
-                roundButton("arrow.clockwise", "RELOAD") { engine.doReload() }.position(x: W - 162, y: H - 54)
-                roundButton("arrow.left.arrow.right", "SWAP") { engine.swapGun() }.position(x: W - 152, y: H - 114)
-                roundButton(engine.crouch ? "arrow.up.to.line" : "arrow.down.to.line", "CROUCH") { engine.crouch.toggle() }.position(x: W - 72, y: H - 170)
-                roundButton("cross.case.fill", "HEAL \(engine.meds)") { engine.heal() }.position(x: W - 222, y: H - 92)
-                Button { engine.autoAim.toggle(); autoOn = engine.autoAim } label: {
-                    Text(autoOn ? "AUTO" : "MAN").font(.jk(11, .heavy)).foregroundColor(autoOn ? .black : .white)
-                        .padding(.horizontal, 10).frame(height: 30).background(autoOn ? lime : Color.black.opacity(0.55)).clipShape(Capsule())
-                }
-                .position(x: W - 222, y: H - 150)
+                fireButton(78).position(x: W - 100, y: H - 135)
+                fireButton(54).position(x: 48, y: H - 205)
+                roundButton("arrow.clockwise", "RELOAD") { engine.doReload() }.position(x: W - 128, y: H - 50)
+                roundButton("arrow.left.arrow.right", "SWAP") { engine.swapGun() }.position(x: W - 196, y: H - 96)
+                roundButton(engine.crouch ? "arrow.up.to.line" : "arrow.down.to.line", "CROUCH") { engine.crouch.toggle() }.position(x: W - 34, y: H - 70)
+                roundButton("cross.case.fill", "HEAL \(engine.meds)") { engine.heal() }.position(x: W - 34, y: H - 172)
             }
         }
     }
@@ -105,11 +101,11 @@ struct BattleRoyalePlay: View {
         .allowsHitTesting(false)
     }
 
-    private var fireButton: some View {
-        Circle().fill(Color.red.opacity(0.55))
-            .frame(width: 88, height: 88)
-            .overlay(Circle().stroke(Color.white.opacity(0.8), lineWidth: 3))
-            .overlay(Image(systemName: "scope").font(.system(size: 32, weight: .bold)).foregroundColor(.white))
+    private func fireButton(_ d: CGFloat) -> some View {
+        Circle().fill(Color.black.opacity(0.45))
+            .frame(width: d, height: d)
+            .overlay(Circle().stroke(Color.white.opacity(0.85), lineWidth: 3))
+            .overlay(Image(systemName: "scope").font(.system(size: d * 0.42, weight: .bold)).foregroundColor(.white))
             .contentShape(Circle())
             .gesture(DragGesture(minimumDistance: 0)
                 .onChanged { _ in engine.firing = true }
@@ -123,8 +119,8 @@ struct BattleRoyalePlay: View {
                 Text(label).font(.jk(7, .heavy))
             }
             .foregroundColor(.white)
-            .frame(width: 50, height: 50)
-            .background(Color.black.opacity(0.55))
+            .frame(width: 46, height: 46)
+            .background(Color.black.opacity(0.5))
             .clipShape(Circle())
             .overlay(Circle().stroke(Color.white.opacity(0.5), lineWidth: 1.5))
         }
@@ -138,29 +134,35 @@ struct BattleRoyalePlay: View {
         return GeometryReader { g in
             let W = g.size.width, H = g.size.height
             ZStack {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(spacing: 6) {
                     chip("scope", "\(e.kills)")
                     chip("person.2.fill", "\(e.aliveCount)")
-                    Button { e.paused = true } label: {
-                        Image(systemName: "pause.fill").font(.system(size: 13, weight: .bold)).foregroundColor(.white)
-                            .frame(width: 34, height: 30).background(Color.black.opacity(0.5)).clipShape(RoundedRectangle(cornerRadius: 6))
-                    }
                 }
-                .position(x: 52, y: 70)
+                .position(x: 52, y: 46)
+                Button { e.paused = true } label: {
+                    Image(systemName: "pause.fill").font(.system(size: 13, weight: .bold)).foregroundColor(.white)
+                        .frame(width: 34, height: 30).background(Color.black.opacity(0.5)).clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+                .position(x: 31, y: 98)
+                Button { e.autoAim.toggle(); autoOn = e.autoAim } label: {
+                    Text(autoOn ? "AUTO" : "MAN").font(.jk(11, .heavy)).foregroundColor(autoOn ? .black : .white)
+                        .padding(.horizontal, 10).frame(height: 30).background(autoOn ? lime : Color.black.opacity(0.55)).clipShape(Capsule())
+                }
+                .position(x: 90, y: 98)
 
-                Text(e.zoneLabel).font(.jk(11, .heavy)).foregroundColor(.white)
-                    .padding(.horizontal, 10).frame(height: 22)
+                Text(e.zoneLabel).font(.jk(10, .heavy)).foregroundColor(.white)
+                    .padding(.horizontal, 10).frame(height: 20)
                     .background(Color(red: 0.45, green: 0.15, blue: 0.65).opacity(0.85)).clipShape(Capsule())
-                    .position(x: W - 80, y: 170)
+                    .position(x: W - 72, y: 142)
                     .allowsHitTesting(false)
 
-                VStack(alignment: .trailing, spacing: 2) {
-                    ForEach(Array(e.feed.suffix(4).enumerated()), id: \.offset) { _, f in
+                VStack(spacing: 2) {
+                    ForEach(Array(e.feed.suffix(3).enumerated()), id: \.offset) { _, f in
                         Text(f.0).font(.jk(10, .bold)).foregroundColor(.white)
                             .padding(.horizontal, 6).padding(.vertical, 2).background(Color.black.opacity(0.5)).clipShape(RoundedRectangle(cornerRadius: 3))
                     }
                 }
-                .position(x: W - 110, y: 235)
+                .position(x: W / 2, y: 96)
                 .allowsHitTesting(false)
 
                 if e.toast.1 > 0 {
@@ -183,7 +185,7 @@ struct BattleRoyalePlay: View {
                 }
 
                 loadout(e)
-                    .position(x: 330, y: H - 56)
+                    .position(x: 330, y: H - 52)
             }
         }
     }
@@ -233,7 +235,7 @@ struct BattleRoyalePlay: View {
         } label: {
             HStack(spacing: 4) {
                 if let s = s {
-                    Image(uiImage: GunSprites.image(s.gun)).resizable().scaledToFit().frame(width: 44, height: 24)
+                    Image(uiImage: GunSprites.icon(s.gun)).resizable().scaledToFit().frame(width: 46, height: 26)
                     VStack(alignment: .leading, spacing: 0) {
                         Text(BRGuns.def(s.gun).name).font(.jk(7, .heavy)).foregroundColor(.white.opacity(0.85))
                         Text("\(s.mag) / \(s.reserve)").font(.jk(12, .heavy)).foregroundColor(.white)

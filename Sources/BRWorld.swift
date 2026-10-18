@@ -103,17 +103,71 @@ final class BRWorld {
     private var rng = BRRand(s: 20260611)
     private let t: CGFloat = 14
 
-    static func water(_ p: CGPoint) -> Bool {
+    static let lakes: [(CGPoint, CGFloat, CGFloat)] = [(CGPoint(x: 1500, y: 1350), 400, 300), (CGPoint(x: 4350, y: 3850), 150, 110)]
+
+    var roads: [[CGPoint]] = []
+    var roadSegs: [(CGPoint, CGPoint)] = []
+    var patches: [(CGRect, BRCol)] = []
+
+    static func coastDist(_ p: CGPoint) -> CGFloat {
         let coastX: CGFloat = 420 + 260 * sin(p.y / 640) + 140 * sin(p.y / 230)
         let coastY: CGFloat = 5560 + 200 * sin(p.x / 540)
-        if p.x < coastX || p.y > coastY { return true }
+        return min(p.x - coastX, coastY - p.y)
+    }
+
+    static func lakeDist(_ p: CGPoint) -> CGFloat {
+        var best: CGFloat = 99999
+        for (c, rx, ry) in lakes {
+            let nx = (p.x - c.x) / rx, ny = (p.y - c.y) / ry
+            let d = (sqrt(nx * nx + ny * ny) - 1) * min(rx, ry)
+            best = min(best, d)
+        }
+        return best
+    }
+
+    static func water(_ p: CGPoint) -> Bool {
+        if coastDist(p) < 0 { return true }
         if p.x > W - 110 || p.y < 110 { return true }
-        return false
+        return lakeDist(p) < 0
+    }
+
+    func roadDist(_ p: CGPoint) -> CGFloat {
+        var best: CGFloat = 99999
+        for (a, b) in roadSegs {
+            let dx = b.x - a.x, dy = b.y - a.y
+            let l2 = dx * dx + dy * dy
+            var t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / max(1, l2)
+            t = max(0, min(1, t))
+            let d = hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t))
+            if d < best { best = d }
+        }
+        return best
+    }
+
+    func ground(_ p: CGPoint) -> BRCol {
+        if BRWorld.water(p) {
+            let r = 0.04 * sin(p.x / 30 + p.y / 45)
+            return (0.17 + r, 0.4 + r, 0.6 + r)
+        }
+        if BRWorld.coastDist(p) < 70 || BRWorld.lakeDist(p) < 50 { return (0.8, 0.74, 0.55) }
+        for (r, c) in patches where r.contains(p) { return c }
+        let rd = roadDist(p)
+        if rd < 30 {
+            let dash = rd < 2.5 && fmod(abs(p.x + p.y), 80) < 40
+            return dash ? (0.8, 0.75, 0.3) : (0.3, 0.31, 0.33)
+        }
+        if rd < 36 { return (0.62, 0.6, 0.55) }
+        let n1 = sin(p.x / 90) * cos(p.y / 110) + 0.5 * sin((p.x + p.y) / 47)
+        let n2 = sin(p.x / 230 + 1) * sin(p.y / 190 + 2)
+        if n2 > 0.72 { return (0.5, 0.42, 0.3) }
+        let k = n1 * 0.035
+        return (0.34 + k, 0.5 + k, 0.27 + k)
     }
 
     // MARK: generation
 
     private let towns: [BRCol] = [(0.78, 0.72, 0.6), (0.85, 0.82, 0.74), (0.62, 0.38, 0.3), (0.7, 0.6, 0.5), (0.55, 0.58, 0.62), (0.8, 0.66, 0.46)]
+    private let greys: [BRCol] = [(0.6, 0.62, 0.66), (0.72, 0.72, 0.7), (0.5, 0.54, 0.6), (0.78, 0.76, 0.7), (0.58, 0.5, 0.46)]
 
     private func addWall(_ r: CGRect, _ h: CGFloat, _ c: BRCol) {
         walls.append(BRWall(r: r, h: h, c: c))
@@ -144,7 +198,9 @@ final class BRWorld {
         for b in blds where b.r.intersects(e) { return false }
         for rw in runways where rw.intersects(e) { return false }
         let pts = [CGPoint(x: e.minX, y: e.minY), CGPoint(x: e.maxX, y: e.minY), CGPoint(x: e.minX, y: e.maxY), CGPoint(x: e.maxX, y: e.maxY), CGPoint(x: e.midX, y: e.midY)]
-        for p in pts where BRWorld.water(p) { return false }
+        for p in pts where BRWorld.water(p) || BRWorld.lakeDist(p) < 30 { return false }
+        let rp = [CGPoint(x: r.minX, y: r.minY), CGPoint(x: r.maxX, y: r.minY), CGPoint(x: r.minX, y: r.maxY), CGPoint(x: r.maxX, y: r.maxY), CGPoint(x: r.midX, y: r.midY)]
+        for p in rp where roadDist(p) < 52 { return false }
         return true
     }
 
@@ -166,10 +222,13 @@ final class BRWorld {
             vw(r.minY, r.maxY, px, rng.r(r.minY + 70, r.maxY - 70), h, c)
         }
         blds.append(BRBuilding(r: r, kind: kind))
-        let a = CGPoint(x: r.minX + r.width * 0.26, y: r.minY + r.height * rng.r(0.3, 0.7))
-        let b = CGPoint(x: r.minX + r.width * 0.74, y: r.minY + r.height * rng.r(0.3, 0.7))
-        spots.append(a)
-        spots.append(b)
+        spots.append(CGPoint(x: r.minX + r.width * 0.26, y: r.minY + r.height * rng.r(0.3, 0.7)))
+        spots.append(CGPoint(x: r.minX + r.width * 0.74, y: r.minY + r.height * rng.r(0.3, 0.7)))
+    }
+
+    private func block(_ r: CGRect, _ h: CGFloat, _ c: BRCol, _ kind: Int = 9) {
+        addWall(r, h, c)
+        blds.append(BRBuilding(r: r, kind: kind))
     }
 
     private func container(_ r: CGRect, _ c: BRCol) {
@@ -177,100 +236,176 @@ final class BRWorld {
         spots.append(CGPoint(x: r.midX, y: r.maxY + 40))
     }
 
-    private func generate() {
-        // Port Ridge: the town grid
-        var bx: CGFloat = 1900
-        while bx < 3800 {
-            var by: CGFloat = 2300
-            while by < 4000 {
-                if rng.f() > 0.12 {
-                    let w = rng.r(240, 320), h = rng.r(220, 300)
-                    let r = CGRect(x: bx + rng.r(0, 50), y: by + rng.r(0, 50), width: w, height: h)
-                    let c = towns[Int(rng.f() * 6) % 6]
-                    building(r, rng.r(88, 130), c, 0)
-                }
-                by += 400
-            }
-            bx += 440
+    private func road(_ pts: [CGPoint]) {
+        roads.append(pts)
+        if pts.count > 1 {
+            for i in 0..<(pts.count - 1) { roadSegs.append((pts[i], pts[i + 1])) }
         }
-        places.append(("PORT RIDGE", CGPoint(x: 2800, y: 3150)))
+    }
 
-        // Steel Yard: warehouses and container stacks
-        for i in 0..<3 {
-            for j in 0..<3 {
-                let r = CGRect(x: 4000 + CGFloat(i) * 540, y: 800 + CGFloat(j) * 480, width: 440, height: 280)
-                building(r, 140, (0.5, 0.54, 0.58), 1)
-            }
-        }
+    private func scatterContainers(_ area: CGRect, _ count: Int, _ off: Int) {
         var n = 0
         var tries = 0
-        while n < 18 && tries < 200 {
+        let cols: [BRCol] = [(0.7, 0.22, 0.18), (0.2, 0.36, 0.6), (0.85, 0.55, 0.15), (0.25, 0.5, 0.35)]
+        while n < count && tries < 400 {
             tries += 1
             let horiz = rng.f() > 0.5
             let w: CGFloat = horiz ? 84 : 32
             let h: CGFloat = horiz ? 32 : 84
-            let r = CGRect(x: rng.r(3950, 5600), y: rng.r(700, 2100), width: w, height: h)
-            if isFree(r, 36) && !wallHit(r.insetBy(dx: -30, dy: -30)) {
-                let cols: [BRCol] = [(0.7, 0.22, 0.18), (0.2, 0.36, 0.6), (0.85, 0.55, 0.15), (0.25, 0.5, 0.35)]
-                container(r, cols[n % 4])
+            let r = CGRect(x: rng.r(area.minX, area.maxX), y: rng.r(area.minY, area.maxY), width: w, height: h)
+            if isFree(r, 34) && !wallHit(r.insetBy(dx: -30, dy: -30)) {
+                container(r, cols[(n + off) % 4])
                 n += 1
             }
         }
-        places.append(("STEEL YARD", CGPoint(x: 4750, y: 1450)))
+    }
 
-        // Highland Strip: airfield
-        runways.append(CGRect(x: 1300, y: 1100, width: 2200, height: 90))
-        for i in 0..<3 {
-            let r = CGRect(x: 1400 + CGFloat(i) * 640, y: 700, width: 520, height: 300)
-            building(r, 130, (0.62, 0.66, 0.6), 2)
+    private func houses(_ area: CGRect, _ count: Int, _ kind: Int) {
+        var n = 0
+        var tries = 0
+        while n < count && tries < 400 {
+            tries += 1
+            let r = CGRect(x: rng.r(area.minX, area.maxX), y: rng.r(area.minY, area.maxY), width: rng.r(150, 220), height: rng.r(130, 180))
+            if isFree(r, 70) && !wallHit(r.insetBy(dx: -60, dy: -60)) {
+                building(r, rng.r(75, 95), towns[Int(rng.f() * 6) % 6], kind)
+                n += 1
+            }
         }
-        building(CGRect(x: 2000, y: 1260, width: 150, height: 150), 220, (0.8, 0.8, 0.82), 2)
-        places.append(("HIGHLAND STRIP", CGPoint(x: 2300, y: 1050)))
+    }
 
-        // Dockside: harbor warehouses and containers
+    private func generate() {
+        // roads first so everything avoids them
+        road([CGPoint(x: 3000, y: 2050), CGPoint(x: 3000, y: 1300), CGPoint(x: 5650, y: 1300)])
+        road([CGPoint(x: 2200, y: 2900), CGPoint(x: 1000, y: 2900)])
+        road([CGPoint(x: 3800, y: 2900), CGPoint(x: 5000, y: 2900)])
+        road([CGPoint(x: 3000, y: 3750), CGPoint(x: 3000, y: 4000), CGPoint(x: 3300, y: 4000)])
+        road([CGPoint(x: 2200, y: 3300), CGPoint(x: 1700, y: 3300), CGPoint(x: 1500, y: 4000), CGPoint(x: 1500, y: 5100)])
+        road([CGPoint(x: 5000, y: 2900), CGPoint(x: 5000, y: 4300), CGPoint(x: 4700, y: 4500)])
+        road([CGPoint(x: 3000, y: 1300), CGPoint(x: 2000, y: 1300), CGPoint(x: 2000, y: 700)])
+        road([CGPoint(x: 4600, y: 1300), CGPoint(x: 4600, y: 2900)])
+        road([CGPoint(x: 3300, y: 4700), CGPoint(x: 4400, y: 4700), CGPoint(x: 4700, y: 4500)])
+        road([CGPoint(x: 1000, y: 2300), CGPoint(x: 2200, y: 2300), CGPoint(x: 2200, y: 2900)])
+
+        patches.append((CGRect(x: 2150, y: 2000, width: 1700, height: 1750), (0.5, 0.5, 0.48)))   // downtown paving
+        patches.append((CGRect(x: 4300, y: 4000, width: 900, height: 780), (0.56, 0.46, 0.33)))    // quarry
+        patches.append((CGRect(x: 4730, y: 2640, width: 560, height: 520), (0.58, 0.54, 0.44)))    // prison yard
+        patches.append((CGRect(x: 3000, y: 4260, width: 600, height: 440), (0.4, 0.55, 0.3)))      // arena turf
+        patches.append((CGRect(x: 3500, y: 1030, width: 2200, height: 140), (0.28, 0.28, 0.3)))    // runway
+        patches.append((CGRect(x: 3500, y: 700, width: 2200, height: 330), (0.5, 0.5, 0.5)))       // apron
+        runways.append(CGRect(x: 3500, y: 1030, width: 2200, height: 140))
+
+        // Meridian: dense downtown
+        var bx: CGFloat = 2200
+        while bx < 3800 {
+            var by: CGFloat = 2080
+            while by < 3700 {
+                if rng.f() > 0.1 {
+                    let w = rng.r(230, 280), h = rng.r(210, 260)
+                    let r = CGRect(x: bx + rng.r(0, 30), y: by + rng.r(0, 30), width: w, height: h)
+                    if isFree(r, 10) {
+                        let tall = rng.f() > 0.55
+                        building(r, tall ? rng.r(170, 260) : rng.r(100, 140), greys[Int(rng.f() * 5) % 5], 0)
+                        if tall { spots.append(CGPoint(x: r.midX, y: r.midY)) }
+                    }
+                }
+                by += 330
+            }
+            bx += 330
+        }
+        places.append(("MERIDIAN", CGPoint(x: 3000, y: 2900)))
+
+        // Sunken Arena: stadium
+        let ar = CGRect(x: 3000, y: 4260, width: 600, height: 440)
+        hw(ar.minX, ar.maxX, ar.minY, ar.midX, 130, (0.7, 0.7, 0.72))
+        hw(ar.minX, ar.maxX, ar.maxY, ar.midX + 60, 130, (0.7, 0.7, 0.72))
+        vw(ar.minY, ar.maxY, ar.minX, ar.midY, 130, (0.7, 0.7, 0.72))
+        vw(ar.minY, ar.maxY, ar.maxX, ar.midY - 40, 130, (0.7, 0.7, 0.72))
+        let inner = ar.insetBy(dx: 120, dy: 100)
+        hw(inner.minX, inner.maxX, inner.minY, inner.midX - 30, 46, (0.55, 0.6, 0.55))
+        hw(inner.minX, inner.maxX, inner.maxY, inner.midX + 30, 46, (0.55, 0.6, 0.55))
+        vw(inner.minY, inner.maxY, inner.minX, inner.midY, 46, (0.55, 0.6, 0.55))
+        vw(inner.minY, inner.maxY, inner.maxX, inner.midY, 46, (0.55, 0.6, 0.55))
+        blds.append(BRBuilding(r: ar, kind: 6))
+        for i in 0..<5 { spots.append(CGPoint(x: ar.minX + 60 + CGFloat(i) * 120, y: ar.minY + 50)) }
+        places.append(("SUNKEN ARENA", CGPoint(x: 3300, y: 4480)))
+
+        // Redhill Airfield
+        building(CGRect(x: 3700, y: 480, width: 640, height: 220), 120, (0.8, 0.8, 0.82), 2)
+        for i in 0..<3 {
+            building(CGRect(x: 4450 + CGFloat(i) * 380, y: 440, width: 330, height: 240), 130, (0.62, 0.66, 0.6), 2)
+        }
+        block(CGRect(x: 3600, y: 1220, width: 70, height: 70), 250, (0.82, 0.82, 0.84), 2)
+        for i in 0..<4 { spots.append(CGPoint(x: 3800 + CGFloat(i) * 450, y: 1230)) }
+        places.append(("REDHILL AIRFIELD", CGPoint(x: 4600, y: 900)))
+
+        // Northgate Dam
+        vw(900, 1350, 1960, 1130, 100, (0.66, 0.66, 0.64))
+        vw(1350, 1800, 1960, 1560, 100, (0.66, 0.66, 0.64))
+        building(CGRect(x: 2060, y: 1450, width: 230, height: 160), 100, (0.7, 0.7, 0.66), 3)
+        building(CGRect(x: 2060, y: 880, width: 220, height: 150), 100, (0.7, 0.7, 0.66), 3)
+        places.append(("NORTHGATE DAM", CGPoint(x: 1960, y: 1350)))
+
+        // Ironwall Prison
+        let pr = CGRect(x: 4750, y: 2660, width: 540, height: 500)
+        hw(pr.minX, pr.maxX, pr.minY, nil, 120, (0.58, 0.58, 0.56))
+        hw(pr.minX, pr.maxX, pr.maxY, pr.midX, 120, (0.58, 0.58, 0.56))
+        vw(pr.minY, pr.maxY, pr.minX, nil, 120, (0.58, 0.58, 0.56))
+        vw(pr.minY, pr.maxY, pr.maxX, pr.midY, 120, (0.58, 0.58, 0.56))
+        blds.append(BRBuilding(r: pr, kind: 7))
+        for (tx, ty) in [(pr.minX - 30, pr.minY - 30), (pr.maxX - 20, pr.minY - 30), (pr.minX - 30, pr.maxY - 20), (pr.maxX - 20, pr.maxY - 20)] {
+            block(CGRect(x: tx, y: ty, width: 54, height: 54), 220, (0.5, 0.5, 0.5), 7)
+        }
+        building(CGRect(x: pr.minX + 50, y: pr.minY + 50, width: 200, height: 110), 95, (0.66, 0.64, 0.6), 7)
+        building(CGRect(x: pr.minX + 290, y: pr.minY + 50, width: 200, height: 110), 95, (0.66, 0.64, 0.6), 7)
+        building(CGRect(x: pr.minX + 120, y: pr.minY + 260, width: 300, height: 120), 95, (0.66, 0.64, 0.6), 7)
+        places.append(("IRONWALL PRISON", CGPoint(x: 5020, y: 2900)))
+
+        // Gravel Pit quarry
+        building(CGRect(x: 4380, y: 4080, width: 230, height: 150), 90, (0.6, 0.5, 0.4), 4)
+        building(CGRect(x: 4900, y: 4500, width: 230, height: 150), 90, (0.6, 0.5, 0.4), 4)
+        scatterContainers(CGRect(x: 4320, y: 4280, width: 800, height: 420), 16, 2)
+        places.append(("GRAVEL PIT", CGPoint(x: 4750, y: 4400)))
+
+        // Dockline harbor
         for i in 0..<3 {
             for j in 0..<2 {
-                let r = CGRect(x: 1050 + CGFloat(i) * 330, y: 4100 + CGFloat(j) * 430, width: 280, height: 260)
-                building(r, 110, (0.6, 0.5, 0.42), 3)
+                building(CGRect(x: 1050 + CGFloat(i) * 330, y: 4150 + CGFloat(j) * 430, width: 280, height: 260), 110, (0.6, 0.5, 0.42), 5)
             }
         }
-        n = 0
-        tries = 0
-        while n < 22 && tries < 300 {
-            tries += 1
-            let horiz = rng.f() > 0.4
-            let w: CGFloat = horiz ? 84 : 32
-            let h: CGFloat = horiz ? 32 : 84
-            let r = CGRect(x: rng.r(1000, 2700), y: rng.r(3800, 5200), width: w, height: h)
-            if isFree(r, 36) && !wallHit(r.insetBy(dx: -30, dy: -30)) {
-                let cols: [BRCol] = [(0.7, 0.22, 0.18), (0.2, 0.36, 0.6), (0.85, 0.55, 0.15), (0.25, 0.5, 0.35)]
-                container(r, cols[(n + 1) % 4])
-                n += 1
-            }
-        }
-        places.append(("DOCKSIDE", CGPoint(x: 1500, y: 4550)))
+        scatterContainers(CGRect(x: 1000, y: 3800, width: 1700, height: 1350), 26, 1)
+        places.append(("DOCKLINE", CGPoint(x: 1500, y: 4550)))
 
-        // Farmland: scattered houses
-        n = 0
-        tries = 0
-        while n < 32 && tries < 300 {
-            tries += 1
-            let r = CGRect(x: rng.r(900, 5600), y: rng.r(500, 5100), width: rng.r(150, 210), height: rng.r(130, 170))
-            if isFree(r, 90) && !wallHit(r.insetBy(dx: -80, dy: -80)) {
-                building(r, 80, towns[Int(rng.f() * 6) % 6], 4)
-                n += 1
-            }
-        }
-        places.append(("WEST FIELDS", CGPoint(x: 1300, y: 2300)))
-        places.append(("EAST FARMS", CGPoint(x: 5000, y: 3900)))
+        // Northfield medical campus
+        building(CGRect(x: 2500, y: 1000, width: 640, height: 240), 120, (0.85, 0.85, 0.86), 8)
+        building(CGRect(x: 2520, y: 1320, width: 240, height: 250), 110, (0.82, 0.82, 0.84), 8)
+        building(CGRect(x: 2880, y: 1380, width: 250, height: 230), 110, (0.82, 0.82, 0.84), 8)
+        places.append(("NORTHFIELD", CGPoint(x: 2800, y: 1200)))
 
-        // trees
-        tries = 0
-        while trees.count < 320 && tries < 2000 {
+        // Greenhollow farms + hamlets
+        houses(CGRect(x: 900, y: 2000, width: 1250, height: 1500), 16, 4)
+        houses(CGRect(x: 3900, y: 3700, width: 600, height: 900), 8, 4)
+        houses(CGRect(x: 5200, y: 3300, width: 500, height: 1500), 7, 4)
+        houses(CGRect(x: 2300, y: 500, width: 1200, height: 400), 5, 4)
+        houses(CGRect(x: 800, y: 600, width: 1100, height: 900), 4, 4)
+        places.append(("GREENHOLLOW", CGPoint(x: 1400, y: 2700)))
+
+        // pine and oak stands
+        var centers: [CGPoint] = []
+        for _ in 0..<14 { centers.append(CGPoint(x: rng.r(900, 5600), y: rng.r(500, 5200))) }
+        var tries = 0
+        while trees.count < 520 && tries < 6000 {
             tries += 1
-            let p = CGPoint(x: rng.r(500, 5800), y: rng.r(300, 5300))
+            var p = CGPoint(x: rng.r(500, 5800), y: rng.r(300, 5300))
+            if rng.f() < 0.75, let c = centers.randomElement() {
+                p = CGPoint(x: c.x + rng.r(-420, 420), y: c.y + rng.r(-420, 420))
+            }
+            if BRWorld.water(p) || BRWorld.coastDist(p) < 90 { continue }
+            if roadDist(p) < 55 { continue }
+            var skip = false
+            for (r, _) in patches where r.contains(p) { skip = true }
+            if skip { continue }
             let r = CGRect(x: p.x - 1, y: p.y - 1, width: 2, height: 2)
-            if isFree(r, 40) && !wallHit(r.insetBy(dx: -40, dy: -40)) {
+            if isFree(r, 36) && !wallHit(r.insetBy(dx: -36, dy: -36)) {
                 trees.append(p)
             }
         }
