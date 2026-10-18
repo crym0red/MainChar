@@ -1,5 +1,4 @@
 import SwiftUI
-import SceneKit
 import UIKit
 
 private func pCol(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat = 1) -> UIColor { UIColor(red: r, green: g, blue: b, alpha: a) }
@@ -14,7 +13,7 @@ private struct PLCG {
 
 /// Detailed prop / door / decal models shared by the 5v5 scene.
 final class TwProps {
-    private var matCache: [String: SCNMaterial] = [:]
+    private var matCache: [String: MXMaterial] = [:]
     private var texCache: [String: UIImage] = [:]
 
     private func tex(_ key: String, _ draw: (CGContext, CGFloat) -> Void) -> UIImage {
@@ -86,22 +85,22 @@ final class TwProps {
         }
     }
 
-    private func woodMat(_ su: CGFloat, _ sv: CGFloat, _ tint: UIColor) -> SCNMaterial {
+    private func woodMat(_ su: CGFloat, _ sv: CGFloat, _ tint: UIColor) -> MXMaterial {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         tint.getRed(&r, green: &g, blue: &b, alpha: &a)
         let key = "w\(Int(su * 20))_\(Int(sv * 20))_\(Int(r * 100))_\(Int(g * 100))_\(Int(b * 100))"
         if let m = matCache[key] { return m }
-        let m = SCNMaterial()
+        let m = MXMaterial()
         let img = woodTex()
         m.diffuse.contents = img
         m.diffuse.wrapS = .repeat
         m.diffuse.wrapT = .repeat
-        m.diffuse.contentsTransform = SCNMatrix4MakeScale(Float(su), Float(sv), 1)
+        m.diffuse.contentsTransform = MXMatrix4MakeScale(Float(su), Float(sv), 1)
         m.normal.contents = img
         m.normal.intensity = 0.7
         m.normal.wrapS = .repeat
         m.normal.wrapT = .repeat
-        m.normal.contentsTransform = SCNMatrix4MakeScale(Float(su), Float(sv), 1)
+        m.normal.contentsTransform = MXMatrix4MakeScale(Float(su), Float(sv), 1)
         m.multiply.contents = tint
         m.lightingModel = .blinn
         m.specular.contents = UIColor(white: 0.3, alpha: 1)
@@ -110,18 +109,18 @@ final class TwProps {
         return m
     }
 
-    private func box(_ w: CGFloat, _ h: CGFloat, _ l: CGFloat, _ c: UIColor, glow: Bool = false) -> SCNNode {
-        let g = SCNBox(width: w, height: h, length: l, chamferRadius: 0)
-        let m = SCNMaterial()
+    private func box(_ w: CGFloat, _ h: CGFloat, _ l: CGFloat, _ c: UIColor, glow: Bool = false) -> MXNode {
+        let g = MXBox(width: w, height: h, length: l, chamferRadius: 0)
+        let m = MXMaterial()
         m.diffuse.contents = c
         if glow { m.emission.contents = c; m.lightingModel = .constant }
         g.materials = [m]
-        return SCNNode(geometry: g)
+        return MXNode(geometry: g)
     }
 
-    private func ghost(_ w: CGFloat, _ h: CGFloat, _ l: CGFloat, _ c: UIColor, _ a: CGFloat) -> SCNNode {
-        let g = SCNBox(width: w, height: h, length: l, chamferRadius: 0)
-        let m = SCNMaterial()
+    private func ghost(_ w: CGFloat, _ h: CGFloat, _ l: CGFloat, _ c: UIColor, _ a: CGFloat) -> MXNode {
+        let g = MXBox(width: w, height: h, length: l, chamferRadius: 0)
+        let m = MXMaterial()
         m.diffuse.contents = c
         m.emission.contents = c
         m.emission.intensity = 0.5
@@ -129,16 +128,16 @@ final class TwProps {
         m.writesToDepthBuffer = false
         m.isDoubleSided = true
         g.materials = [m]
-        return SCNNode(geometry: g)
+        return MXNode(geometry: g)
     }
 
 
-    private func mat(_ c: UIColor, spec: CGFloat = 0.2, shin: CGFloat = 0.3, fabric: Bool = false) -> SCNMaterial {
+    private func mat(_ c: UIColor, spec: CGFloat = 0.2, shin: CGFloat = 0.3, fabric: Bool = false) -> MXMaterial {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         c.getRed(&r, green: &g, blue: &b, alpha: &a)
         let key = "m\(Int(r * 255))_\(Int(g * 255))_\(Int(b * 255))_\(Int(spec * 100))_\(Int(shin * 100))_\(fabric)"
         if let m = matCache[key] { return m }
-        let m = SCNMaterial()
+        let m = MXMaterial()
         m.diffuse.contents = c
         m.lightingModel = .blinn
         m.specular.contents = UIColor(white: spec, alpha: 1)
@@ -148,102 +147,102 @@ final class TwProps {
             m.normal.intensity = 1.0
             m.normal.wrapS = .repeat
             m.normal.wrapT = .repeat
-            m.normal.contentsTransform = SCNMatrix4MakeScale(4, 4, 1)
+            m.normal.contentsTransform = MXMatrix4MakeScale(4, 4, 1)
         }
         matCache[key] = m
         return m
     }
 
-    private func rb(_ w: CGFloat, _ h: CGFloat, _ l: CGFloat, _ c: UIColor, _ rad: CGFloat = 2.2, spec: CGFloat = 0.2, shin: CGFloat = 0.3, fabric: Bool = false) -> SCNNode {
+    private func rb(_ w: CGFloat, _ h: CGFloat, _ l: CGFloat, _ c: UIColor, _ rad: CGFloat = 2.2, spec: CGFloat = 0.2, shin: CGFloat = 0.3, fabric: Bool = false) -> MXNode {
         let ww = max(0.2, w), hh = max(0.2, h), ll = max(0.2, l)
-        let g = SCNBox(width: ww, height: hh, length: ll, chamferRadius: min(rad, min(ww, hh, ll) * 0.45))
+        let g = MXBox(width: ww, height: hh, length: ll, chamferRadius: min(rad, min(ww, hh, ll) * 0.45))
         g.chamferSegmentCount = 3
         g.materials = [mat(c, spec: spec, shin: shin, fabric: fabric)]
-        return SCNNode(geometry: g)
+        return MXNode(geometry: g)
     }
 
-    private func wd(_ w: CGFloat, _ h: CGFloat, _ l: CGFloat, _ tint: UIColor = pCol(0.85, 0.7, 0.55)) -> SCNNode {
+    private func wd(_ w: CGFloat, _ h: CGFloat, _ l: CGFloat, _ tint: UIColor = pCol(0.85, 0.7, 0.55)) -> MXNode {
         let ww = max(0.2, w), hh = max(0.2, h), ll = max(0.2, l)
-        let g = SCNBox(width: ww, height: hh, length: ll, chamferRadius: min(0.8, min(ww, hh, ll) * 0.4))
+        let g = MXBox(width: ww, height: hh, length: ll, chamferRadius: min(0.8, min(ww, hh, ll) * 0.4))
         g.chamferSegmentCount = 2
         g.materials = [woodMat(max(0.3, max(ww, ll) / 52), max(0.3, hh / 52), tint)]
-        return SCNNode(geometry: g)
+        return MXNode(geometry: g)
     }
 
-    private func cy(_ r: CGFloat, _ h: CGFloat, _ c: UIColor, spec: CGFloat = 0.3, shin: CGFloat = 0.5) -> SCNNode {
-        let g = SCNCylinder(radius: max(0.1, r), height: max(0.1, h))
+    private func cy(_ r: CGFloat, _ h: CGFloat, _ c: UIColor, spec: CGFloat = 0.3, shin: CGFloat = 0.5) -> MXNode {
+        let g = MXCylinder(radius: max(0.1, r), height: max(0.1, h))
         g.radialSegmentCount = 28
         g.materials = [mat(c, spec: spec, shin: shin)]
-        return SCNNode(geometry: g)
+        return MXNode(geometry: g)
     }
 
-    private func cn(_ top: CGFloat, _ bot: CGFloat, _ h: CGFloat, _ c: UIColor, spec: CGFloat = 0.25) -> SCNNode {
-        let g = SCNCone(topRadius: top, bottomRadius: bot, height: h)
+    private func cn(_ top: CGFloat, _ bot: CGFloat, _ h: CGFloat, _ c: UIColor, spec: CGFloat = 0.25) -> MXNode {
+        let g = MXCone(topRadius: top, bottomRadius: bot, height: h)
         g.radialSegmentCount = 24
         g.materials = [mat(c, spec: spec, shin: 0.4)]
-        return SCNNode(geometry: g)
+        return MXNode(geometry: g)
     }
 
-    private func tr(_ ring: CGFloat, _ pipe: CGFloat, _ c: UIColor) -> SCNNode {
-        let g = SCNTorus(ringRadius: ring, pipeRadius: pipe)
+    private func tr(_ ring: CGFloat, _ pipe: CGFloat, _ c: UIColor) -> MXNode {
+        let g = MXTorus(ringRadius: ring, pipeRadius: pipe)
         g.ringSegmentCount = 36
         g.pipeSegmentCount = 8
         g.materials = [mat(c, spec: 0.5, shin: 0.8)]
-        return SCNNode(geometry: g)
+        return MXNode(geometry: g)
     }
 
-    private func tb(_ inner: CGFloat, _ outer: CGFloat, _ h: CGFloat, _ c: UIColor) -> SCNNode {
-        let g = SCNTube(innerRadius: inner, outerRadius: outer, height: h)
+    private func tb(_ inner: CGFloat, _ outer: CGFloat, _ h: CGFloat, _ c: UIColor) -> MXNode {
+        let g = MXTube(innerRadius: inner, outerRadius: outer, height: h)
         g.radialSegmentCount = 20
         g.materials = [mat(c, spec: 0.4, shin: 0.6)]
-        return SCNNode(geometry: g)
+        return MXNode(geometry: g)
     }
 
-    private func sp(_ r: CGFloat, _ c: UIColor, spec: CGFloat = 0.3) -> SCNNode {
-        let g = SCNSphere(radius: r)
+    private func sp(_ r: CGFloat, _ c: UIColor, spec: CGFloat = 0.3) -> MXNode {
+        let g = MXSphere(radius: r)
         g.segmentCount = 18
         g.materials = [mat(c, spec: spec, shin: 0.5)]
-        return SCNNode(geometry: g)
+        return MXNode(geometry: g)
     }
 
-    private func put(_ g: SCNNode, _ n: SCNNode, _ x: CGFloat, _ y: CGFloat, _ z: CGFloat, rx: CGFloat = 0, ry: CGFloat = 0, rz: CGFloat = 0) {
-        n.position = SCNVector3(Float(x), Float(y), Float(z))
-        n.eulerAngles = SCNVector3(Float(rx), Float(ry), Float(rz))
+    private func put(_ g: MXNode, _ n: MXNode, _ x: CGFloat, _ y: CGFloat, _ z: CGFloat, rx: CGFloat = 0, ry: CGFloat = 0, rz: CGFloat = 0) {
+        n.position = MXVector3(Float(x), Float(y), Float(z))
+        n.eulerAngles = MXVector3(Float(rx), Float(ry), Float(rz))
         g.addChildNode(n)
     }
 
     // MARK: doors
 
     /// hinged door leaf/leaves. Returns containers positioned at the hinges; rotate .eulerAngles.y to swing.
-    func door(_ d: CGRect) -> [SCNNode] {
+    func door(_ d: CGRect) -> [MXNode] {
         let horiz = d.width > d.height
         let len = horiz ? d.width : d.height
         let dbl = len > 70
         let leafLen = dbl ? len / 2 : len
         let tint = pCol(0.78, 0.6, 0.42)
-        func leaf(_ sgn: CGFloat) -> SCNNode {
-            let panel = SCNNode()
+        func leaf(_ sgn: CGFloat) -> MXNode {
+            let panel = MXNode()
             panel.addChildNode(horiz ? wd(leafLen - 1, 70, 4.5, tint) : wd(4.5, 70, leafLen - 1, tint))
             for side in [-1.0, 1.0] as [CGFloat] {
                 for k in 0..<2 {
                     let iy: CGFloat = k == 0 ? 17 : -17
                     let n2 = horiz ? rb(leafLen - 12, 26, 0.7, pCol(0.0, 0.0, 0.0, 0.2), 0.3) : rb(0.7, 26, leafLen - 12, pCol(0.0, 0.0, 0.0, 0.2), 0.3)
-                    n2.position = horiz ? SCNVector3(0, Float(iy), Float(side * 2.5)) : SCNVector3(Float(side * 2.5), Float(iy), 0)
+                    n2.position = horiz ? MXVector3(0, Float(iy), Float(side * 2.5)) : MXVector3(Float(side * 2.5), Float(iy), 0)
                     panel.addChildNode(n2)
                 }
                 let knob = sp(1.7, pCol(0.85, 0.68, 0.3), spec: 0.8)
                 let kx = sgn * (leafLen - 6)
-                knob.position = horiz ? SCNVector3(Float(sgn * (leafLen / 2 - 6)), -2, Float(side * 3.6)) : SCNVector3(Float(side * 3.6), -2, Float(sgn * (leafLen / 2 - 6)))
+                knob.position = horiz ? MXVector3(Float(sgn * (leafLen / 2 - 6)), -2, Float(side * 3.6)) : MXVector3(Float(side * 3.6), -2, Float(sgn * (leafLen / 2 - 6)))
                 _ = kx
                 panel.addChildNode(knob)
             }
-            panel.position = horiz ? SCNVector3(Float(sgn * leafLen / 2), 36, 0) : SCNVector3(0, 36, Float(sgn * leafLen / 2))
-            let c = SCNNode()
+            panel.position = horiz ? MXVector3(Float(sgn * leafLen / 2), 36, 0) : MXVector3(0, 36, Float(sgn * leafLen / 2))
+            let c = MXNode()
             c.addChildNode(panel)
             if sgn > 0 {
-                c.position = horiz ? SCNVector3(Float(d.minX), 0, Float(d.midY)) : SCNVector3(Float(d.midX), 0, Float(d.minY))
+                c.position = horiz ? MXVector3(Float(d.minX), 0, Float(d.midY)) : MXVector3(Float(d.midX), 0, Float(d.minY))
             } else {
-                c.position = horiz ? SCNVector3(Float(d.maxX), 0, Float(d.midY)) : SCNVector3(Float(d.midX), 0, Float(d.maxY))
+                c.position = horiz ? MXVector3(Float(d.maxX), 0, Float(d.midY)) : MXVector3(Float(d.midX), 0, Float(d.maxY))
             }
             return c
         }
@@ -252,7 +251,7 @@ final class TwProps {
 
     // MARK: decals
 
-    private func decalMat(_ k: Int) -> SCNMaterial {
+    private func decalMat(_ k: Int) -> MXMaterial {
         let key = "decal\(k)"
         if let m = matCache[key] { return m }
         let img = tex("decal\(k)") { g, s in
@@ -293,7 +292,7 @@ final class TwProps {
                 g.strokePath()
             }
         }
-        let m = SCNMaterial()
+        let m = MXMaterial()
         m.diffuse.contents = img
         m.lightingModel = .lambert
         m.writesToDepthBuffer = false
@@ -303,8 +302,8 @@ final class TwProps {
         return m
     }
 
-    func decals(in rooms: [CGRect], avoid: [CGRect], seed: Int) -> SCNNode {
-        let out = SCNNode()
+    func decals(in rooms: [CGRect], avoid: [CGRect], seed: Int) -> MXNode {
+        let out = MXNode()
         var dr = PLCG(s: UInt64(seed * 977 + 13))
         for rm in rooms {
             for _ in 0..<7 {
@@ -312,14 +311,14 @@ final class TwProps {
                 if avoid.contains(where: { $0.insetBy(dx: -10, dy: -10).contains(p) }) { continue }
                 let k = Int(dr.n() * 3.99)
                 let sz = 26 + dr.n() * 64
-                let pl = SCNPlane(width: sz, height: sz)
+                let pl = MXPlane(width: sz, height: sz)
                 pl.materials = [decalMat(k)]
-                let inner = SCNNode(geometry: pl)
-                inner.eulerAngles = SCNVector3(-Float.pi / 2, 0, 0)
-                let outer = SCNNode()
+                let inner = MXNode(geometry: pl)
+                inner.eulerAngles = MXVector3(-Float.pi / 2, 0, 0)
+                let outer = MXNode()
                 outer.addChildNode(inner)
-                outer.eulerAngles = SCNVector3(0, Float(dr.n() * 6.28), 0)
-                outer.position = SCNVector3(Float(p.x), 0.4, Float(p.y))
+                outer.eulerAngles = MXVector3(0, Float(dr.n() * 6.28), 0)
+                outer.position = MXVector3(Float(p.x), 0.4, Float(p.y))
                 outer.castsShadow = false
                 out.addChildNode(outer)
             }
@@ -329,12 +328,12 @@ final class TwProps {
 
     // MARK: props
 
-    func build(_ kind: PropKind, _ r: CGRect) -> SCNNode {
+    func build(_ kind: PropKind, _ r: CGRect) -> MXNode {
         let long = r.width >= r.height
         let L = max(r.width, r.height), D = min(r.width, r.height)
         let hv = abs(Int(r.minX * 7 + r.minY * 13)) % 97
         var rg = PLCG(s: UInt64(hv * 7919 + 131 + 11))
-        let g = SCNNode()
+        let g = MXNode()
         let steel = pCol(0.55, 0.58, 0.62)
         let dark = pCol(0.1, 0.1, 0.12)
         let brass = pCol(0.85, 0.68, 0.3)
@@ -391,7 +390,7 @@ final class TwProps {
                 let a = CGFloat(i) * 0.62
                 let ringR = 3 + CGFloat(i % 4) * 2.2
                 let lf = sp(1, pCol(0.1 + rg.n() * 0.08, 0.42 + rg.n() * 0.25, 0.14 + rg.n() * 0.08), spec: 0.4)
-                lf.scale = SCNVector3(5.5, 0.8, 2.4)
+                lf.scale = MXVector3(5.5, 0.8, 2.4)
                 put(g, lf, sin(a) * ringR, 17 + CGFloat(i % 5) * 3.6, cos(a) * ringR, ry: a, rz: 0.45)
             }
         case .shelf:
@@ -432,7 +431,7 @@ final class TwProps {
             put(g, cy(2, 5, pCol(0.25, 0.4, 0.6), spec: 0.6, shin: 1), L * 0.3, 25.5, -D * 0.15)
             for i in 0..<4 {
                 let lf = sp(1, pCol(0.15, 0.5, 0.2))
-                lf.scale = SCNVector3(3.2, 0.6, 1.4)
+                lf.scale = MXVector3(3.2, 0.6, 1.4)
                 put(g, lf, L * 0.3 + sin(CGFloat(i) * 1.6) * 1.5, 29 + CGFloat(i % 2), -D * 0.15 + cos(CGFloat(i) * 1.6) * 1.5, ry: CGFloat(i) * 1.6, rz: 0.5)
             }
         case .barrel:
@@ -526,9 +525,9 @@ final class TwProps {
         default:
             break
         }
-        g.position = SCNVector3(Float(r.midX), 0, Float(r.midY))
-        if !long { g.eulerAngles = SCNVector3(0, Float.pi / 2, 0) }
-        let n = SCNNode()
+        g.position = MXVector3(Float(r.midX), 0, Float(r.midY))
+        if !long { g.eulerAngles = MXVector3(0, Float.pi / 2, 0) }
+        let n = MXNode()
         n.addChildNode(g)
         return n
     }

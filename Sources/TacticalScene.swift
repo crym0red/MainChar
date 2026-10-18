@@ -1,13 +1,12 @@
 import SwiftUI
-import SceneKit
 import UIKit
 
 // MARK: - SwiftUI host
 
 struct TacSceneView: UIViewRepresentable {
     let bridge: TacScene
-    func makeUIView(context: Context) -> SCNView { bridge.view }
-    func updateUIView(_ uiView: SCNView, context: Context) {}
+    func makeUIView(context: Context) -> MXView { bridge.view }
+    func updateUIView(_ uiView: MXView, context: Context) {}
 }
 
 private struct LCG {
@@ -25,57 +24,57 @@ private func ui(_ c: (CGFloat, CGFloat, CGFloat), _ k: CGFloat = 1) -> UIColor {
 // MARK: - Scene bridge
 
 final class TacScene {
-    let scene = SCNScene()
-    let view = SCNView(frame: .zero)
-    let camNode = SCNNode()
+    let scene = MXScene()
+    let view = MXView(frame: .zero)
+    let camNode = MXNode()
     let vm = TwViewModel()
     var camX: CGFloat = 0
     var camZ: CGFloat = 0
     var started = false
-    let floorRoot = [SCNNode(), SCNNode()]
+    let floorRoot = [MXNode(), MXNode()]
     var focusFloor = 0
     var camFloor = 0
     var fpMode = false
     var fpFwd = CGPoint(x: 1, y: 0)
     var fpEye = CGPoint.zero
-    var ceilNodes: [SCNNode] = []
+    var ceilNodes: [MXNode] = []
 
-    var roots: [SCNNode] = []
-    var bodies: [SCNNode] = []
-    var heads: [SCNNode] = []
-    var guns: [SCNNode] = []
-    var flashes: [SCNNode] = []
+    var roots: [MXNode] = []
+    var bodies: [MXNode] = []
+    var heads: [MXNode] = []
+    var guns: [MXNode] = []
+    var flashes: [MXNode] = []
     var headKey: [String] = []
-    var shirts: [SCNMaterial] = []
-    var kevs: [SCNNode] = []
-    var helms: [SCNNode] = []
-    var heavies: [SCNNode] = []
-    var hats: [SCNNode] = []
-    var faceMats: [SCNMaterial] = []
+    var shirts: [MXMaterial] = []
+    var kevs: [MXNode] = []
+    var helms: [MXNode] = []
+    var heavies: [MXNode] = []
+    var hats: [MXNode] = []
+    var faceMats: [MXMaterial] = []
     var preset = 1
     var lookOn = false
     var yaw: CGFloat = 0
     var pitch: CGFloat = 1.0
     var dist: CGFloat = 430
-    var legLs: [SCNNode] = []
-    var legRs: [SCNNode] = []
-    var gunVars: [[SCNNode]] = []
+    var legLs: [MXNode] = []
+    var legRs: [MXNode] = []
+    var gunVars: [[MXNode]] = []
     var gunShown: [Int] = []
     var walkPh: [CGFloat] = []
     var lastPos: [CGPoint] = []
-    var bulletPool: [SCNNode] = []
-    var nadePool: [SCNNode] = []
-    var boomPool: [SCNNode] = []
-    var smokePool: [SCNNode] = []
-    var packNodes: [SCNNode] = []
-    let bombNode = SCNNode()
+    var bulletPool: [MXNode] = []
+    var nadePool: [MXNode] = []
+    var boomPool: [MXNode] = []
+    var smokePool: [MXNode] = []
+    var packNodes: [MXNode] = []
+    let bombNode = MXNode()
 
     private var texCache: [String: UIImage] = [:]
     private let props = TwProps()
-    private var doorLeaves: [[SCNNode]] = []
+    private var doorLeaves: [[MXNode]] = []
     private var doorHoriz: [Bool] = []
     private var doorAngShown: [Float] = []
-    private var sunNode: SCNNode? = nil
+    private var sunNode: MXNode? = nil
     private var lastT = CACurrentMediaTime()
     private var fpsEMA: CGFloat = 60
     private var lowT: CGFloat = 0
@@ -271,18 +270,18 @@ final class TacScene {
 
     // MARK: materials / nodes
 
-    private func mat(_ img: UIImage?, color: UIColor = .gray, sx: CGFloat = 1, sy: CGFloat = 1, emission: UIColor? = nil) -> SCNMaterial {
-        let m = SCNMaterial()
+    private func mat(_ img: UIImage?, color: UIColor = .gray, sx: CGFloat = 1, sy: CGFloat = 1, emission: UIColor? = nil) -> MXMaterial {
+        let m = MXMaterial()
         if let i = img {
             m.diffuse.contents = i
             m.diffuse.wrapS = .repeat
             m.diffuse.wrapT = .repeat
-            m.diffuse.contentsTransform = SCNMatrix4MakeScale(Float(sx), Float(sy), 1)
+            m.diffuse.contentsTransform = MXMatrix4MakeScale(Float(sx), Float(sy), 1)
             m.normal.contents = i
             m.normal.intensity = 0.7
             m.normal.wrapS = .repeat
             m.normal.wrapT = .repeat
-            m.normal.contentsTransform = SCNMatrix4MakeScale(Float(sx), Float(sy), 1)
+            m.normal.contentsTransform = MXMatrix4MakeScale(Float(sx), Float(sy), 1)
         } else {
             m.diffuse.contents = color
         }
@@ -293,15 +292,15 @@ final class TacScene {
         return m
     }
 
-    private func box(_ r: CGRect, h: CGFloat, y0: CGFloat = 0, mats: [SCNMaterial], chamfer: CGFloat = 0) -> SCNNode {
-        let g = SCNBox(width: r.width, height: h, length: r.height, chamferRadius: chamfer)
+    private func box(_ r: CGRect, h: CGFloat, y0: CGFloat = 0, mats: [MXMaterial], chamfer: CGFloat = 0) -> MXNode {
+        let g = MXBox(width: r.width, height: h, length: r.height, chamferRadius: chamfer)
         g.materials = mats
-        let n = SCNNode(geometry: g)
-        n.position = SCNVector3(Float(r.midX), Float(y0 + h / 2), Float(r.midY))
+        let n = MXNode(geometry: g)
+        n.position = MXVector3(Float(r.midX), Float(y0 + h / 2), Float(r.midY))
         return n
     }
 
-    private func solid(_ r: CGRect, h: CGFloat, y0: CGFloat = 0, color: UIColor, top: UIColor? = nil, chamfer: CGFloat = 0, emission: UIColor? = nil) -> SCNNode {
+    private func solid(_ r: CGRect, h: CGFloat, y0: CGFloat = 0, color: UIColor, top: UIColor? = nil, chamfer: CGFloat = 0, emission: UIColor? = nil) -> MXNode {
         let side = mat(nil, color: color, emission: emission)
         let t = mat(nil, color: top ?? color, emission: emission)
         return box(r, h: h, y0: y0, mats: [side, side, side, side, t, side], chamfer: chamfer)
@@ -330,21 +329,21 @@ final class TacScene {
         scene.fogEndDistance = fpMode ? 1900 : 3200
         scene.fogDensityExponent = 1.4
         let root = scene.rootNode
-        floorRoot[1].position = SCNVector3(-Float(TMap.off), 0, 0)
+        floorRoot[1].position = MXVector3(-Float(TMap.off), 0, 0)
         floorRoot[1].isHidden = true
         root.addChildNode(floorRoot[0])
         root.addChildNode(floorRoot[1])
-        func fr(_ x: CGFloat) -> SCNNode { floorRoot[x >= TMap.off ? 1 : 0] }
+        func fr(_ x: CGFloat) -> MXNode { floorRoot[x >= TMap.off ? 1 : 0] }
 
-        let amb = SCNNode()
-        amb.light = SCNLight()
+        let amb = MXNode()
+        amb.light = MXLight()
         amb.light?.type = .ambient
         amb.light?.intensity = ambI
         amb.light?.color = ambC
         root.addChildNode(amb)
 
-        let sun = SCNNode()
-        let sl = SCNLight()
+        let sun = MXNode()
+        let sl = MXLight()
         sl.type = .directional
         sl.intensity = sunI
         sl.color = sunC
@@ -355,19 +354,19 @@ final class TacScene {
         sl.shadowColor = UIColor(white: 0, alpha: 0.72)
         sl.maximumShadowDistance = 1200
         sun.light = sl
-        sun.position = SCNVector3(-300, 650, -300)
+        sun.position = MXVector3(-300, 650, -300)
         root.addChildNode(sun)
-        sun.look(at: SCNVector3(0, 0, 0))
+        sun.look(at: MXVector3(0, 0, 0))
         sunNode = sun
-        let fill = SCNNode()
-        let fl = SCNLight()
+        let fill = MXNode()
+        let fl = MXLight()
         fl.type = .directional
         fl.intensity = 420
         fl.color = UIColor(red: 1, green: 0.95, blue: 0.85, alpha: 1)
         fill.light = fl
-        fill.position = SCNVector3(400, 500, 500)
+        fill.position = MXVector3(400, 500, 500)
         root.addChildNode(fill)
-        fill.look(at: SCNVector3(0, 0, 0))
+        fill.look(at: MXVector3(0, 0, 0))
 
         let lamps: [(CGFloat, CGFloat, UIColor)] = [
             (850, 900, UIColor(red: 1, green: 0.82, blue: 0.55, alpha: 1)),
@@ -380,19 +379,19 @@ final class TacScene {
             (1480, 900, UIColor(red: 0.9, green: 0.7, blue: 1, alpha: 1))
         ]
         for l in lamps {
-            let n = SCNNode()
-            let li = SCNLight()
+            let n = MXNode()
+            let li = MXLight()
             li.type = .omni
             li.intensity = 520
             li.color = l.2
             li.attenuationStartDistance = 60
             li.attenuationEndDistance = 520
             n.light = li
-            n.position = SCNVector3(Float(l.0), 170, Float(l.1))
+            n.position = MXVector3(Float(l.0), 170, Float(l.1))
             root.addChildNode(n)
         }
 
-        let cam = SCNCamera()
+        let cam = MXCamera()
         cam.fieldOfView = 52
         cam.zNear = 10
         cam.zFar = 3000
@@ -412,15 +411,15 @@ final class TacScene {
 
         // ceilings (only shown in first person)
         for i in 0..<2 {
-            let pl = SCNPlane(width: 1900, height: 1300)
-            let cm = SCNMaterial()
+            let pl = MXPlane(width: 1900, height: 1300)
+            let cm = MXMaterial()
             cm.diffuse.contents = UIColor(red: 0.16, green: 0.17, blue: 0.2, alpha: 1)
             cm.emission.contents = UIColor(red: 0.05, green: 0.05, blue: 0.06, alpha: 1)
             cm.isDoubleSided = true
             pl.firstMaterial = cm
-            let cn = SCNNode(geometry: pl)
-            cn.position = SCNVector3(950, Float(TMap.wallH) + 0.5, 600)
-            cn.eulerAngles = SCNVector3(Float.pi / 2, 0, 0)
+            let cn = MXNode(geometry: pl)
+            cn.position = MXVector3(950, Float(TMap.wallH) + 0.5, 600)
+            cn.eulerAngles = MXVector3(Float.pi / 2, 0, 0)
             cn.castsShadow = false
             cn.isHidden = true
             floorRoot[i].addChildNode(cn)
@@ -491,8 +490,8 @@ final class TacScene {
         let cap = mat(nil, color: UIColor(red: 0.74, green: 0.62, blue: 0.44, alpha: 1))
         for (k, o) in TMap.walls.enumerated() {
             let mt = TMap.wallMats[k]
-            let front: SCNMaterial
-            let side: SCNMaterial
+            let front: MXMaterial
+            let side: MXMaterial
             switch mt {
             case .brick:
                 front = mat(brick, sx: o.width / 128, sy: wallH / 128)
@@ -517,7 +516,7 @@ final class TacScene {
         // rooftops: domes, water tanks, masts
         do {
             var lg = LCG(s: 303)
-            let roofs = SCNNode()
+            let roofs = MXNode()
             let domeM = mat(plasterTex(), color: UIColor(white: 1, alpha: 1), sx: 2, sy: 2)
             domeM.diffuse.contents = UIColor(red: 0.95, green: 0.92, blue: 0.82, alpha: 1)
             let tankM = mat(nil, color: UIColor(red: 0.45, green: 0.5, blue: 0.55, alpha: 1))
@@ -529,34 +528,34 @@ final class TacScene {
                 let cz = o.midY + (lg.next() - 0.5) * (o.height - 100) * 0.4
                 let rad = min(110, min(o.width, o.height) * 0.3)
                 if n % 3 != 0 {
-                    let d = SCNNode(geometry: SCNSphere(radius: rad))
+                    let d = MXNode(geometry: MXSphere(radius: rad))
                     d.geometry?.firstMaterial = domeM
-                    (d.geometry as? SCNSphere)?.segmentCount = 28
-                    d.scale = SCNVector3(1, 0.62, 1)
-                    d.position = SCNVector3(Float(cx), Float(TMap.wallH), Float(cz))
+                    (d.geometry as? MXSphere)?.segmentCount = 28
+                    d.scale = MXVector3(1, 0.62, 1)
+                    d.position = MXVector3(Float(cx), Float(TMap.wallH), Float(cz))
                     roofs.addChildNode(d)
-                    let drum = SCNNode(geometry: SCNCylinder(radius: rad * 1.02, height: 8))
+                    let drum = MXNode(geometry: MXCylinder(radius: rad * 1.02, height: 8))
                     drum.geometry?.firstMaterial = domeM
-                    drum.position = SCNVector3(Float(cx), Float(TMap.wallH + 3), Float(cz))
+                    drum.position = MXVector3(Float(cx), Float(TMap.wallH + 3), Float(cz))
                     roofs.addChildNode(drum)
-                    let fin = SCNNode(geometry: SCNCylinder(radius: 1.6, height: 22))
+                    let fin = MXNode(geometry: MXCylinder(radius: 1.6, height: 22))
                     fin.geometry?.firstMaterial = metalM
-                    fin.position = SCNVector3(Float(cx), Float(TMap.wallH + rad * 0.62 + 8), Float(cz))
+                    fin.position = MXVector3(Float(cx), Float(TMap.wallH + rad * 0.62 + 8), Float(cz))
                     roofs.addChildNode(fin)
                 } else {
-                    let tk = SCNNode(geometry: SCNCylinder(radius: 22, height: 36))
+                    let tk = MXNode(geometry: MXCylinder(radius: 22, height: 36))
                     tk.geometry?.firstMaterial = tankM
-                    tk.position = SCNVector3(Float(cx), Float(TMap.wallH + 18), Float(cz))
+                    tk.position = MXVector3(Float(cx), Float(TMap.wallH + 18), Float(cz))
                     roofs.addChildNode(tk)
                     for lx in [-14, 14] as [CGFloat] {
-                        let lgp = SCNNode(geometry: SCNBox(width: 3, height: 10, length: 3, chamferRadius: 0))
+                        let lgp = MXNode(geometry: MXBox(width: 3, height: 10, length: 3, chamferRadius: 0))
                         lgp.geometry?.firstMaterial = metalM
-                        lgp.position = SCNVector3(Float(cx + lx), Float(TMap.wallH + 4), Float(cz))
+                        lgp.position = MXVector3(Float(cx + lx), Float(TMap.wallH + 4), Float(cz))
                         roofs.addChildNode(lgp)
                     }
-                    let ms = SCNNode(geometry: SCNCylinder(radius: 1, height: 50))
+                    let ms = MXNode(geometry: MXCylinder(radius: 1, height: 50))
                     ms.geometry?.firstMaterial = metalM
-                    ms.position = SCNVector3(Float(cx + 50), Float(TMap.wallH + 25), Float(cz + 20))
+                    ms.position = MXVector3(Float(cx + 50), Float(TMap.wallH + 25), Float(cz + 20))
                     roofs.addChildNode(ms)
                 }
                 // battlements along the roof edge
@@ -564,9 +563,9 @@ final class TacScene {
                 var bx = o.minX + 20
                 while bx < o.maxX - 20 {
                     for zz in [o.minY + 6, o.maxY - 6] {
-                        let b = SCNNode(geometry: SCNBox(width: 14, height: 10, length: 10, chamferRadius: 1))
+                        let b = MXNode(geometry: MXBox(width: 14, height: 10, length: 10, chamferRadius: 1))
                         b.geometry?.firstMaterial = cap
-                        b.position = SCNVector3(Float(bx), Float(TMap.wallH + 5), Float(zz))
+                        b.position = MXVector3(Float(bx), Float(TMap.wallH + 5), Float(zz))
                         roofs.addChildNode(b)
                     }
                     bx += 40
@@ -603,7 +602,7 @@ final class TacScene {
             }
         }
         // props
-        let pr0 = SCNNode(), pr1 = SCNNode()
+        let pr0 = MXNode(), pr1 = MXNode()
         for pr in TMap.props { (pr.r.midX >= TMap.off ? pr1 : pr0).addChildNode(props.build(pr.k, pr.r)) }
         chunked(pr0, into: floorRoot[0])
         chunked(pr1, into: floorRoot[1])
@@ -613,41 +612,41 @@ final class TacScene {
         floorRoot[1].addChildNode(props.decals(in: rooms1, avoid: TMap.baseSolid, seed: 2).flattenedClone())
         // health packs
         for k in e.packs {
-            let g = SCNNode()
-            let ball = SCNNode(geometry: SCNSphere(radius: 10))
+            let g = MXNode()
+            let ball = MXNode(geometry: MXSphere(radius: 10))
             ball.geometry?.firstMaterial = mat(nil, color: UIColor(red: 0.2, green: 0.8, blue: 0.4, alpha: 1), emission: UIColor(red: 0.1, green: 0.5, blue: 0.2, alpha: 1))
-            let h = SCNNode(geometry: SCNBox(width: 14, height: 4, length: 4, chamferRadius: 0))
+            let h = MXNode(geometry: MXBox(width: 14, height: 4, length: 4, chamferRadius: 0))
             h.geometry?.firstMaterial = mat(nil, color: .white, emission: .white)
-            let v = SCNNode(geometry: SCNBox(width: 4, height: 4, length: 14, chamferRadius: 0))
+            let v = MXNode(geometry: MXBox(width: 4, height: 4, length: 14, chamferRadius: 0))
             v.geometry?.firstMaterial = h.geometry?.firstMaterial
-            h.position = SCNVector3(0, 10, 0)
-            v.position = SCNVector3(0, 10, 0)
-            ball.position = SCNVector3(0, 10, 0)
-            ball.scale = SCNVector3(1, 0.3, 1)
+            h.position = MXVector3(0, 10, 0)
+            v.position = MXVector3(0, 10, 0)
+            ball.position = MXVector3(0, 10, 0)
+            ball.scale = MXVector3(1, 0.3, 1)
             g.addChildNode(ball); g.addChildNode(h); g.addChildNode(v)
-            g.position = SCNVector3(Float(k.pos.x), 4, Float(k.pos.y))
-            g.runAction(.repeatForever(.rotateBy(x: 0, y: 2, z: 0, duration: 2)))
+            g.position = MXVector3(Float(k.pos.x), 4, Float(k.pos.y))
+            g.spinY = 3.14159
             fr(k.pos.x).addChildNode(g)
             packNodes.append(g)
         }
         // bomb
-        let bb = SCNNode(geometry: SCNBox(width: 18, height: 10, length: 14, chamferRadius: 2))
+        let bb = MXNode(geometry: MXBox(width: 18, height: 10, length: 14, chamferRadius: 2))
         bb.geometry?.firstMaterial = mat(nil, color: UIColor(red: 0.8, green: 0.1, blue: 0.1, alpha: 1), emission: UIColor(red: 0.6, green: 0, blue: 0, alpha: 1))
-        bb.position = SCNVector3(0, 5, 0)
-        let bl = SCNNode()
-        bl.light = SCNLight()
+        bb.position = MXVector3(0, 5, 0)
+        let bl = MXNode()
+        bl.light = MXLight()
         bl.light?.type = .omni
         bl.light?.color = UIColor.red
         bl.light?.intensity = 500
         bl.light?.attenuationEndDistance = 200
-        bl.position = SCNVector3(0, 30, 0)
+        bl.position = MXVector3(0, 30, 0)
         bombNode.addChildNode(bb)
         bombNode.addChildNode(bl)
         bombNode.isHidden = true
         root.addChildNode(bombNode)
         // players
                 for p in e.players {
-            let rt = SCNNode()
+            let rt = MXNode()
             let col: UIColor = p.isPlayer ? UIColor(red: 0.3, green: 0.9, blue: 0.45, alpha: 1) : (p.team == e.me.team ? UIColor(red: 0.25, green: 0.6, blue: 1, alpha: 1) : UIColor(red: 1, green: 0.25, blue: 0.3, alpha: 1))
             let teamC: UIColor = p.team == e.me.team ? UIColor(red: 0.25, green: 0.6, blue: 1, alpha: 1) : UIColor(red: 1, green: 0.55, blue: 0.2, alpha: 1)
             let sol = TwRig.soldier(team: p.isPlayer ? col : teamC, style: TacAvatar.style(p.isPlayer ? TacAvatar.myKey : p.handle), rank: p.rank)
@@ -671,7 +670,7 @@ final class TacScene {
         }
         // pools
         for _ in 0..<60 {
-            let b = SCNNode(geometry: SCNBox(width: 26, height: 2.4, length: 2.4, chamferRadius: 0))
+            let b = MXNode(geometry: MXBox(width: 26, height: 2.4, length: 2.4, chamferRadius: 0))
             b.geometry?.firstMaterial = mat(nil, color: .white, emission: .white)
             b.castsShadow = false
             b.isHidden = true
@@ -679,14 +678,14 @@ final class TacScene {
             bulletPool.append(b)
         }
         for _ in 0..<6 {
-            let g = SCNNode(geometry: SCNSphere(radius: 5))
+            let g = MXNode(geometry: MXSphere(radius: 5))
             g.geometry?.firstMaterial = mat(nil, color: UIColor(red: 0.3, green: 0.8, blue: 0.3, alpha: 1))
             g.isHidden = true
             root.addChildNode(g)
             nadePool.append(g)
         }
         for _ in 0..<6 {
-            let g = SCNNode(geometry: SCNSphere(radius: 1))
+            let g = MXNode(geometry: MXSphere(radius: 1))
             let m = mat(nil, color: .orange, emission: UIColor(red: 1, green: 0.6, blue: 0.1, alpha: 1))
             m.lightingModel = .constant
             g.geometry?.firstMaterial = m
@@ -697,15 +696,15 @@ final class TacScene {
         }
         var r = LCG(s: 99)
         for _ in 0..<4 {
-            let g = SCNNode()
+            let g = MXNode()
             for i in 0..<9 {
-                let s = SCNNode(geometry: SCNSphere(radius: i == 0 ? 60 : 44))
+                let s = MXNode(geometry: MXSphere(radius: i == 0 ? 60 : 44))
                 let m = mat(nil, color: UIColor(white: 0.8, alpha: 1))
                 m.lightingModel = .lambert
                 s.geometry?.firstMaterial = m
                 let a = CGFloat(i) * 0.7
                 let d: CGFloat = i == 0 ? 0 : 42
-                s.position = SCNVector3(Float(cos(a) * d), Float(40 + r.next() * 40), Float(sin(a) * d))
+                s.position = MXVector3(Float(cos(a) * d), Float(40 + r.next() * 40), Float(sin(a) * d))
                 s.castsShadow = false
                 g.addChildNode(s)
             }
@@ -726,9 +725,9 @@ final class TacScene {
 
     // MARK: props
 
-    private func buildProp(_ pr: TProp) -> SCNNode {
+    private func buildProp(_ pr: TProp) -> MXNode {
         let r = pr.r
-        let g = SCNNode()
+        let g = MXNode()
         let colors: (CGFloat, CGFloat, CGFloat)
         switch pr.k {
         case .bed: colors = (0.32, 0.4, 0.62)
@@ -787,9 +786,9 @@ final class TacScene {
                 yy += 14
             }
         case .barrel:
-            let n = SCNNode(geometry: SCNCylinder(radius: r.width / 2, height: 34))
+            let n = MXNode(geometry: MXCylinder(radius: r.width / 2, height: 34))
             n.geometry?.firstMaterial = mat(nil, color: c)
-            n.position = SCNVector3(Float(r.midX), 17, Float(r.midY))
+            n.position = MXVector3(Float(r.midX), 17, Float(r.midY))
             g.addChildNode(n)
         case .sandbag:
             g.addChildNode(solid(r, h: 18, color: c, top: cl, chamfer: 6))
@@ -797,12 +796,12 @@ final class TacScene {
             g.addChildNode(solid(r, h: 40, color: c, top: c, chamfer: 2))
             g.addChildNode(solid(CGRect(x: r.minX + 6, y: r.maxY - 2, width: r.width - 12, height: 3), h: 26, y0: 8, color: UIColor(red: 0.2, green: 0.45, blue: 0.7, alpha: 1), top: UIColor(red: 0.2, green: 0.45, blue: 0.7, alpha: 1), emission: UIColor(red: 0.15, green: 0.35, blue: 0.6, alpha: 1)))
         case .plant:
-            let pot = SCNNode(geometry: SCNCylinder(radius: r.width * 0.28, height: 14))
+            let pot = MXNode(geometry: MXCylinder(radius: r.width * 0.28, height: 14))
             pot.geometry?.firstMaterial = mat(nil, color: ui((0.4, 0.28, 0.18)))
-            pot.position = SCNVector3(Float(r.midX), 7, Float(r.midY))
-            let leaf = SCNNode(geometry: SCNSphere(radius: r.width * 0.45))
+            pot.position = MXVector3(Float(r.midX), 7, Float(r.midY))
+            let leaf = MXNode(geometry: MXSphere(radius: r.width * 0.45))
             leaf.geometry?.firstMaterial = mat(nil, color: c)
-            leaf.position = SCNVector3(Float(r.midX), 30, Float(r.midY))
+            leaf.position = MXVector3(Float(r.midX), 30, Float(r.midY))
             g.addChildNode(pot); g.addChildNode(leaf)
         }
         return g
@@ -816,7 +815,7 @@ final class TacScene {
             let dx = sx(p) - fpEye.x, dz = p.y - fpEye.y
             if dx * fpFwd.x + dz * fpFwd.y <= 2 { return nil }
         }
-        let v = view.projectPoint(SCNVector3(Float(sx(p)), Float(h), Float(p.y)))
+        let v = view.projectPoint(MXVector3(Float(sx(p)), Float(h), Float(p.y)))
         if v.z > 1 || v.z < 0 { return nil }
         return CGPoint(x: CGFloat(v.x), y: CGFloat(v.y))
     }
@@ -825,19 +824,19 @@ final class TacScene {
 
     // MARK: streaming (distance + view culling)
 
-    struct CullItem { let node: SCNNode; let c: CGPoint; let r: CGFloat }
+    struct CullItem { let node: MXNode; let c: CGPoint; let r: CGFloat }
     var cull: [CullItem] = []
     var cullBuilt = false
     var lastCull: CGFloat = -1
     var lastVmT: CGFloat = 0
 
-    private func chunked(_ src: SCNNode, into dst: SCNNode, cell: Float = 700) {
-        var cells: [Int: SCNNode] = [:]
+    private func chunked(_ src: MXNode, into dst: MXNode, cell: Float = 700) {
+        var cells: [Int: MXNode] = [:]
         for ch in src.childNodes {
             let (mn, mx) = ch.boundingBox
-            let c = ch.convertPosition(SCNVector3((mn.x + mx.x) / 2, (mn.y + mx.y) / 2, (mn.z + mx.z) / 2), to: src)
+            let c = ch.convertPosition(MXVector3((mn.x + mx.x) / 2, (mn.y + mx.y) / 2, (mn.z + mx.z) / 2), to: src)
             let key = Int(floor(c.x / cell)) * 1000 + Int(floor(c.z / cell))
-            let n = cells[key] ?? SCNNode()
+            let n = cells[key] ?? MXNode()
             cells[key] = n
             ch.removeFromParentNode()
             n.addChildNode(ch)
@@ -851,7 +850,7 @@ final class TacScene {
             if ceilNodes.contains(where: { $0 === n }) { continue }
             let (mn, mx) = n.boundingBox
             if mx.x - mn.x <= 0 && mx.z - mn.z <= 0 { continue }
-            let c = n.convertPosition(SCNVector3((mn.x + mx.x) / 2, (mn.y + mx.y) / 2, (mn.z + mx.z) / 2), to: nil)
+            let c = n.convertPosition(MXVector3((mn.x + mx.x) / 2, (mn.y + mx.y) / 2, (mn.z + mx.z) / 2), to: nil)
             let r = CGFloat(hypot(mx.x - mn.x, mx.z - mn.z) / 2)
             if r > 1400 { continue }
             cull.append(CullItem(node: n, c: CGPoint(x: CGFloat(c.x), y: CGFloat(c.z)), r: r))
@@ -884,7 +883,7 @@ final class TacScene {
                 doorAngShown[i] = ang
                 for (k, lf) in doorLeaves[i].enumerated() {
                     let sg: Float = k == 0 ? 1 : -1
-                    lf.eulerAngles = SCNVector3(0, (doorHoriz[i] ? -ang : ang) * sg, 0)
+                    lf.eulerAngles = MXVector3(0, (doorHoriz[i] ? -ang : ang) * sg, 0)
                 }
             }
         }
@@ -931,8 +930,8 @@ final class TacScene {
             vm.update(dt: vdt, t: Float(e.time), move: Float(min(1, hypot(e.move.dx, e.move.dy))), kick: Float(e.kick), reload: rprog, flashing: focus.flash > 0, recoilScale: TWeapons.recoil(focus.gun))
             vm.flash(focus.flash > 0)
             camNode.camera?.fieldOfView += ((e.scoped ? 26 : 62) - (camNode.camera?.fieldOfView ?? 62)) * 0.3
-            camNode.position = SCNVector3(Float(ex + jx * 0.3), Float(eh), Float(ez + jz * 0.3))
-            camNode.look(at: SCNVector3(Float(ex + dxv * 100), Float(eh + e.kick + tan(e.pitch) * 100), Float(ez + dzv * 100)))
+            camNode.position = MXVector3(Float(ex + jx * 0.3), Float(eh), Float(ez + jz * 0.3))
+            camNode.look(at: MXVector3(Float(ex + dxv * 100), Float(eh), Float(ez + dzv * 100)))
         } else {
             vm.root.isHidden = true
             camNode.camera?.zNear = 10
@@ -942,8 +941,8 @@ final class TacScene {
             let c = pr[max(0, min(3, preset))]
             // always the same top-down pitch; yaw just spins the view around the player
             let lx = camX + cos(focus.aim) * c.2, lz = camZ + sin(focus.aim) * c.3
-            camNode.position = SCNVector3(Float(lx + jx + c.1 * sin(yaw)), Float(c.0), Float(lz + jz + c.1 * cos(yaw)))
-            camNode.look(at: SCNVector3(Float(lx), 0, Float(lz)))
+            camNode.position = MXVector3(Float(lx + jx + c.1 * sin(yaw)), Float(c.0), Float(lz + jz + c.1 * cos(yaw)))
+            camNode.look(at: MXVector3(Float(lx), 0, Float(lz)))
         }
 
         for (i, p) in e.players.enumerated() {
@@ -952,13 +951,13 @@ final class TacScene {
             rt.isHidden = !show || (fpMode && p.id == focus.id)
             if !show { continue }
             let ks: Float = fpMode ? 1.18 : 1
-            rt.scale = SCNVector3(ks, ks * (p.crouch ? 0.74 : 1), ks)
-            rt.position = SCNVector3(Float(sx(p.pos)), 0, Float(p.pos.y))
-            rt.eulerAngles = SCNVector3(0, Float(-p.aim), 0)
-            heads[i].eulerAngles = SCNVector3(0, Float(p.aim), 0)
+            rt.scale = MXVector3(ks, ks * (p.crouch ? 0.74 : 1), ks)
+            rt.position = MXVector3(Float(sx(p.pos)), 0, Float(p.pos.y))
+            rt.eulerAngles = MXVector3(0, Float(-p.aim), 0)
+            heads[i].eulerAngles = MXVector3(0, Float(p.aim), 0)
             if p.alive {
-                bodies[i].eulerAngles = SCNVector3(0, 0, 0)
-                bodies[i].position = SCNVector3(0, 0, 0)
+                bodies[i].eulerAngles = MXVector3(0, 0, 0)
+                bodies[i].position = MXVector3(0, 0, 0)
                 heads[i].isHidden = true
                 guns[i].isHidden = false
                 flashes[i].isHidden = !(p.flash > 0)
@@ -968,8 +967,8 @@ final class TacScene {
                 if moved < 40 { walkPh[i] += moved * 0.12 }
                 lastPos[i] = p.pos
                 let sw = Float(sin(walkPh[i])) * 0.7
-                legLs[i].eulerAngles = SCNVector3(0, 0, sw)
-                legRs[i].eulerAngles = SCNVector3(0, 0, -sw)
+                legLs[i].eulerAngles = MXVector3(0, 0, sw)
+                legRs[i].eulerAngles = MXVector3(0, 0, -sw)
                 var ek = 0
                 if p.rank == 0 && p.armor > 0 {
                     ek = p.armorKind > 0 ? p.armorKind : (e.gameMode != 0 ? [1, 2, 3, 1, 2][p.id % 5] : 0)
@@ -981,12 +980,12 @@ final class TacScene {
                 let gi = TwRig.gunIdx(p.gun)
                 if gunShown[i] != gi {
                     for (k, g) in gunVars[i].enumerated() { g.isHidden = k != gi }
-                    flashes[i].position = SCNVector3(TwGunLib.muzzleX(p.gun) + 1, 1, 0)
+                    flashes[i].position = MXVector3(TwGunLib.muzzleX(p.gun) + 1, 1, 0)
                     gunShown[i] = gi
                 }
             } else {
-                bodies[i].eulerAngles = SCNVector3(0, 0, Float.pi / 2)
-                bodies[i].position = SCNVector3(0, 8, 0)
+                bodies[i].eulerAngles = MXVector3(0, 0, Float.pi / 2)
+                bodies[i].position = MXVector3(0, 8, 0)
                 heads[i].isHidden = true
                 flashes[i].isHidden = true
                 shirts[i].emission.contents = UIColor.black
@@ -997,8 +996,8 @@ final class TacScene {
             if i < e.bullets.count, TMap.floorOf(e.bullets[i].pos) == focusFloor {
                 let b = e.bullets[i]
                 node.isHidden = false
-                node.position = SCNVector3(Float(sx(b.pos)), 30, Float(b.pos.y))
-                node.eulerAngles = SCNVector3(0, Float(-atan2(b.vel.dy, b.vel.dx)), 0)
+                node.position = MXVector3(Float(sx(b.pos)), 30, Float(b.pos.y))
+                node.eulerAngles = MXVector3(0, Float(-atan2(b.vel.dy, b.vel.dx)), 0)
                 let c: UIColor = b.team == e.me.team ? UIColor(red: 0.7, green: 0.9, blue: 1, alpha: 1) : UIColor(red: 1, green: 0.55, blue: 0.35, alpha: 1)
                 node.geometry?.firstMaterial?.emission.contents = c
                 node.geometry?.firstMaterial?.diffuse.contents = c
@@ -1008,7 +1007,7 @@ final class TacScene {
             if i < e.nades.count, TMap.floorOf(e.nades[i].pos) == focusFloor {
                 let g = e.nades[i]
                 node.isHidden = false
-                node.position = SCNVector3(Float(sx(g.pos)), 8, Float(g.pos.y))
+                node.position = MXVector3(Float(sx(g.pos)), 8, Float(g.pos.y))
                 node.geometry?.firstMaterial?.diffuse.contents = g.kind == 1 ? UIColor(white: 0.75, alpha: 1) : UIColor(red: 0.3, green: 0.8, blue: 0.3, alpha: 1)
             } else { node.isHidden = true }
         }
@@ -1019,8 +1018,8 @@ final class TacScene {
                 let k = min(1, max(0, 1 - b.life / total))
                 let rr = b.r * (0.35 + k * 0.7)
                 node.isHidden = false
-                node.position = SCNVector3(Float(sx(b.pos)), 20, Float(b.pos.y))
-                node.scale = SCNVector3(Float(rr), Float(rr * 0.6), Float(rr))
+                node.position = MXVector3(Float(sx(b.pos)), 20, Float(b.pos.y))
+                node.scale = MXVector3(Float(rr), Float(rr * 0.6), Float(rr))
                 node.opacity = CGFloat(0.65 * (1 - k))
             } else { node.isHidden = true }
         }
@@ -1028,11 +1027,11 @@ final class TacScene {
             if i < e.smokeClouds.count, TMap.floorOf(e.smokeClouds[i].pos) == focusFloor {
                 let s = e.smokeClouds[i]
                 node.isHidden = false
-                node.position = SCNVector3(Float(sx(s.pos)), 0, Float(s.pos.y))
+                node.position = MXVector3(Float(sx(s.pos)), 0, Float(s.pos.y))
                 let sc = Float(s.r / 85)
-                node.scale = SCNVector3(sc, sc, sc)
+                node.scale = MXVector3(sc, sc, sc)
                 node.opacity = min(1, s.life / 1.5) * 0.93
-                node.eulerAngles = SCNVector3(0, Float(e.time * 0.2), 0)
+                node.eulerAngles = MXVector3(0, Float(e.time * 0.2), 0)
             } else { node.isHidden = true }
         }
         for (i, node) in packNodes.enumerated() where i < e.packs.count {
@@ -1041,7 +1040,7 @@ final class TacScene {
         let bombHere = e.planted && TMap.floorOf(e.bombPos) == focusFloor
         bombNode.isHidden = !bombHere
         if bombHere {
-            bombNode.position = SCNVector3(Float(sx(e.bombPos)), 0, Float(e.bombPos.y))
+            bombNode.position = MXVector3(Float(sx(e.bombPos)), 0, Float(e.bombPos.y))
         }
     }
 }
@@ -1234,7 +1233,7 @@ extension TacScene {
     func orbit(_ time: Double) {
         let a = time * 0.12
         let cx: Double = 850, cz: Double = 600
-        camNode.position = SCNVector3(Float(cx + cos(a) * 520), 300, Float(cz + sin(a) * 420))
-        camNode.look(at: SCNVector3(Float(cx), 20, Float(cz)))
+        camNode.position = MXVector3(Float(cx + cos(a) * 520), 300, Float(cz + sin(a) * 420))
+        camNode.look(at: MXVector3(Float(cx), 20, Float(cz)))
     }
 }

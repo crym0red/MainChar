@@ -1,4 +1,3 @@
-import SceneKit
 import UIKit
 
 // First-person weapon engine.
@@ -7,13 +6,13 @@ import UIKit
 // shot, pump and bolt-action rack, magazines drop and reseat on reload, plus recoil, idle sway,
 // walk bob and a randomised muzzle flash.
 final class TwViewModel {
-    let root = SCNNode()
+    let root = MXNode()
 
     private struct Rig {
-        let node: SCNNode
-        let groups: [String: SCNNode]
-        let dirs: [String: SCNVector3]
-        let flash: SCNNode?
+        let node: MXNode
+        let groups: [String: MXNode]
+        let dirs: [String: MXVector3]
+        let flash: MXNode?
     }
 
     private var rigs: [String: Rig] = [:]
@@ -30,23 +29,23 @@ final class TwViewModel {
     static var gloveColor = UIColor(red: 0.165, green: 0.153, blue: 0.137, alpha: 1)
 
     init() {
-        root.scale = SCNVector3(k, k, k)
+        root.scale = MXVector3(k, k, k)
         root.isHidden = true
         TwGunLib.load()
         guard let rs = TwGunLib.rigs else { return }
         for (id, v) in rs {
             guard let rig = v as? [String: Any], let parts = rig["parts"] as? [[String: Any]] else { continue }
-            var buckets: [String: SCNNode] = [:]
+            var buckets: [String: MXNode] = [:]
             for p in parts {
                 guard let n = TwGunLib.makePart(p) else { continue }
                 let gname = (p["g"] as? String) ?? ""
-                let b = buckets[gname] ?? SCNNode()
+                let b = buckets[gname] ?? MXNode()
                 b.addChildNode(n)
                 buckets[gname] = b
             }
-            let gun = SCNNode()
+            let gun = MXNode()
             gun.isHidden = true
-            var groups: [String: SCNNode] = [:]
+            var groups: [String: MXNode] = [:]
             for (gname, b) in buckets {
                 let flat = b.flattenedClone()
                 flat.renderingOrder = 1000
@@ -54,27 +53,27 @@ final class TwViewModel {
                 if gname.isEmpty {
                     gun.addChildNode(flat)
                 } else {
-                    let holder = SCNNode()
+                    let holder = MXNode()
                     holder.addChildNode(flat)
                     gun.addChildNode(holder)
                     groups[gname] = holder
                 }
             }
-            var dirs: [String: SCNVector3] = [:]
+            var dirs: [String: MXVector3] = [:]
             if let an = rig["anim"] as? [String: [Double]] {
-                for (key, a) in an where a.count == 3 { dirs[key] = SCNVector3(Float(a[0]), Float(a[1]), Float(a[2])) }
+                for (key, a) in an where a.count == 3 { dirs[key] = MXVector3(Float(a[0]), Float(a[1]), Float(a[2])) }
             }
-            var fl: SCNNode? = nil
+            var fl: MXNode? = nil
             if let mz = rig["muzzle"] as? [Double], mz.count == 3 {
-                let f = SCNNode(geometry: SCNSphere(radius: 2.0))
-                let fm = SCNMaterial()
+                let f = MXNode(geometry: MXSphere(radius: 2.0))
+                let fm = MXMaterial()
                 fm.lightingModel = .constant
                 fm.diffuse.contents = UIColor(red: 1, green: 0.88, blue: 0.45, alpha: 1)
                 fm.emission.contents = UIColor(red: 1, green: 0.8, blue: 0.3, alpha: 1)
                 fm.readsFromDepthBuffer = false
                 fm.writesToDepthBuffer = false
                 f.geometry?.firstMaterial = fm
-                f.position = SCNVector3(Float(mz[0]), Float(mz[1]), Float(mz[2]) - 1)
+                f.position = MXVector3(Float(mz[0]), Float(mz[1]), Float(mz[2]) - 1)
                 f.renderingOrder = 2000
                 f.isHidden = true
                 f.castsShadow = false
@@ -98,15 +97,15 @@ final class TwViewModel {
         shown = gid
         for (key, r) in rigs { r.node.isHidden = key != gid }
         slideK = 0; recoil = 0; cycleT = 2; cycleDelay = 0
-        for r in rigs.values { for g in r.groups.values { g.position = SCNVector3Zero; g.isHidden = false } }
+        for r in rigs.values { for g in r.groups.values { g.position = MXVector3Zero; g.isHidden = false } }
     }
 
     func flash(_ on: Bool) {
         guard let f = rigs[shown]?.flash else { return }
         if on && f.isHidden {
             let s = Float.random(in: 0.8...1.3)
-            f.scale = SCNVector3(s, s, s * Float.random(in: 1.5...2.4))
-            f.eulerAngles = SCNVector3(0, 0, Float.random(in: 0...3))
+            f.scale = MXVector3(s, s, s * Float.random(in: 1.5...2.4))
+            f.eulerAngles = MXVector3(0, 0, Float.random(in: 0...3))
         }
         f.isHidden = !on
     }
@@ -119,7 +118,7 @@ final class TwViewModel {
     private func slideGroup(_ r: Rig, _ g: String, _ amount: Float) {
         guard let n = r.groups[g], let d = r.dirs[g] else { return }
         let len = max(0.0001, sqrt(d.x * d.x + d.y * d.y + d.z * d.z))
-        n.position = SCNVector3(d.x / len * amount, d.y / len * amount, d.z / len * amount)
+        n.position = MXVector3(d.x / len * amount, d.y / len * amount, d.z / len * amount)
     }
 
     /// Call every frame. `reload` is 0...1 progress while reloading, nil otherwise.
@@ -174,19 +173,19 @@ final class TwViewModel {
         let by = -abs(cos(t * 8)) * 0.18 * mv
         let ix = cos(t * 0.9) * 0.05
         let iy = sin(t * 1.7) * 0.05
-        root.position = SCNVector3(bx + ix + dip * 1.2,
+        root.position = MXVector3(bx + ix + dip * 1.2,
                                    by + iy - dip * 4.5,
                                    kick * 0.02 + recoil * 0.9 * recoilScale)
-        root.eulerAngles = SCNVector3(kick * 0.004 + recoil * 0.035 * recoilScale - dip * 0.5, 0, -dip * 0.35)
+        root.eulerAngles = MXVector3(kick * 0.004 + recoil * 0.035 * recoilScale - dip * 0.5, 0, -dip * 0.35)
     }
 }
 
 /// Shared weapon data: materials, parts and the third-person (soldier) gun templates.
 enum TwGunLib {
     static var defs: [String: [String: Any]] = [:]
-    static var mats: [String: SCNMaterial] = [:]
+    static var mats: [String: MXMaterial] = [:]
     static var rigs: [String: Any]? = nil
-    private static var worldCache: [String: SCNNode] = [:]
+    private static var worldCache: [String: MXNode] = [:]
     private static var worldMuzzle: [String: Float] = [:]
 
     static func load() {
@@ -201,13 +200,13 @@ enum TwGunLib {
     }
 
     /// flattened gun-only model for soldiers (+x forward, grip at the origin); clone it per soldier
-    static func worldGun(_ id: String) -> SCNNode {
+    static func worldGun(_ id: String) -> MXNode {
         load()
         if let n = worldCache[id] { return n.clone() }
-        let holder = SCNNode()
+        let holder = MXNode()
         if let rig = (rigs?[id] as? [String: Any]) ?? (rigs?["pistol"] as? [String: Any]),
            let w = rig["w"] as? [String: Any], let parts = w["parts"] as? [[String: Any]] {
-            let tmp = SCNNode()
+            let tmp = MXNode()
             for p in parts { if let n = makePart(p) { tmp.addChildNode(n) } }
             let flat = tmp.flattenedClone()
             flat.castsShadow = false
@@ -225,16 +224,16 @@ enum TwGunLib {
 
     // MARK: geometry + materials
 
-    static func makePart(_ p: [String: Any]) -> SCNNode? {
+    static func makePart(_ p: [String: Any]) -> MXNode? {
         guard let t = p["t"] as? String, let m = p["m"] as? String,
               let pos = p["p"] as? [Double], let q = p["q"] as? [Double], let s = p["s"] as? [Double],
               pos.count == 3, q.count == 4 else { return nil }
-        let geo: SCNGeometry
-        var sc = SCNVector3(1, 1, 1)
+        let geo: MXGeometry
+        var sc = MXVector3(1, 1, 1)
         switch t {
         case "box":
             guard s.count == 3 else { return nil }
-            let b = SCNBox(width: CGFloat(s[0]), height: CGFloat(s[1]), length: CGFloat(s[2]), chamferRadius: 0)
+            let b = MXBox(width: CGFloat(s[0]), height: CGFloat(s[1]), length: CGFloat(s[2]), chamferRadius: 0)
             let mn = CGFloat(min(s[0], min(s[1], s[2])))
             let want = CGFloat((p["c"] as? Double) ?? (mn < 0.5 ? 0 : 0.06))
             let c = min(want, mn * 0.45)
@@ -242,41 +241,41 @@ enum TwGunLib {
             geo = b
         case "cyl":
             guard s.count == 2 else { return nil }
-            let c = SCNCylinder(radius: CGFloat(s[0]), height: CGFloat(s[1]))
+            let c = MXCylinder(radius: CGFloat(s[0]), height: CGFloat(s[1]))
             c.radialSegmentCount = 18
             geo = c
         case "cone":
             guard s.count == 3 else { return nil }
-            let c = SCNCone(topRadius: CGFloat(s[0]), bottomRadius: CGFloat(s[1]), height: CGFloat(s[2]))
+            let c = MXCone(topRadius: CGFloat(s[0]), bottomRadius: CGFloat(s[1]), height: CGFloat(s[2]))
             c.radialSegmentCount = 18
             geo = c
         case "sph":
             guard s.count == 3 else { return nil }
-            let sp = SCNSphere(radius: 1)
+            let sp = MXSphere(radius: 1)
             sp.segmentCount = 12
             geo = sp
-            sc = SCNVector3(Float(s[0]), Float(s[1]), Float(s[2]))
+            sc = MXVector3(Float(s[0]), Float(s[1]), Float(s[2]))
         default:
             guard s.count == 2 else { return nil }
-            let c = SCNCapsule(capRadius: CGFloat(s[0]), height: CGFloat(s[1]))
+            let c = MXCapsule(capRadius: CGFloat(s[0]), height: CGFloat(s[1]))
             c.radialSegmentCount = 12
             c.capSegmentCount = 4
             geo = c
         }
         geo.firstMaterial = material(m)
-        let n = SCNNode(geometry: geo)
-        n.position = SCNVector3(Float(pos[0]), Float(pos[1]), Float(pos[2]))
-        n.orientation = SCNVector4(Float(q[0]), Float(q[1]), Float(q[2]), Float(q[3]))
+        let n = MXNode(geometry: geo)
+        n.position = MXVector3(Float(pos[0]), Float(pos[1]), Float(pos[2]))
+        n.orientation = MXVector4(Float(q[0]), Float(q[1]), Float(q[2]), Float(q[3]))
         n.scale = sc
         n.castsShadow = false
         return n
     }
 
-    static func material(_ name: String) -> SCNMaterial {
+    static func material(_ name: String) -> MXMaterial {
         if let m = mats[name] { return m }
         let d = defs[name] ?? [:]
         let c = (d["c"] as? [Double]) ?? [0.5, 0.5, 0.5]
-        let m = SCNMaterial()
+        let m = MXMaterial()
         m.lightingModel = (name == "dot") ? .constant : .blinn
         m.diffuse.contents = name == "glove"
             ? TwViewModel.gloveColor

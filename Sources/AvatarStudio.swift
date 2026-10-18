@@ -189,13 +189,9 @@ struct AvatarStudioView: View {
                     Text("Avatar").font(.jk(22, .heavy))
                     Spacer()
                 }
-                ZStack(alignment: .bottomTrailing) {
-                    AvatarSoldierPreview(style: TacAvatar.style(key, look))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.05)))
-                    PortraitAvatar(key: key, size: 64, look: look.faceCopy, faceOnly: true)
-                        .padding(8)
-                }
+                AvatarSoldierPreview(style: TacAvatar.style(key, look))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.05)))
                 HStack(spacing: 8) {
                     Button { randomize() } label: {
                         Label("Random", systemImage: "dice.fill").font(.jk(13, .bold)).foregroundColor(.white)

@@ -1,5 +1,4 @@
 import SwiftUI
-import SceneKit
 import UIKit
 
 // MARK: - 3D style resolved from an AvatarLook
@@ -106,8 +105,15 @@ enum TacAvatar {
     }
 
     /// The saved look of the local player, or the generated one for anyone else.
+    private static var lookCache: [String: AvatarLook] = [:]
+    private static var lookVer = -1
+
     static func look(for key: String) -> AvatarLook {
-        full(key, AvatarLooks.look(for: key))
+        if lookVer != AvatarLooks.version { lookCache.removeAll(); lookVer = AvatarLooks.version }
+        if let c = lookCache[key] { return c }
+        let l = full(key, AvatarLooks.look(for: key))
+        lookCache[key] = l
+        return l
     }
 
     static func style(_ key: String, _ given: AvatarLook? = nil) -> TwStyle {
@@ -141,7 +147,7 @@ enum TacAvatar {
     @MainActor private static var faceCache: [String: UIImage] = [:]
 
     /// Renders the face-only portrait asynchronously and drops it on the material when ready.
-    static func applyFace(_ mat: SCNMaterial, style s: TwStyle) {
+    static func applyFace(_ mat: MXMaterial, style s: TwStyle) {
         let look = s.look
         let key = s.key
         Task { @MainActor in
@@ -228,55 +234,53 @@ struct AvatarSoldierPreview: UIViewRepresentable {
 
     final class Coord {
         var last = ""
-        var holder = SCNNode()
+        var holder = MXNode()
     }
 
     func makeCoordinator() -> Coord { Coord() }
 
-    func makeUIView(context: Context) -> SCNView {
-        let v = SCNView()
+    func makeUIView(context: Context) -> MXView {
+        let v = MXView()
         v.backgroundColor = .clear
         v.antialiasingMode = .multisampling4X
         v.isUserInteractionEnabled = false
-        let sc = SCNScene()
+        let sc = MXScene()
         v.scene = sc
 
-        let cam = SCNNode()
-        cam.camera = SCNCamera()
-        cam.camera?.fieldOfView = 34
+        let cam = MXNode()
+        cam.camera = MXCamera()
+        cam.camera?.fieldOfView = 32
         cam.camera?.zNear = 1
         cam.camera?.zFar = 1000
-        cam.position = SCNVector3(104, 40, 0)
-        let tgt = SCNNode()
-        tgt.position = SCNVector3(0, 34, 0)
+        cam.position = MXVector3(120, 30, 52)
+        let tgt = MXNode()
+        tgt.position = MXVector3(0, 25, 0)
         sc.rootNode.addChildNode(tgt)
-        let lk = SCNLookAtConstraint(target: tgt)
-        lk.isGimbalLockEnabled = true
-        cam.constraints = [lk]
         sc.rootNode.addChildNode(cam)
+        v.pointOfView = cam
+        cam.look(at: MXVector3(0, 25, 0))
 
-        let amb = SCNNode()
-        amb.light = SCNLight()
+        let amb = MXNode()
+        amb.light = MXLight()
         amb.light?.type = .ambient
         amb.light?.intensity = 650
         sc.rootNode.addChildNode(amb)
-        let sun = SCNNode()
-        sun.light = SCNLight()
+        let sun = MXNode()
+        sun.light = MXLight()
         sun.light?.type = .directional
         sun.light?.intensity = 900
-        sun.eulerAngles = SCNVector3(-0.6, 1.2, 0)
+        sun.eulerAngles = MXVector3(-0.6, 1.2, 0)
         sc.rootNode.addChildNode(sun)
 
         let holder = context.coordinator.holder
         sc.rootNode.addChildNode(holder)
-        holder.runAction(.repeatForever(.sequence([
-            .rotateTo(x: 0, y: 0.95, z: 0, duration: 2.8, usesShortestUnitArc: true),
-            .rotateTo(x: 0, y: -0.95, z: 0, duration: 2.8, usesShortestUnitArc: true)
-        ])))
+        v.preRender = { [weak holder] t in
+            holder?.eulerAngles = MXVector3(0, Float(sin(t * 0.98)) * 0.55, 0)
+        }
         return v
     }
 
-    func updateUIView(_ v: SCNView, context: Context) {
+    func updateUIView(_ v: MXView, context: Context) {
         let sig = (try? JSONEncoder().encode(style.look)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
         let sig2 = sig + "#\(rank)"
         guard context.coordinator.last != sig2 else { return }
@@ -287,7 +291,7 @@ struct AvatarSoldierPreview: UIViewRepresentable {
         for g in sol.variants { g.isHidden = true }
         let rifle = TwRig.gunIdx("rifle")
         if rifle < sol.variants.count { sol.variants[rifle].isHidden = false }
-        sol.root.position = SCNVector3(0, -4, 0)
+        sol.root.position = MXVector3(0, -4, 0)
         h.addChildNode(sol.root)
     }
 }
