@@ -326,7 +326,7 @@ final class TacScene {
         let amb = SCNNode()
         amb.light = SCNLight()
         amb.light?.type = .ambient
-        amb.light?.intensity = 380
+        amb.light?.intensity = 640
         amb.light?.color = UIColor(red: 0.78, green: 0.8, blue: 0.9, alpha: 1)
         root.addChildNode(amb)
 
@@ -346,6 +346,15 @@ final class TacScene {
         root.addChildNode(sun)
         sun.look(at: SCNVector3(0, 0, 0))
         sunNode = sun
+        let fill = SCNNode()
+        let fl = SCNLight()
+        fl.type = .directional
+        fl.intensity = 420
+        fl.color = UIColor(red: 1, green: 0.95, blue: 0.85, alpha: 1)
+        fill.light = fl
+        fill.position = SCNVector3(400, 500, 500)
+        root.addChildNode(fill)
+        fill.look(at: SCNVector3(0, 0, 0))
 
         let lamps: [(CGFloat, CGFloat, UIColor)] = [
             (850, 900, UIColor(red: 1, green: 0.82, blue: 0.55, alpha: 1)),
@@ -491,6 +500,66 @@ final class TacScene {
             if mt == .glass { n.castsShadow = false; n.renderingOrder = 3 }
             fr(o.midX).addChildNode(n)
         }
+        // rooftops: domes, water tanks, masts
+        do {
+            var lg = LCG(s: 303)
+            let roofs = SCNNode()
+            let domeM = mat(plasterTex(), color: UIColor(white: 1, alpha: 1), sx: 2, sy: 2)
+            domeM.diffuse.contents = UIColor(red: 0.95, green: 0.92, blue: 0.82, alpha: 1)
+            let tankM = mat(nil, color: UIColor(red: 0.45, green: 0.5, blue: 0.55, alpha: 1))
+            let metalM = mat(nil, color: UIColor(white: 0.25, alpha: 1))
+            var n = 0
+            for o in TMap.walls where o.width >= 150 && o.height >= 150 {
+                n += 1
+                let cx = o.midX + (lg.next() - 0.5) * (o.width - 100) * 0.4
+                let cz = o.midY + (lg.next() - 0.5) * (o.height - 100) * 0.4
+                let rad = min(110, min(o.width, o.height) * 0.3)
+                if n % 3 != 0 {
+                    let d = SCNNode(geometry: SCNSphere(radius: rad))
+                    d.geometry?.firstMaterial = domeM
+                    (d.geometry as? SCNSphere)?.segmentCount = 28
+                    d.scale = SCNVector3(1, 0.62, 1)
+                    d.position = SCNVector3(Float(cx), Float(TMap.wallH), Float(cz))
+                    roofs.addChildNode(d)
+                    let drum = SCNNode(geometry: SCNCylinder(radius: rad * 1.02, height: 8))
+                    drum.geometry?.firstMaterial = domeM
+                    drum.position = SCNVector3(Float(cx), Float(TMap.wallH + 3), Float(cz))
+                    roofs.addChildNode(drum)
+                    let fin = SCNNode(geometry: SCNCylinder(radius: 1.6, height: 22))
+                    fin.geometry?.firstMaterial = metalM
+                    fin.position = SCNVector3(Float(cx), Float(TMap.wallH + rad * 0.62 + 8), Float(cz))
+                    roofs.addChildNode(fin)
+                } else {
+                    let tk = SCNNode(geometry: SCNCylinder(radius: 22, height: 36))
+                    tk.geometry?.firstMaterial = tankM
+                    tk.position = SCNVector3(Float(cx), Float(TMap.wallH + 18), Float(cz))
+                    roofs.addChildNode(tk)
+                    for lx in [-14, 14] as [CGFloat] {
+                        let lgp = SCNNode(geometry: SCNBox(width: 3, height: 10, length: 3, chamferRadius: 0))
+                        lgp.geometry?.firstMaterial = metalM
+                        lgp.position = SCNVector3(Float(cx + lx), Float(TMap.wallH + 4), Float(cz))
+                        roofs.addChildNode(lgp)
+                    }
+                    let ms = SCNNode(geometry: SCNCylinder(radius: 1, height: 50))
+                    ms.geometry?.firstMaterial = metalM
+                    ms.position = SCNVector3(Float(cx + 50), Float(TMap.wallH + 25), Float(cz + 20))
+                    roofs.addChildNode(ms)
+                }
+                // battlements along the roof edge
+                let cap = mat(nil, color: UIColor(red: 0.78, green: 0.66, blue: 0.47, alpha: 1))
+                var bx = o.minX + 20
+                while bx < o.maxX - 20 {
+                    for zz in [o.minY + 6, o.maxY - 6] {
+                        let b = SCNNode(geometry: SCNBox(width: 14, height: 10, length: 10, chamferRadius: 1))
+                        b.geometry?.firstMaterial = cap
+                        b.position = SCNVector3(Float(bx), Float(TMap.wallH + 5), Float(zz))
+                        roofs.addChildNode(b)
+                    }
+                    bx += 40
+                }
+            }
+            floorRoot[0].addChildNode(roofs.flattenedClone())
+        }
         // stairs
         for fl in 0..<2 {
             for i in TMap.stairs.indices {
@@ -567,7 +636,7 @@ final class TacScene {
         for p in e.players {
             let rt = SCNNode()
             let col: UIColor = p.isPlayer ? UIColor(red: 0.3, green: 0.9, blue: 0.45, alpha: 1) : (p.team == e.me.team ? UIColor(red: 0.25, green: 0.6, blue: 1, alpha: 1) : UIColor(red: 1, green: 0.25, blue: 0.3, alpha: 1))
-            var shirtC = col
+            var shirtC = p.isPlayer ? col : (p.team == e.me.team ? UIColor(red: 0.2, green: 0.38, blue: 0.7, alpha: 1) : UIColor(red: 0.72, green: 0.3, blue: 0.14, alpha: 1))
             var tint: UIColor? = nil
             if p.isPlayer {
                 let oc = BRMeta.outfitColor()
@@ -939,8 +1008,17 @@ extension TacticalEngine {
                 ctx.draw(Text(ff == 0 ? "UP" : "DOWN").font(.system(size: 12, weight: .heavy)).foregroundColor(Color(red: 1, green: 0.88, blue: 0.25)), at: pt)
             }
         }
+        // lane callouts
+        for rm in TMap.rooms {
+            let dd = hypot(rm.r.midX - focus.pos.x, rm.r.midY - focus.pos.y)
+            if fp && dd > 900 { continue }
+            guard let pt = pr(CGPoint(x: rm.r.midX, y: rm.r.midY), fp ? 74 : 4) else { continue }
+            let al = fp ? Double(max(0.15, min(0.7, 1.1 - dd / 900))) : 0.5
+            ctx.draw(Text(rm.name.uppercased()).font(.system(size: fp ? 14 : 11, weight: .heavy)).foregroundColor(Color(red: 1, green: 0.93, blue: 0.7).opacity(al)), at: pt)
+        }
         // name tags
-        for p in players where p.alive && (p.team == me.team || p.spotted) {
+        for p in players where p.alive && (p.team == me.team || (p.spotted && !fp)) {
+            if fp && (p.isPlayer || hypot(p.pos.x - focus.pos.x, p.pos.y - focus.pos.y) > 420) { continue }
             guard let pt = pr(p.pos, 84) else { continue }
             let ally = p.team == me.team
             let col: Color = p.isPlayer ? Color(red: 0.4, green: 0.95, blue: 0.5) : (ally ? Color(red: 0.25, green: 0.6, blue: 1) : Color(red: 1, green: 0.25, blue: 0.3))
@@ -977,7 +1055,7 @@ extension TacticalEngine {
         if planted, let pt = pr(bombPos, 36) {
             ctx.draw(Text(String(format: "%.0f", max(0, bombT))).font(.system(size: 14, weight: .heavy)).foregroundColor(.white), at: pt)
         }
-        let vg = Gradient(colors: [Color.clear, Color.black.opacity(0.5)])
+        let vg = Gradient(colors: [Color.clear, Color.black.opacity(fp ? 0.18 : 0.5)])
         ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .radialGradient(vg, center: CGPoint(x: size.width / 2, y: size.height / 2), startRadius: min(size.width, size.height) * 0.45, endRadius: max(size.width, size.height) * 0.72))
         if fp {
             var inSmoke: CGFloat = 0
