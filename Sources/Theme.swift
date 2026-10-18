@@ -458,7 +458,7 @@ final class Nav: ObservableObject {
     @Published var chat: String? = nil
     @Published var coin: String? = nil
     @Published var tacPlay: Int? = nil
-    @Published var tacFP = false
+    @Published var tacFP = true
     @Published var brPlay = false
     @Published var brMap = 0
     @Published var lobbyMode = 0

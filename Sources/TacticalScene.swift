@@ -177,6 +177,52 @@ final class TacScene {
         }
     }
 
+    private func sandBlockTex() -> UIImage {
+        makeTex("sandblock") { g, s in
+            UIColor(red: 0.55, green: 0.43, blue: 0.29, alpha: 1).setFill(); g.fill(CGRect(x: 0, y: 0, width: s, height: s))
+            var r = LCG(s: 41)
+            for row in 0..<6 {
+                let y = CGFloat(row) * s / 6
+                var x: CGFloat = -r.next() * 30
+                while x < s {
+                    let w = 34 + r.next() * 34
+                    let t = 0.88 + r.next() * 0.24
+                    UIColor(red: 0.84 * t, green: 0.70 * t, blue: 0.50 * t, alpha: 1).setFill()
+                    g.fill(CGRect(x: x + 1.5, y: y + 1.5, width: w - 3, height: s / 6 - 3))
+                    UIColor.black.withAlphaComponent(0.06 + r.next() * 0.08).setFill()
+                    g.fill(CGRect(x: x + 1.5, y: y + s / 6 - 9, width: w - 3, height: 6))
+                    x += w
+                }
+            }
+            for _ in 0..<900 {
+                (r.next() > 0.5 ? UIColor.white : UIColor(red: 0.3, green: 0.2, blue: 0.1, alpha: 1)).withAlphaComponent(0.06).setFill()
+                g.fill(CGRect(x: r.next() * s, y: r.next() * s, width: 2 + r.next() * 3, height: 2))
+            }
+            UIColor(red: 0.25, green: 0.17, blue: 0.1, alpha: 0.35).setStroke()
+            for _ in 0..<5 {
+                let p = UIBezierPath(); var cx = r.next() * s, cy = r.next() * s
+                p.move(to: CGPoint(x: cx, y: cy))
+                for _ in 0..<4 { cx += (r.next() - 0.5) * 14; cy += r.next() * 12; p.addLine(to: CGPoint(x: cx, y: cy)) }
+                p.lineWidth = 1; p.stroke()
+            }
+        }
+    }
+
+    private func plasterTex() -> UIImage {
+        makeTex("sandplaster") { g, s in
+            UIColor(red: 0.82, green: 0.69, blue: 0.5, alpha: 1).setFill(); g.fill(CGRect(x: 0, y: 0, width: s, height: s))
+            var r = LCG(s: 77)
+            for _ in 0..<40 {
+                UIColor(red: 0.6 + r.next() * 0.3, green: 0.5 + r.next() * 0.2, blue: 0.35, alpha: 0.1).setFill()
+                g.fillEllipse(in: CGRect(x: r.next() * s, y: r.next() * s, width: 20 + r.next() * 50, height: 20 + r.next() * 50))
+            }
+            for _ in 0..<1200 {
+                (r.next() > 0.5 ? UIColor.white : UIColor.black).withAlphaComponent(0.06).setFill()
+                g.fill(CGRect(x: r.next() * s, y: r.next() * s, width: 2, height: 2))
+            }
+        }
+    }
+
     private func siteTex(_ letter: String, _ w: CGFloat, _ h: CGFloat) -> UIImage {
         let sz = CGSize(width: w * 2, height: h * 2)
         return UIGraphicsImageRenderer(size: sz).image { c in
@@ -259,7 +305,17 @@ final class TacScene {
     // MARK: build
 
     func build(_ e: TacticalEngine) {
-        scene.background.contents = UIColor(red: 0.03, green: 0.04, blue: 0.06, alpha: 1)
+        let skyImg = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 256)).image { c in
+            let cs = CGColorSpaceCreateDeviceRGB()
+            if let gr = CGGradient(colorsSpace: cs, colors: [UIColor(red: 0.25, green: 0.52, blue: 0.9, alpha: 1).cgColor, UIColor(red: 0.62, green: 0.8, blue: 0.96, alpha: 1).cgColor, UIColor(red: 0.95, green: 0.88, blue: 0.72, alpha: 1).cgColor] as CFArray, locations: [0, 0.6, 1]) {
+                c.cgContext.drawLinearGradient(gr, start: .zero, end: CGPoint(x: 0, y: 256), options: [])
+            }
+        }
+        scene.background.contents = skyImg
+        scene.fogColor = UIColor(red: 0.9, green: 0.82, blue: 0.66, alpha: 1)
+        scene.fogStartDistance = 900
+        scene.fogEndDistance = 3200
+        scene.fogDensityExponent = 1.4
         let root = scene.rootNode
         floorRoot[1].position = SCNVector3(-Float(TMap.off), 0, 0)
         floorRoot[1].isHidden = true
@@ -270,15 +326,15 @@ final class TacScene {
         let amb = SCNNode()
         amb.light = SCNLight()
         amb.light?.type = .ambient
-        amb.light?.intensity = 250
-        amb.light?.color = UIColor(red: 0.55, green: 0.62, blue: 0.82, alpha: 1)
+        amb.light?.intensity = 380
+        amb.light?.color = UIColor(red: 0.78, green: 0.8, blue: 0.9, alpha: 1)
         root.addChildNode(amb)
 
         let sun = SCNNode()
         let sl = SCNLight()
         sl.type = .directional
-        sl.intensity = 720
-        sl.color = UIColor(red: 0.95, green: 0.96, blue: 1, alpha: 1)
+        sl.intensity = 1000
+        sl.color = UIColor(red: 1, green: 0.93, blue: 0.78, alpha: 1)
         sl.castsShadow = true
         sl.shadowMode = .deferred
         sl.shadowRadius = 5
@@ -349,15 +405,15 @@ final class TacScene {
         }
 
         // floors
-        let floorCols: [(CGFloat, CGFloat, CGFloat)] = [(0.45, 0.31, 0.19), (0.34, 0.36, 0.38), (0.27, 0.24, 0.33), (0.5, 0.54, 0.56), (0.28, 0.19, 0.13), (0.4, 0.4, 0.42)]
+        let floorCols: [(CGFloat, CGFloat, CGFloat)] = [(0.72, 0.59, 0.41), (0.7, 0.6, 0.45), (0.5, 0.26, 0.2), (0.72, 0.5, 0.34), (0.4, 0.27, 0.17), (0.66, 0.56, 0.42)]
         for rm in TMap.rooms {
             let b = floorCols[rm.mat]
             let img: UIImage
             switch rm.mat {
-            case 0: img = woodTex(b, "wood0")
+            case 0: img = noiseTex(b, "sand0", dots: 2600, grid: false)
             case 4: img = woodTex(b, "wood4")
             case 3, 5: img = tileTex(b, "tile\(rm.mat)")
-            case 1: img = noiseTex(b, "slab", dots: 500, grid: true)
+            case 1: img = noiseTex(b, "slab", dots: 1800, grid: false)
             default: img = noiseTex(b, "carpet", dots: 1400, grid: false)
             }
             let tile: CGFloat = rm.mat == 1 ? 140 : (rm.mat == 3 || rm.mat == 5 ? 112 : 128)
@@ -405,11 +461,11 @@ final class TacScene {
             fr(d.midX).addChildNode(solid(lin, h: 10, y0: 71, color: frame, top: frame, chamfer: 1))
         }
         // walls
-        let brick = brickTex()
-        let concrete = noiseTex((0.58, 0.6, 0.64), "conc", dots: 900, grid: true)
+        let brick = sandBlockTex()
+        let concrete = plasterTex()
         let wood = woodTex((0.5, 0.36, 0.22), "wallwood")
         let wallH = TMap.wallH
-        let cap = mat(nil, color: UIColor(red: 0.05, green: 0.055, blue: 0.07, alpha: 1))
+        let cap = mat(nil, color: UIColor(red: 0.74, green: 0.62, blue: 0.44, alpha: 1))
         for (k, o) in TMap.walls.enumerated() {
             let mt = TMap.wallMats[k]
             let front: SCNMaterial
@@ -730,7 +786,7 @@ final class TacScene {
         let sh = e.shake
         let jx: CGFloat = sh > 0 ? CGFloat.random(in: -sh...sh) * 0.6 : 0
         let jz: CGFloat = sh > 0 ? CGFloat.random(in: -sh...sh) * 0.6 : 0
-        for c in ceilNodes { c.isHidden = !fpMode }
+        for c in ceilNodes { c.isHidden = true }
         if fpMode {
             let ex = fx, ez = focus.pos.y
             let dxv = cos(focus.aim), dzv = sin(focus.aim)
@@ -738,9 +794,9 @@ final class TacScene {
             fpFwd = CGPoint(x: dxv, y: dzv)
             fpEye = CGPoint(x: ex, y: ez)
             camNode.camera?.zNear = 2
-            camNode.camera?.fieldOfView = 62
+            camNode.camera?.fieldOfView += ((e.scoped ? 26 : 62) - (camNode.camera?.fieldOfView ?? 62)) * 0.3
             camNode.position = SCNVector3(Float(ex + jx * 0.3), Float(eh), Float(ez + jz * 0.3))
-            camNode.look(at: SCNVector3(Float(ex + dxv * 100), Float(eh), Float(ez + dzv * 100)))
+            camNode.look(at: SCNVector3(Float(ex + dxv * 100), Float(eh + e.kick + tan(e.pitch) * 100), Float(ez + dzv * 100)))
         } else {
             camNode.camera?.zNear = 10
             camNode.camera?.fieldOfView = 52
@@ -757,7 +813,8 @@ final class TacScene {
             let show = (p.team == e.me.team || p.spotted || (!p.alive && p.seenEver)) && TMap.floorOf(p.pos) == focusFloor
             rt.isHidden = !show || (fpMode && p.id == focus.id)
             if !show { continue }
-            rt.scale = SCNVector3(1, p.crouch ? 0.74 : 1, 1)
+            let ks: Float = fpMode ? 1.18 : 1
+            rt.scale = SCNVector3(ks, ks * (p.crouch ? 0.74 : 1), ks)
             rt.position = SCNVector3(Float(sx(p.pos)), 0, Float(p.pos.y))
             rt.eulerAngles = SCNVector3(0, Float(-p.aim), 0)
             heads[i].eulerAngles = SCNVector3(0, Float(p.aim), 0)
@@ -932,18 +989,34 @@ extension TacticalEngine {
             }
             let cx = size.width / 2, hz = size.height / 2
             var ch = Path()
-            ch.move(to: CGPoint(x: cx - 14, y: hz)); ch.addLine(to: CGPoint(x: cx - 5, y: hz))
-            ch.move(to: CGPoint(x: cx + 5, y: hz)); ch.addLine(to: CGPoint(x: cx + 14, y: hz))
-            ch.move(to: CGPoint(x: cx, y: hz - 14)); ch.addLine(to: CGPoint(x: cx, y: hz - 5))
-            ch.move(to: CGPoint(x: cx, y: hz + 5)); ch.addLine(to: CGPoint(x: cx, y: hz + 14))
-            ctx.stroke(ch, with: .color(.white.opacity(0.85)), lineWidth: 2)
+            let gap: CGFloat = 5 + recoil * 22 + (moving ? 9 : 0) + (me.crouch ? -2 : 0)
+            let ln: CGFloat = 9
+            ch.move(to: CGPoint(x: cx - gap - ln, y: hz)); ch.addLine(to: CGPoint(x: cx - gap, y: hz))
+            ch.move(to: CGPoint(x: cx + gap, y: hz)); ch.addLine(to: CGPoint(x: cx + gap + ln, y: hz))
+            ch.move(to: CGPoint(x: cx, y: hz - gap - ln)); ch.addLine(to: CGPoint(x: cx, y: hz - gap))
+            ch.move(to: CGPoint(x: cx, y: hz + gap)); ch.addLine(to: CGPoint(x: cx, y: hz + gap + ln))
+            ctx.fill(Path(ellipseIn: CGRect(x: cx - 1, y: hz - 1, width: 2, height: 2)), with: .color(.green.opacity(0.9)))
+            ctx.stroke(ch, with: .color(Color(red: 0.4, green: 1, blue: 0.45).opacity(0.9)), lineWidth: 2)
             if hitT > 0 {
                 var hm = Path()
                 hm.move(to: CGPoint(x: cx - 9, y: hz - 9)); hm.addLine(to: CGPoint(x: cx + 9, y: hz + 9))
                 hm.move(to: CGPoint(x: cx + 9, y: hz - 9)); hm.addLine(to: CGPoint(x: cx - 9, y: hz + 9))
                 ctx.stroke(hm, with: .color(.red), lineWidth: 3)
             }
-            if me.alive { drawViewGun(&ctx, size) }
+            if me.alive && !scoped { drawViewGun(&ctx, size) }
+            if scoped && me.alive {
+                let r = min(size.width, size.height) * 0.46
+                var sc = Path(CGRect(origin: .zero, size: size))
+                sc.addEllipse(in: CGRect(x: cx - r, y: hz - r, width: r * 2, height: r * 2))
+                ctx.fill(sc, with: .color(.black), style: FillStyle(eoFill: true))
+                var ln = Path()
+                ln.move(to: CGPoint(x: cx - r, y: hz)); ln.addLine(to: CGPoint(x: cx + r, y: hz))
+                ln.move(to: CGPoint(x: cx, y: hz - r)); ln.addLine(to: CGPoint(x: cx, y: hz + r))
+                ctx.stroke(ln, with: .color(.black.opacity(0.9)), lineWidth: 1.5)
+            }
+            if me.blind > 0 {
+                ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white.opacity(Double(min(1, me.blind * 1.2)))))
+            }
         }
         drawMinimapPublic(&ctx)
         if me.hurt > 0 {

@@ -44,7 +44,6 @@ struct LobbyView: View {
         }
         .onAppear {
             OrientationLock.set(landscape: true)
-            nav.tacFP = false
             ensureBg()
         }
         .onChange(of: nav.brPlay) { v in
@@ -184,7 +183,7 @@ struct LobbyView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(nav.lobbyMode == 1 ? "BATTLE ROYALE" : "5V5 BOMB DEFUSAL").font(.jk(16, .heavy)).foregroundColor(.white)
-                        Text(nav.lobbyMode == 1 ? "\(TowerMaps.all[nav.brMap].name)  |  \(TowerMaps.all[nav.brMap].players) players  |  \(TowerMaps.all[nav.brMap].nF) floors" : "Safehouse  |  \(diffNames[diff])  |  \(nav.tacFP ? "FIRST PERSON" : "3D")").font(.jk(12, .semibold)).foregroundColor(.white.opacity(0.8))
+                        Text(nav.lobbyMode == 1 ? "\(TowerMaps.all[nav.brMap].name)  |  \(TowerMaps.all[nav.brMap].players) players  |  \(TowerMaps.all[nav.brMap].nF) floors" : "Safehouse  |  \(diffNames[diff])  |  \(nav.tacFP ? "FIRST PERSON" : "TOP-DOWN")").font(.jk(12, .semibold)).foregroundColor(.white.opacity(0.8))
                     }
                     Spacer()
                     Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold)).foregroundColor(.white.opacity(0.7))
@@ -193,11 +192,11 @@ struct LobbyView: View {
             }
             .buttonStyle(.plain)
             HStack(spacing: 0) {
-                ForEach(Array(["5V5 TOP-DOWN"].enumerated()), id: \.offset) { i, n in
-                    let on = nav.lobbyMode == i
+                ForEach(Array(["FIRST PERSON", "TOP-DOWN"].enumerated()), id: \.offset) { i, n in
+                    let on = (nav.tacFP ? 0 : 1) == i
                     Button {
-                        nav.lobbyMode = i
-                        nav.tacFP = false
+                        nav.lobbyMode = 0
+                        nav.tacFP = (i == 0)
                     } label: {
                         Text(n).font(.jk(12, .heavy)).foregroundColor(on ? .black : .white.opacity(0.8))
                             .frame(maxWidth: .infinity).frame(height: 32).background(on ? lime : Color.black.opacity(0.7))
