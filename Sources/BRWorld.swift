@@ -83,6 +83,29 @@ func brRay(_ o: CGPoint, _ dx: CGFloat, _ dy: CGFloat, _ r: CGRect) -> (CGFloat,
     return (tmin, side)
 }
 
+func brRayThrough(_ o: CGPoint, _ dx: CGFloat, _ dy: CGFloat, _ r: CGRect) -> (CGFloat, CGFloat)? {
+    var tmin: CGFloat = 0
+    var tmax: CGFloat = 100000
+    if abs(dx) < 1e-9 {
+        if o.x < r.minX || o.x > r.maxX { return nil }
+    } else {
+        let t1 = (r.minX - o.x) / dx
+        let t2 = (r.maxX - o.x) / dx
+        tmin = max(tmin, min(t1, t2))
+        tmax = min(tmax, max(t1, t2))
+    }
+    if abs(dy) < 1e-9 {
+        if o.y < r.minY || o.y > r.maxY { return nil }
+    } else {
+        let t1 = (r.minY - o.y) / dy
+        let t2 = (r.maxY - o.y) / dy
+        tmin = max(tmin, min(t1, t2))
+        tmax = min(tmax, max(t1, t2))
+    }
+    if tmin > tmax { return nil }
+    return (tmin, tmax)
+}
+
 final class BRWorld {
     static let W: CGFloat = 6000
     static let cell: CGFloat = 250
@@ -96,6 +119,9 @@ final class BRWorld {
     static let gulagA = CGPoint(x: 5335, y: 4770)
     static let gulagB = CGPoint(x: 5745, y: 4770)
     var walls: [BRWall] = []
+    var wallDmg: [Int: CGFloat] = [:]
+    var treeHP: [Int] = []
+    var mapDirty = false
     var blds: [BRBuilding] = []
     var runways: [CGRect] = []
     var trees: [CGPoint] = []
@@ -429,6 +455,7 @@ final class BRWorld {
         for c in [CGRect(x: 5450, y: 4640, width: 34, height: 100), CGRect(x: 5576, y: 4800, width: 34, height: 100), CGRect(x: 5500, y: 4745, width: 70, height: 30), CGRect(x: 5400, y: 4880, width: 60, height: 34), CGRect(x: 5620, y: 4650, width: 60, height: 34)] {
             addWall(c, 46, (0.55, 0.45, 0.3))
         }
+        treeHP = Array(repeating: 8, count: trees.count)
         buildGrid()
         bakeGround()
     }
@@ -520,7 +547,7 @@ final class BRWorld {
         return rayDist(a, (b.x - a.x) / d, (b.y - a.y) / d, d) >= d - 0.5
     }
 
-    func push(_ p: CGPoint, _ r: CGFloat) -> CGPoint {
+    func push(_ p: CGPoint, _ r: CGFloat, trees withTrees: Bool = true) -> CGPoint {
         var q = p
         for _ in 0..<2 {
             for i in near(q, r + 4) {
@@ -542,6 +569,17 @@ final class BRWorld {
                 }
             }
         }
+        if withTrees {
+            let tr = r + 6
+            for t in trees where abs(t.x - q.x) < tr && abs(t.y - q.y) < tr {
+                let dx = q.x - t.x, dy = q.y - t.y
+                let d = hypot(dx, dy)
+                if d < tr && d > 0.001 {
+                    q.x = t.x + dx / d * tr
+                    q.y = t.y + dy / d * tr
+                }
+            }
+        }
         return q
     }
 
@@ -549,6 +587,136 @@ final class BRWorld {
         for b in blds where b.r.insetBy(dx: -pad, dy: -pad).contains(p) { return true }
         for i in near(p, pad + 10) where walls[i].r.insetBy(dx: -pad, dy: -pad).contains(p) { return true }
         return false
+    }
+
+    // MARK: destruction
+
+    static func fixed(_ r: CGRect) -> Bool { gulagRect.insetBy(dx: -30, dy: -30).intersects(r) }
+
+    func isSmall(_ r: CGRect) -> Bool { r.width < 120 && r.height < 120 }
+
+    /// nearest destructible wall within `rad` of p
+    func wallNear(_ p: CGPoint, _ rad: CGFloat) -> Int? {
+        var best: Int? = nil
+        var bd = rad
+        for i in near(p, rad + 10) {
+            let r = walls[i].r
+            if r.width <= 0 || BRWorld.fixed(r) { continue }
+            let cx = max(r.minX, min(p.x, r.maxX)), cy = max(r.minY, min(p.y, r.maxY))
+            let d = hypot(p.x - cx, p.y - cy)
+            if d < bd { bd = d; best = i }
+        }
+        return best
+    }
+
+    func rayHit(_ o: CGPoint, _ dx: CGFloat, _ dy: CGFloat, _ maxD: CGFloat) -> (CGFloat, CGFloat, Int)? {
+        let e = CGPoint(x: o.x + dx * maxD, y: o.y + dy * maxD)
+        var best: (CGFloat, CGFloat, Int)? = nil
+        for i in along(o, e) {
+            if let h = brRayThrough(o, dx, dy, walls[i].r), h.0 <= maxD, h.0 < (best?.0 ?? maxD + 1) {
+                best = (h.0, h.1, i)
+            }
+        }
+        return best
+    }
+
+    func treeHit(_ o: CGPoint, _ dx: CGFloat, _ dy: CGFloat, _ maxD: CGFloat) -> (CGFloat, Int)? {
+        var best: (CGFloat, Int)? = nil
+        for (i, t) in trees.enumerated() {
+            let rx = t.x - o.x, ry = t.y - o.y
+            let tt = rx * dx + ry * dy
+            if tt < 0 || tt > maxD || tt >= (best?.0 ?? 99999) { continue }
+            if abs(rx * dy - ry * dx) < 7 { best = (tt, i) }
+        }
+        return best
+    }
+
+    private func rubble(_ r: CGRect) {
+        paint(r.insetBy(dx: -3, dy: -3), (0.46, 0.43, 0.4))
+        mapDirty = true
+    }
+
+    private func removeWall(_ i: Int) {
+        let w = walls[i]
+        rubble(w.r)
+        walls[i] = BRWall(r: CGRect(x: -9000, y: -9000, width: 0, height: 0), h: 0, c: w.c)
+    }
+
+    /// returns true when the wall (or a section of it) was destroyed
+    @discardableResult
+    func breach(_ i: Int, at p: CGPoint, radius: CGFloat) -> Bool {
+        let w = walls[i]
+        if w.r.width <= 0 || BRWorld.fixed(w.r) { return false }
+        if radius <= 0 || isSmall(w.r) { removeWall(i); return true }
+        let horiz = w.r.width > w.r.height
+        var left = w.r, right = w.r
+        var strip = w.r
+        if horiz {
+            let x0 = max(w.r.minX, p.x - radius), x1 = min(w.r.maxX, p.x + radius)
+            left = CGRect(x: w.r.minX, y: w.r.minY, width: x0 - w.r.minX, height: w.r.height)
+            right = CGRect(x: x1, y: w.r.minY, width: w.r.maxX - x1, height: w.r.height)
+            strip = CGRect(x: x0, y: w.r.minY, width: x1 - x0, height: w.r.height)
+        } else {
+            let y0 = max(w.r.minY, p.y - radius), y1 = min(w.r.maxY, p.y + radius)
+            left = CGRect(x: w.r.minX, y: w.r.minY, width: w.r.width, height: y0 - w.r.minY)
+            right = CGRect(x: w.r.minX, y: y1, width: w.r.width, height: w.r.maxY - y1)
+            strip = CGRect(x: w.r.minX, y: y0, width: w.r.width, height: y1 - y0)
+        }
+        let minLen: CGFloat = 12
+        let lOK = max(left.width, left.height) > minLen && left.width > 0 && left.height > 0
+        let rOK = max(right.width, right.height) > minLen && right.width > 0 && right.height > 0
+        walls[i] = lOK ? BRWall(r: left, h: w.h, c: w.c) : BRWall(r: CGRect(x: -9000, y: -9000, width: 0, height: 0), h: 0, c: w.c)
+        if rOK {
+            let n = walls.count
+            walls.append(BRWall(r: right, h: w.h, c: w.c))
+            stamp.append(0)
+            let x0 = max(0, Int(floor(right.minX / BRWorld.cell))), x1 = max(0, Int(floor(right.maxX / BRWorld.cell)))
+            let y0 = max(0, Int(floor(right.minY / BRWorld.cell))), y1 = max(0, Int(floor(right.maxY / BRWorld.cell)))
+            if x1 >= x0 && y1 >= y0 {
+                for cx in x0...x1 { for cy in y0...y1 { grid[cx * 1000 + cy, default: []].append(n) } }
+            }
+        }
+        rubble(strip)
+        return true
+    }
+
+    /// bullet / small damage. returns true if a breach happened
+    func hurtWall(_ i: Int, at p: CGPoint, dmg: CGFloat) -> Bool {
+        let w = walls[i]
+        if w.r.width <= 0 || BRWorld.fixed(w.r) { return false }
+        if isSmall(w.r) {
+            wallDmg[i * 1000, default: 0] += dmg
+            if (wallDmg[i * 1000] ?? 0) >= 170 { return breach(i, at: p, radius: 0) }
+            return false
+        }
+        let horiz = w.r.width > w.r.height
+        let u = horiz ? p.x - w.r.minX : p.y - w.r.minY
+        let chunk = max(0, min(998, Int(u / 40)))
+        let key = i * 1000 + chunk
+        wallDmg[key, default: 0] += dmg
+        if (wallDmg[key] ?? 0) >= 230 {
+            let cu = CGFloat(chunk) * 40 + 20
+            let c = horiz ? CGPoint(x: w.r.minX + cu, y: w.r.midY) : CGPoint(x: w.r.midX, y: w.r.minY + cu)
+            return breach(i, at: c, radius: 34)
+        }
+        return false
+    }
+
+    func felled(_ ti: Int) {
+        guard ti >= 0 && ti < trees.count else { return }
+        trees.remove(at: ti)
+        treeHP.remove(at: ti)
+    }
+
+    func refreshMap() {
+        guard mapDirty else { return }
+        mapDirty = false
+        let n = BRWorld.texN
+        tex.withUnsafeMutableBytes { raw in
+            if let cg = CGContext(data: raw.baseAddress, width: n, height: n, bitsPerComponent: 8, bytesPerRow: n * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
+                mapImage = cg.makeImage()
+            }
+        }
     }
 
     // MARK: baked ground texture (also used by the minimap)

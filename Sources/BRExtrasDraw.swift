@@ -81,6 +81,19 @@ extension BREngine {
                 ctx.fill(Path(ellipseIn: CGRect(x: sx - r, y: cy - r, width: r * 2, height: r * 2)), with: .color(brc(1, 0.5, 0.1, 0.85 * (1 - k))))
                 ctx.fill(Path(ellipseIn: CGRect(x: sx - r * 0.6, y: cy - r * 0.6, width: r * 1.2, height: r * 1.2)), with: .color(brc(1, 0.9, 0.4, 0.9 * (1 - k))))
                 ctx.fill(Path(ellipseIn: CGRect(x: sx - r * 1.1, y: cy - r * 1.4, width: r * 2.2, height: r * 1.5)), with: .color(brc(0.2, 0.2, 0.22, 0.4 * k * (1 - k) * 4)))
+            } else if b.kind == 3 || b.kind == 4 {
+                let life: CGFloat = b.kind == 3 ? 1.0 : 0.3
+                let k = 1 - b.t / life
+                let big = b.kind == 3
+                let r = (big ? 30 + 55 * k : 4 + 8 * k)
+                for i in 0..<(big ? 6 : 2) {
+                    let ang = CGFloat(i) * 1.1 + CGFloat(idx)
+                    let ox = cos(ang) * r * 0.6
+                    let oy = sin(ang) * r * 0.25 + k * (big ? 25 : 4)
+                    let rr = r * (0.55 + 0.1 * CGFloat(i % 3))
+                    ctx.fill(Path(ellipseIn: CGRect(x: sx + ox * f - rr * f, y: feet - (20 + oy) * f - rr * f, width: rr * 2 * f, height: rr * 2 * f)),
+                             with: .color(brc(0.62, 0.57, 0.5, 0.55 * (1 - k))))
+                }
             } else {
                 let k = 1 - b.t / 0.35
                 let r = (30 + 60 * k) * f

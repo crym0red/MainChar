@@ -1529,7 +1529,7 @@ final class TacticalEngine {
         }
     }
 
-    private func drawViewGun(_ ctx: inout GraphicsContext, _ size: CGSize) {
+    func drawViewGun(_ ctx: inout GraphicsContext, _ size: CGSize) {
         let id = me.gun
         let img = GunSprites.image(id)
         let mz = GunSprites.muzzle(id)
@@ -1871,13 +1871,13 @@ struct TacticalPlay: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            if let b = bridge, mode == 0 {
+            if let b = bridge {
                 TacSceneView(bridge: b).ignoresSafeArea().allowsHitTesting(false)
             }
             TimelineView(.animation) { tl in
                 Canvas { ctx, size in
                     engine.step(tl.date)
-                    if mode == 0 { bridge?.sync(engine) }
+                    bridge?.sync(engine)
                     engine.draw(&ctx, size)
                 }
             }
@@ -1892,7 +1892,7 @@ struct TacticalPlay: View {
             OrientationLock.set(landscape: true)
             mode = fpMode ? 1 : 0
             engine.fp = fpMode
-            engine.view3D = !fpMode
+            engine.view3D = true
             engine.autoAim = true
             autoOn = true
             let st = game.s
@@ -1901,6 +1901,7 @@ struct TacticalPlay: View {
             let gun = owned.contains("rifle") ? "rifle" : (owned.contains("smg") ? "smg" : "pistol")
             engine.setup(cast: cast, persona: st.persona, gun: gun, diff: diff)
             let b = TacScene()
+            b.fpMode = fpMode
             b.build(engine)
             bridge = b
             engine.project = { [weak b] p, h in b?.project(p, h) }
