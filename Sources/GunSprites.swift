@@ -22,8 +22,18 @@ enum GunSprites {
     // muzzle position as a fraction of the sprite
     static func muzzle(_ id: String) -> CGPoint {
         switch id {
-        default: return CGPoint(x: 0.245, y: 0.165)
+        case "pistol": return CGPoint(x: 0.253, y: 0.492)
+        case "smg": return CGPoint(x: 0.204, y: 0.439)
+        case "shotgun": return CGPoint(x: 0.204, y: 0.439)
+        default: return CGPoint(x: 0.206, y: 0.442)
         }
+    }
+
+    // where the 1120x640 sprite sits so its aim point lands on the screen centre
+    static func rect(_ size: CGSize) -> CGRect {
+        let gw = size.width * 0.70
+        let gh = size.height * 0.80
+        return CGRect(x: size.width / 2 - 0.2857 * gw, y: size.height / 2 - 0.375 * gh, width: gw, height: gh)
     }
 
     private static let skinTop = UIColor(red: 0.86, green: 0.67, blue: 0.52, alpha: 1)

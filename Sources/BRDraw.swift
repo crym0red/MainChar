@@ -13,8 +13,8 @@ extension BREngine {
         guard !actors.isEmpty else { return }
         let m = me
         let W = size.width, H = size.height
-        let focal = (W / 2) / tan(BREngine.fov / 2)
-        let hz = H * 0.5 + sin(bobT) * 4 * bobAmp
+        let focal = (W / 2) / tan(curFov / 2)
+        let hz = H * 0.5 + sin(bobT) * 4 * bobAmp + (pitch + recoilP) * focal
         let eye = BREngine.eyeH
 
         let zb = drawBase(&ctx, size, hz, focal)
@@ -45,7 +45,7 @@ extension BREngine {
             }
             let dx = p.x - m.p.x, dy = p.y - m.p.y
             let rel = brWrap(atan2(dy, dx) - m.ang)
-            if abs(rel) > BREngine.fov / 2 + 0.35 { continue }
+            if abs(rel) > curFov / 2 + 0.35 { continue }
             let perp = bb.d * cos(rel)
             if perp < 10 { continue }
             let sx = W / 2 + tan(rel) * focal
@@ -110,15 +110,20 @@ extension BREngine {
         }
 
         drawViewGun(&ctx, size)
+        drawADS(&ctx, size)
 
         // crosshair
         let ch = CGPoint(x: W / 2, y: H / 2)
-        let cc: Color = lockT != nil ? brc(1, 0.3, 0.3) : .white
-        for (ax, ay) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
-            var p = Path()
-            p.move(to: CGPoint(x: ch.x + CGFloat(ax) * 5, y: ch.y + CGFloat(ay) * 5))
-            p.addLine(to: CGPoint(x: ch.x + CGFloat(ax) * 12, y: ch.y + CGFloat(ay) * 12))
-            ctx.stroke(p, with: .color(cc.opacity(0.9)), lineWidth: 2)
+        let scoped = adsT > 0.3 && (m.slots[m.cur]?.gun == "rifle" || m.slots[m.cur]?.gun == "smg")
+        if !scoped {
+            let cc: Color = lockT != nil ? brc(1, 0.3, 0.3) : .white
+            let gap: CGFloat = 5 + recoilP * 260
+            for (ax, ay) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
+                var p = Path()
+                p.move(to: CGPoint(x: ch.x + CGFloat(ax) * gap, y: ch.y + CGFloat(ay) * gap))
+                p.addLine(to: CGPoint(x: ch.x + CGFloat(ax) * (gap + 7), y: ch.y + CGFloat(ay) * (gap + 7)))
+                ctx.stroke(p, with: .color(cc.opacity(0.9)), lineWidth: 2)
+            }
         }
         if hitT > 0 {
             for (ax, ay) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
@@ -151,23 +156,51 @@ extension BREngine {
         let topY = feet - hpx
         let k = 1 - fog * 0.5
         let c = a.color
-        ctx.fill(Path(CGRect(x: sx - wpx * 0.36, y: feet - hpx * 0.46, width: wpx * 0.72, height: hpx * 0.46)), with: .color(brc(0.14 * k, 0.15 * k, 0.2 * k)))
-        ctx.fill(Path(roundedRect: CGRect(x: sx - wpx / 2, y: topY + hpx * 0.17, width: wpx, height: hpx * 0.42), cornerRadius: wpx * 0.12), with: .color(brc(c.0 * k, c.1 * k, c.2 * k)))
-        let hr = hpx * 0.09
-        ctx.fill(Path(ellipseIn: CGRect(x: sx - hr, y: topY + hpx * 0.08 - hr, width: hr * 2, height: hr * 2)), with: .color(brc(0.85 * k, 0.68 * k, 0.55 * k)))
-        ctx.fill(Path(CGRect(x: sx - wpx * 0.08, y: topY + hpx * 0.34, width: wpx * 0.9, height: hpx * 0.05)), with: .color(brc(0.08, 0.08, 0.1)))
+        let ally = a.team == me.team
+        // ground shadow
+        ctx.fill(Path(ellipseIn: CGRect(x: sx - wpx * 0.9, y: feet - 3 * f, width: wpx * 1.8, height: 6 * f)), with: .color(brc(0, 0, 0, 0.28)))
+        // legs
+        let legC = brc(0.15 * k, 0.17 * k, 0.22 * k)
+        ctx.fill(Path(roundedRect: CGRect(x: sx - wpx * 0.38, y: feet - hpx * 0.46, width: wpx * 0.34, height: hpx * 0.46), cornerRadius: 2 * f), with: .color(legC))
+        ctx.fill(Path(roundedRect: CGRect(x: sx + wpx * 0.04, y: feet - hpx * 0.46, width: wpx * 0.34, height: hpx * 0.46), cornerRadius: 2 * f), with: .color(legC))
+        ctx.fill(Path(CGRect(x: sx - wpx * 0.42, y: feet - 5 * f, width: wpx * 0.4, height: 5 * f)), with: .color(brc(0.06, 0.06, 0.07)))
+        ctx.fill(Path(CGRect(x: sx + wpx * 0.02, y: feet - 5 * f, width: wpx * 0.4, height: 5 * f)), with: .color(brc(0.06, 0.06, 0.07)))
+        // torso + vest
+        let torso = CGRect(x: sx - wpx / 2, y: topY + hpx * 0.17, width: wpx, height: hpx * 0.4)
+        ctx.fill(Path(roundedRect: torso, cornerRadius: wpx * 0.14), with: .color(brc(c.0 * k, c.1 * k, c.2 * k)))
+        ctx.fill(Path(roundedRect: torso.insetBy(dx: wpx * 0.12, dy: hpx * 0.04), cornerRadius: wpx * 0.1), with: .color(brc(0.16 * k, 0.17 * k, 0.2 * k, 0.85)))
+        // arms
+        ctx.fill(Path(roundedRect: CGRect(x: sx - wpx * 0.72, y: topY + hpx * 0.2, width: wpx * 0.24, height: hpx * 0.32), cornerRadius: wpx * 0.1), with: .color(brc(c.0 * k * 0.8, c.1 * k * 0.8, c.2 * k * 0.8)))
+        ctx.fill(Path(roundedRect: CGRect(x: sx + wpx * 0.48, y: topY + hpx * 0.2, width: wpx * 0.24, height: hpx * 0.32), cornerRadius: wpx * 0.1), with: .color(brc(c.0 * k * 0.8, c.1 * k * 0.8, c.2 * k * 0.8)))
+        // rifle held across
+        ctx.fill(Path(roundedRect: CGRect(x: sx - wpx * 0.5, y: topY + hpx * 0.33, width: wpx * 1.15, height: hpx * 0.06), cornerRadius: 1.5 * f), with: .color(brc(0.07, 0.07, 0.09)))
+        // head + helmet
+        let hr = hpx * 0.095
+        let hy = topY + hpx * 0.085
+        ctx.fill(Path(ellipseIn: CGRect(x: sx - hr, y: hy - hr, width: hr * 2, height: hr * 2)), with: .color(brc(0.85 * k, 0.68 * k, 0.55 * k)))
+        var helm = Path()
+        helm.addArc(center: CGPoint(x: sx, y: hy - hr * 0.1), radius: hr * 1.12, startAngle: .degrees(180), endAngle: .degrees(360), clockwise: false)
+        helm.closeSubpath()
+        ctx.fill(helm, with: .color(brc(0.2 * k, 0.24 * k, 0.2 * k)))
         if a.hurt > 0 {
-            ctx.fill(Path(CGRect(x: sx - wpx / 2, y: topY + hpx * 0.17, width: wpx, height: hpx * 0.42)), with: .color(brc(1, 1, 1, a.hurt * 0.5)))
+            ctx.fill(Path(roundedRect: torso, cornerRadius: wpx * 0.14), with: .color(brc(1, 1, 1, a.hurt * 0.5)))
         }
         if a.flash > 0 {
             let r = hpx * 0.1
-            ctx.fill(Path(ellipseIn: CGRect(x: sx + wpx * 0.8 - r, y: topY + hpx * 0.36 - r, width: r * 2, height: r * 2)), with: .color(brc(1, 0.9, 0.4, 0.9)))
+            ctx.fill(Path(ellipseIn: CGRect(x: sx + wpx * 0.75 - r, y: topY + hpx * 0.36 - r, width: r * 2, height: r * 2)), with: .color(brc(1, 0.9, 0.4, 0.9)))
         }
-        if lockT === a || a.hp < 100 {
-            let bw = wpx * 1.3
-            let y = topY - 8
-            ctx.fill(Path(CGRect(x: sx - bw / 2, y: y, width: bw, height: 4)), with: .color(brc(0, 0, 0, 0.6)))
-            ctx.fill(Path(CGRect(x: sx - bw / 2, y: y, width: bw * a.hp / 100, height: 4)), with: .color(brc(0.9, 0.2, 0.2)))
+        // name tag
+        let dist = hypot(a.p.x - me.p.x, a.p.y - me.p.y)
+        if dist < 520 || ally {
+            let tag = ally ? brc(0.45, 0.95, 0.55) : brc(1, 0.5, 0.45)
+            let ty = topY - 12
+            ctx.draw(Text(a.name).font(.system(size: 10, weight: .heavy)).foregroundColor(tag), at: CGPoint(x: sx, y: ty - 8))
+            let bw: CGFloat = 38
+            ctx.fill(Path(CGRect(x: sx - bw / 2, y: ty, width: bw, height: 3.5)), with: .color(brc(0, 0, 0, 0.6)))
+            ctx.fill(Path(CGRect(x: sx - bw / 2, y: ty, width: bw * max(0, a.hp) / 100, height: 3.5)), with: .color(ally ? brc(0.4, 0.9, 0.5) : brc(0.95, 0.25, 0.25)))
+            if a.armor > 0 {
+                ctx.fill(Path(CGRect(x: sx - bw / 2, y: ty - 3, width: bw * a.armor / 100, height: 2)), with: .color(brc(0.4, 0.65, 1)))
+            }
         }
     }
 
@@ -176,20 +209,133 @@ extension BREngine {
         guard m.alive, let s = m.slots[m.cur] else { return }
         let img = GunSprites.image(s.gun)
         let mz = GunSprites.muzzle(s.gun)
-        let gw = min(size.width * 0.5, size.height * 1.6)
-        let gh = gw * 0.625
-        let rec: CGFloat = m.flash > 0 ? 1 : 0
         let bob = sin(bobT) * 6 * bobAmp
         let sway = cos(bobT * 0.5) * 5 * bobAmp
-        let dip: CGFloat = m.reloadT > 0 ? min(1, m.reloadT * 2.5) * gh * 0.4 : 0
+        var rect = GunSprites.rect(size)
+        let dip: CGFloat = m.reloadT > 0 ? min(1, m.reloadT * 2.5) * rect.height * 0.4 : 0
+        rect.origin.x += sway + gunKick * 20
+        rect.origin.y += bob + dip + gunKick * 16 - recoilP * 40
+        let isScope = s.gun == "rifle" || s.gun == "smg"
+        let gunA: CGFloat = isScope ? 1 - min(1, adsT * 1.6) : 1 - adsT * 0.6
         let spr = ctx.resolve(Image(uiImage: img))
-        let flashOn = m.flash > 0
-        let rect = CGRect(x: size.width - gw * 0.97 + sway + rec * 10, y: size.height - gh + 6 + dip + bob + rec * 12, width: gw, height: gh)
-        ctx.draw(spr, in: rect)
-        if flashOn {
-            let p = CGPoint(x: rect.minX + mz.x * gw, y: rect.minY + mz.y * gh)
-            ctx.fill(Path(ellipseIn: CGRect(x: p.x - 30, y: p.y - 30, width: 60, height: 60)), with: .color(.yellow.opacity(0.85)))
-            ctx.fill(Path(ellipseIn: CGRect(x: p.x - 14, y: p.y - 14, width: 28, height: 28)), with: .color(.white.opacity(0.95)))
+        if gunA > 0.02 {
+            ctx.drawLayer { l in
+                l.opacity = Double(gunA)
+                l.draw(spr, in: rect)
+            }
+        }
+        let mp = CGPoint(x: rect.minX + mz.x * rect.width, y: rect.minY + mz.y * rect.height)
+        // spawn particles for a shot
+        if shotFlag {
+            shotFlag = false
+            for _ in 0..<2 {
+                parts.append(BRPart(kind: 0, x: mp.x, y: mp.y, vx: CGFloat.random(in: -14...14), vy: CGFloat.random(in: -50...(-20)), life: 0.55, max: 0.55, rot: 0))
+            }
+            if isScope || s.gun == "pistol" {
+                let ex = rect.minX + rect.width * 0.5
+                let ey = rect.minY + rect.height * 0.62
+                parts.append(BRPart(kind: 1, x: ex, y: ey, vx: CGFloat.random(in: 90...160), vy: CGFloat.random(in: -150...(-80)), life: 0.7, max: 0.7, rot: CGFloat.random(in: 0...6)))
+            }
+        }
+        // update + draw particles
+        var keep: [BRPart] = []
+        for var q in parts {
+            q.life -= lastDT
+            if q.life <= 0 { continue }
+            q.x += q.vx * lastDT
+            q.y += q.vy * lastDT
+            if q.kind == 1 {
+                q.vy += 520 * lastDT
+                q.rot += lastDT * 18
+                var cp = Path()
+                cp.addRect(CGRect(x: -3, y: -1.5, width: 6, height: 3))
+                var t = CGAffineTransform(translationX: q.x, y: q.y)
+                t = t.rotated(by: q.rot)
+                ctx.fill(cp.applying(t), with: .color(brc(0.95, 0.75, 0.25)))
+            } else {
+                let k = q.life / q.max
+                let r = 6 + (1 - k) * 16
+                ctx.fill(Path(ellipseIn: CGRect(x: q.x - r, y: q.y - r, width: r * 2, height: r * 2)), with: .color(brc(0.8, 0.8, 0.82, k * 0.35)))
+            }
+            keep.append(q)
+        }
+        parts = keep
+        // tracer
+        if tracerT > 0 && adsT < 0.5 {
+            var tr = Path()
+            tr.move(to: mp)
+            tr.addLine(to: CGPoint(x: size.width / 2, y: size.height / 2))
+            ctx.stroke(tr, with: .color(brc(1, 0.9, 0.5, tracerT / 0.07 * 0.7)), lineWidth: 1.6)
+        }
+        // muzzle flash
+        if m.flash > 0 && adsT < 0.6 {
+            let k = m.flash / 0.07
+            let R: CGFloat = 52 * (0.55 + 0.45 * k)
+            let rot = time * 47
+            ctx.fill(Path(ellipseIn: CGRect(x: mp.x - R * 1.7, y: mp.y - R * 1.7, width: R * 3.4, height: R * 3.4)), with: .color(brc(1, 0.7, 0.3, 0.25 * k)))
+            var star = Path()
+            for i in 0..<14 {
+                let ang = CGFloat(i) * (.pi / 7) + rot
+                let jitter = 0.75 + 0.5 * abs(sin(rot * 3 + CGFloat(i) * 1.7))
+                let r = (i % 2 == 0 ? R * jitter : R * 0.32)
+                let pt = CGPoint(x: mp.x + cos(ang) * r, y: mp.y + sin(ang) * r)
+                if i == 0 { star.move(to: pt) } else { star.addLine(to: pt) }
+            }
+            star.closeSubpath()
+            ctx.fill(star, with: .color(brc(1, 0.55, 0.12, 0.92)))
+            ctx.fill(Path(ellipseIn: CGRect(x: mp.x - R * 0.42, y: mp.y - R * 0.42, width: R * 0.84, height: R * 0.84)), with: .color(brc(1, 0.95, 0.7)))
+        }
+    }
+
+    private func drawADS(_ ctx: inout GraphicsContext, _ size: CGSize) {
+        guard adsT > 0.02, let s = me.slots[me.cur] else { return }
+        let W = size.width, H = size.height
+        let t = adsT
+        let cx = W / 2, cy = H / 2
+        switch s.gun {
+        case "rifle":
+            let R = H * 0.47
+            var p = Path()
+            p.addRect(CGRect(origin: .zero, size: size))
+            p.addEllipse(in: CGRect(x: cx - R, y: cy - R, width: R * 2, height: R * 2))
+            ctx.fill(p, with: .color(brc(0, 0, 0, t)), style: FillStyle(eoFill: true))
+            ctx.stroke(Path(ellipseIn: CGRect(x: cx - R, y: cy - R, width: R * 2, height: R * 2)), with: .color(brc(0.04, 0.04, 0.06, t)), lineWidth: 12)
+            ctx.stroke(Path(ellipseIn: CGRect(x: cx - R + 8, y: cy - R + 8, width: R * 2 - 16, height: R * 2 - 16)), with: .color(brc(0.4, 0.5, 0.6, 0.18 * t)), lineWidth: 2)
+            let ink = brc(0.02, 0.02, 0.03, 0.9 * t)
+            for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
+                var l = Path()
+                l.move(to: CGPoint(x: cx + CGFloat(dx) * 14, y: cy + CGFloat(dy) * 14))
+                l.addLine(to: CGPoint(x: cx + CGFloat(dx) * R * 0.98, y: cy + CGFloat(dy) * R * 0.98))
+                ctx.stroke(l, with: .color(ink), lineWidth: 1)
+                var thick = Path()
+                thick.move(to: CGPoint(x: cx + CGFloat(dx) * R * 0.62, y: cy + CGFloat(dy) * R * 0.62))
+                thick.addLine(to: CGPoint(x: cx + CGFloat(dx) * R * 0.98, y: cy + CGFloat(dy) * R * 0.98))
+                ctx.stroke(thick, with: .color(ink), lineWidth: 4)
+                for k in 1..<6 {
+                    let d = 14 + CGFloat(k) * 22
+                    ctx.fill(Path(ellipseIn: CGRect(x: cx + CGFloat(dx) * d - 1.5, y: cy + CGFloat(dy) * d - 1.5, width: 3, height: 3)), with: .color(ink))
+                }
+            }
+            ctx.fill(Path(ellipseIn: CGRect(x: cx - 2.5, y: cy - 2.5, width: 5, height: 5)), with: .color(brc(1, 0.15, 0.1, t)))
+        case "smg":
+            let ww = H * 0.95, hh = H * 0.62
+            let win = CGRect(x: cx - ww / 2, y: cy - hh / 2, width: ww, height: hh)
+            var p = Path()
+            p.addRect(CGRect(origin: .zero, size: size))
+            p.addRoundedRect(in: win, cornerSize: CGSize(width: 14, height: 14))
+            ctx.fill(p, with: .color(brc(0, 0, 0, 0.55 * t)), style: FillStyle(eoFill: true))
+            ctx.stroke(Path(roundedRect: win, cornerRadius: 14), with: .color(brc(0.04, 0.04, 0.05, t)), lineWidth: 12)
+            ctx.stroke(Path(ellipseIn: CGRect(x: cx - 16, y: cy - 16, width: 32, height: 32)), with: .color(brc(1, 0.2, 0.15, 0.9 * t)), lineWidth: 2)
+            ctx.fill(Path(ellipseIn: CGRect(x: cx - 2.5, y: cy - 2.5, width: 5, height: 5)), with: .color(brc(1, 0.2, 0.15, t)))
+            for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
+                var l = Path()
+                l.move(to: CGPoint(x: cx + CGFloat(dx) * 16, y: cy + CGFloat(dy) * 16))
+                l.addLine(to: CGPoint(x: cx + CGFloat(dx) * 24, y: cy + CGFloat(dy) * 24))
+                ctx.stroke(l, with: .color(brc(1, 0.2, 0.15, 0.9 * t)), lineWidth: 2)
+            }
+        default:
+            ctx.fill(Path(ellipseIn: CGRect(x: cx - 1.5, y: cy - 1.5, width: 3, height: 3)), with: .color(brc(1, 0.9, 0.3, t)))
+            ctx.stroke(Path(ellipseIn: CGRect(x: cx - 7, y: cy - 7, width: 14, height: 14)), with: .color(brc(1, 1, 1, 0.8 * t)), lineWidth: 1.5)
         }
     }
 
@@ -252,34 +398,9 @@ extension BREngine {
             l.rotate(by: .radians(Double(-m.ang - .pi / 2)))
             l.scaleBy(x: sc, y: sc)
             l.translateBy(x: -m.p.x, y: -m.p.y)
-            // water
-            let step: CGFloat = 60
-            var x = floor((m.p.x - half) / step) * step
-            while x < m.p.x + half {
-                var y = floor((m.p.y - half) / step) * step
-                while y < m.p.y + half {
-                    if BRWorld.water(CGPoint(x: x + step / 2, y: y + step / 2)) {
-                        l.fill(Path(CGRect(x: x, y: y, width: step + 1, height: step + 1)), with: .color(brc(0.18, 0.4, 0.62)))
-                    }
-                    y += step
-                }
-                x += step
-            }
-            for (pr, pc) in world.patches where abs(pr.midX - m.p.x) < half + pr.width / 2 && abs(pr.midY - m.p.y) < half + pr.height / 2 {
-                l.fill(Path(pr), with: .color(brc(pc.0, pc.1, pc.2, 0.7)))
-            }
-            for (ra, rb) in world.roadSegs {
-                var rp = Path()
-                rp.move(to: ra)
-                rp.addLine(to: rb)
-                l.stroke(rp, with: .color(brc(0.88, 0.85, 0.72)), lineWidth: 46)
-            }
-            for rw in world.runways where abs(rw.midX - m.p.x) < half + 1200 && abs(rw.midY - m.p.y) < half + 200 {
-                l.fill(Path(rw), with: .color(brc(0.3, 0.3, 0.32)))
-            }
-            for b in world.blds where abs(b.r.midX - m.p.x) < half + 300 && abs(b.r.midY - m.p.y) < half + 300 {
-                l.fill(Path(b.r), with: .color(brc(0.78, 0.76, 0.7)))
-                l.stroke(Path(b.r), with: .color(brc(0.25, 0.25, 0.28)), lineWidth: 5)
+            if let cg = world.mapImage {
+                let res = l.resolve(Image(decorative: cg, scale: 1))
+                l.draw(res, in: CGRect(x: 0, y: 0, width: BRWorld.W, height: BRWorld.W))
             }
             // storm outside the safe zone
             var storm = Path()
@@ -298,8 +419,8 @@ extension BREngine {
         // vision cone
         var cone = Path()
         cone.move(to: mc)
-        let a0: CGFloat = -.pi / 2 - BREngine.fov / 2
-        let a1: CGFloat = -.pi / 2 + BREngine.fov / 2
+        let a0: CGFloat = -.pi / 2 - curFov / 2
+        let a1: CGFloat = -.pi / 2 + curFov / 2
         cone.addArc(center: mc, radius: R * 0.8, startAngle: .radians(Double(a0)), endAngle: .radians(Double(a1)), clockwise: false)
         cone.closeSubpath()
         ctx.fill(cone, with: .color(.white.opacity(0.16)))

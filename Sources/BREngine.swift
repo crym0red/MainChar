@@ -14,6 +14,17 @@ struct BRLoot {
     var taken = false
 }
 
+struct BRPart {
+    var kind: Int      // 0 smoke, 1 casing
+    var x: CGFloat
+    var y: CGFloat
+    var vx: CGFloat
+    var vy: CGFloat
+    var life: CGFloat
+    var max: CGFloat
+    var rot: CGFloat
+}
+
 final class BRActor {
     let id: Int
     var name: String
@@ -42,6 +53,8 @@ final class BRActor {
     var avoidT: CGFloat = 0
     var avoidDir: CGFloat = 0
     var color: BRCol
+    var team = 0
+    var cash = 0
 
     init(id: Int, name: String, p: CGPoint, ang: CGFloat, color: BRCol) {
         self.id = id
@@ -86,6 +99,20 @@ final class BREngine {
     var healCD: CGFloat = 0
     var lockT: BRActor?
 
+    // view state
+    var ads = false
+    var adsT: CGFloat = 0
+    var curFov: CGFloat = 1.25
+    var pitch: CGFloat = 0
+    var lookY: CGFloat = 0
+    var recoilP: CGFloat = 0
+    var gunKick: CGFloat = 0
+    var shotFlag = false
+    var tracerT: CGFloat = 0
+    var lastDT: CGFloat = 0.016
+    var parts: [BRPart] = []
+    var floorBuf = [UInt8](repeating: 0, count: 170 * 70 * 4)
+
     // zone
     static let radii: [CGFloat] = [3000, 1800, 1000, 520, 220, 40]
     static let hold: CGFloat = 35
@@ -120,6 +147,7 @@ final class BREngine {
         let pal: [BRCol] = [(0.75, 0.2, 0.2), (0.2, 0.4, 0.75), (0.85, 0.6, 0.15), (0.3, 0.6, 0.35), (0.55, 0.3, 0.7), (0.2, 0.6, 0.65)]
         let m = BRActor(id: 0, name: name, p: spawnPoint(), ang: rng.r(-.pi, .pi), color: (0.9, 0.9, 0.2))
         m.isMe = true
+        m.team = 0
         m.slots[0] = BRSlot(gun: "pistol", mag: 15, reserve: 45)
         actors.append(m)
         for i in 1..<30 {
@@ -138,6 +166,7 @@ final class BREngine {
             b.reactTime = rng.r(0.35, 0.8)
             b.armor = rng.f() > 0.6 ? 50 : 0
             b.dest = p
+            b.team = i / 4
             actors.append(b)
         }
         // loot
@@ -190,6 +219,7 @@ final class BREngine {
         dt = min(max(dt, 0), 0.05)
         if paused || over || dt <= 0 || actors.isEmpty { return }
         time += dt
+        lastDT = dt
         updateZone()
         updateMe(dt)
         for a in actors where !a.isMe && a.alive { updateBot(a, dt) }
@@ -265,7 +295,7 @@ final class BREngine {
                 over = true
                 won = false
             }
-        } else if aliveCount == 1 {
+        } else if !actors.contains(where: { $0.alive && $0.team != 0 }) {
             over = true
             won = true
             me.place = 1
@@ -279,10 +309,20 @@ final class BREngine {
     private func updateMe(_ dt: CGFloat) {
         let m = me
         guard m.alive else { return }
-        m.ang += look * 0.0062
-        if abs(look) > 0.4 { lookIdle = 0 } else { lookIdle += dt }
+        let sens: CGFloat = 0.0062 * (1 - 0.6 * adsT)
+        m.ang += look * sens
+        pitch = max(-0.45, min(0.45, pitch - lookY * sens))
+        if abs(look) > 0.4 || abs(lookY) > 0.4 { lookIdle = 0 } else { lookIdle += dt }
         look = 0
-        let spd: CGFloat = crouch ? 105 : 200
+        lookY = 0
+        let wantAds = ads && m.slots[m.cur] != nil
+        adsT += ((wantAds ? 1 : 0) - adsT) * min(1, dt * 12)
+        let zoomFov = BRGuns.def(m.slots[m.cur]?.gun ?? "pistol").zoom
+        curFov = 1.25 + (zoomFov - 1.25) * adsT
+        recoilP -= recoilP * min(1, dt * 7)
+        gunKick = max(0, gunKick - dt * 9)
+        tracerT = max(0, tracerT - dt)
+        let spd: CGFloat = (crouch ? 105 : 200) * (1 - 0.4 * adsT)
         var fwd = -move.dy
         var str = move.dx
         let mag = hypot(fwd, str)
@@ -308,7 +348,7 @@ final class BREngine {
                 if abs(diff) < 0.09 { wantFire = true }
             }
             if wantFire {
-                let extra = (crouch ? 0.6 : 1.0) * (moving > 0.2 ? 0.02 : 0)
+                let extra = (crouch ? 0.6 : 1.0) * (moving > 0.2 ? 0.02 : 0) * (1 - 0.6 * adsT)
                 fire(m, extra: extra)
             }
             _ = g
@@ -388,7 +428,7 @@ final class BREngine {
         let g = BRGuns.def(s.gun)
         var best: BRActor? = nil
         var bd: CGFloat = 99999
-        for b in actors where b.alive && b !== a {
+        for b in actors where b.alive && b !== a && b.team != a.team {
             let d = hypot(b.p.x - a.p.x, b.p.y - a.p.y)
             if d > g.range * 0.9 || d >= bd { continue }
             let rel = abs(brWrap(atan2(b.p.y - a.p.y, b.p.x - a.p.x) - a.ang))
@@ -417,8 +457,15 @@ final class BREngine {
         a.cd = g.rate
         a.flash = 0.07
         a.ping = 1.6
+        if a.isMe {
+            recoilP += g.kick * (1 - 0.35 * adsT)
+            a.ang += CGFloat.random(in: -1...1) * g.kick * 0.25
+            gunKick = 1
+            shotFlag = true
+            tracerT = 0.07
+        }
         for _ in 0..<g.pellets {
-            let off = CGFloat.random(in: -1...1) * (g.spread + extra)
+            let off = CGFloat.random(in: -1...1) * (g.spread + extra) * (a.isMe ? (1 - 0.45 * adsT) : 1)
             shoot(a, a.ang + off, g)
         }
     }
@@ -428,7 +475,7 @@ final class BREngine {
         let wd = world.rayDist(a.p, dx, dy, g.range)
         var best: BRActor? = nil
         var bt = wd
-        for b in actors where b.alive && b !== a {
+        for b in actors where b.alive && b !== a && b.team != a.team {
             let rx = b.p.x - a.p.x, ry = b.p.y - a.p.y
             let t = rx * dx + ry * dy
             if t < 0 || t > bt { continue }
@@ -461,9 +508,11 @@ final class BREngine {
         guard b.alive else { return }
         b.alive = false
         b.hp = 0
-        b.place = aliveCount + 1
+        let others = Set(actors.filter { $0.alive && $0.team != b.team }.map { $0.team }).count
+        b.place = others + 1
         if let a = a {
             a.kills += 1
+            a.cash += 100
             if a.isMe {
                 kills += 1
                 cash += 100
@@ -486,7 +535,7 @@ final class BREngine {
         let g = BRGuns.def(s.gun)
         var best: BRActor? = nil
         var bd = min(g.range * 1.1, 700)
-        for b in actors where b.alive && b !== a {
+        for b in actors where b.alive && b !== a && b.team != a.team {
             let d = hypot(b.p.x - a.p.x, b.p.y - a.p.y)
             if d >= bd { continue }
             if !world.los(a.p, b.p) { continue }
@@ -542,6 +591,19 @@ final class BREngine {
             return
         }
         a.tgt = nil
+        if a.team == 0 && me.alive && !outside {
+            let dm = hypot(me.p.x - a.p.x, me.p.y - a.p.y)
+            if dm > 200 {
+                if hypot(a.dest.x - me.p.x, a.dest.y - me.p.y) > 260 {
+                    a.dest = CGPoint(x: me.p.x + CGFloat.random(in: -120...120), y: me.p.y + CGFloat.random(in: -120...120))
+                }
+            } else {
+                a.dest = a.p
+                let want = atan2(me.p.y - a.p.y, me.p.x - a.p.x) + CGFloat(a.id % 3 - 1) * 0.8
+                a.ang += max(-2 * dt, min(2 * dt, brWrap(want - a.ang)))
+                return
+            }
+        }
         if outside && hypot(a.dest.x - zoneC.x, a.dest.y - zoneC.y) > zoneR - 100 { a.dest = zonePoint() }
         let dd = hypot(a.dest.x - a.p.x, a.dest.y - a.p.y)
         if dd < 70 || a.stuck > 1.6 {
