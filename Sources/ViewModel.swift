@@ -82,6 +82,8 @@ final class TwViewModel {
         }
     }
 
+    static var gloveColor = UIColor(red: 0.165, green: 0.153, blue: 0.137, alpha: 1)
+
     private func material(_ name: String) -> SCNMaterial {
         if let m = mats[name] { return m }
         let m = SCNMaterial()
@@ -94,7 +96,7 @@ final class TwViewModel {
         case "dark": m.diffuse.contents = c(0.08, 0.085, 0.09)
         case "poly": m.diffuse.contents = c(0.14, 0.145, 0.16)
         case "skin": m.diffuse.contents = c(0.85, 0.64, 0.5); m.specular.contents = UIColor(white: 0.1, alpha: 1)
-        case "glove": m.diffuse.contents = c(0.165, 0.153, 0.137); m.specular.contents = UIColor(white: 0.05, alpha: 1)
+        case "glove": m.diffuse.contents = TwViewModel.gloveColor; m.specular.contents = UIColor(white: 0.05, alpha: 1)
         case "knuckle": m.diffuse.contents = c(0.1, 0.094, 0.086); m.specular.contents = UIColor(white: 0.1, alpha: 1)
         case "strap": m.diffuse.contents = c(0.42, 0.35, 0.23); m.specular.contents = UIColor(white: 0, alpha: 1)
         case "nail": m.diffuse.contents = c(0.94, 0.8, 0.72)

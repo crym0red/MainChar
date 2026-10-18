@@ -306,16 +306,24 @@ final class TacScene {
     // MARK: build
 
     func build(_ e: TacticalEngine) {
+        let th = e.theme
+        func C(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> UIColor { UIColor(red: r, green: g, blue: b, alpha: 1) }
+        let skyCols: [UIColor] = th == 1 ? [C(0.02, 0.04, 0.12), C(0.05, 0.09, 0.2), C(0.12, 0.16, 0.3)] : (th == 2 ? [C(0.18, 0.07, 0.28), C(0.65, 0.25, 0.2), C(0.95, 0.55, 0.2)] : [C(0.25, 0.52, 0.9), C(0.62, 0.8, 0.96), C(0.95, 0.88, 0.72)])
+        let fogC: UIColor = th == 1 ? C(0.06, 0.09, 0.18) : (th == 2 ? C(0.4, 0.2, 0.18) : C(0.9, 0.82, 0.66))
+        let ambI: CGFloat = th == 1 ? 520 : (th == 2 ? 560 : 640)
+        let ambC: UIColor = th == 1 ? C(0.55, 0.65, 0.95) : (th == 2 ? C(0.9, 0.65, 0.7) : C(0.78, 0.8, 0.9))
+        let sunI: CGFloat = th == 1 ? 500 : (th == 2 ? 800 : 1000)
+        let sunC: UIColor = th == 1 ? C(0.6, 0.75, 1) : (th == 2 ? C(1, 0.55, 0.3) : C(1, 0.93, 0.78))
         let skyImg = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 256)).image { c in
             let cs = CGColorSpaceCreateDeviceRGB()
-            if let gr = CGGradient(colorsSpace: cs, colors: [UIColor(red: 0.25, green: 0.52, blue: 0.9, alpha: 1).cgColor, UIColor(red: 0.62, green: 0.8, blue: 0.96, alpha: 1).cgColor, UIColor(red: 0.95, green: 0.88, blue: 0.72, alpha: 1).cgColor] as CFArray, locations: [0, 0.6, 1]) {
+            if let gr = CGGradient(colorsSpace: cs, colors: skyCols.map { $0.cgColor } as CFArray, locations: [0, 0.6, 1]) {
                 c.cgContext.drawLinearGradient(gr, start: .zero, end: CGPoint(x: 0, y: 256), options: [])
             }
         }
         scene.background.contents = skyImg
-        scene.fogColor = UIColor(red: 0.9, green: 0.82, blue: 0.66, alpha: 1)
-        scene.fogStartDistance = 900
-        scene.fogEndDistance = 3200
+        scene.fogColor = fogC
+        scene.fogStartDistance = fpMode ? 650 : 900
+        scene.fogEndDistance = fpMode ? 1900 : 3200
         scene.fogDensityExponent = 1.4
         let root = scene.rootNode
         floorRoot[1].position = SCNVector3(-Float(TMap.off), 0, 0)
@@ -327,15 +335,15 @@ final class TacScene {
         let amb = SCNNode()
         amb.light = SCNLight()
         amb.light?.type = .ambient
-        amb.light?.intensity = 640
-        amb.light?.color = UIColor(red: 0.78, green: 0.8, blue: 0.9, alpha: 1)
+        amb.light?.intensity = ambI
+        amb.light?.color = ambC
         root.addChildNode(amb)
 
         let sun = SCNNode()
         let sl = SCNLight()
         sl.type = .directional
-        sl.intensity = 1000
-        sl.color = UIColor(red: 1, green: 0.93, blue: 0.78, alpha: 1)
+        sl.intensity = sunI
+        sl.color = sunC
         sl.castsShadow = true
         sl.shadowMode = .deferred
         sl.shadowRadius = 5
@@ -560,7 +568,7 @@ final class TacScene {
                     bx += 40
                 }
             }
-            floorRoot[0].addChildNode(roofs.flattenedClone())
+            chunked(roofs, into: floorRoot[0])
         }
         // stairs
         for fl in 0..<2 {
@@ -593,8 +601,8 @@ final class TacScene {
         // props
         let pr0 = SCNNode(), pr1 = SCNNode()
         for pr in TMap.props { (pr.r.midX >= TMap.off ? pr1 : pr0).addChildNode(props.build(pr.k, pr.r)) }
-        floorRoot[0].addChildNode(pr0.flattenedClone())
-        floorRoot[1].addChildNode(pr1.flattenedClone())
+        chunked(pr0, into: floorRoot[0])
+        chunked(pr1, into: floorRoot[1])
         let rooms0 = TMap.rooms.filter { $0.r.midX < TMap.off }.map { $0.r }
         let rooms1 = TMap.rooms.filter { $0.r.midX >= TMap.off }.map { $0.r }
         floorRoot[0].addChildNode(props.decals(in: rooms0, avoid: TMap.baseSolid, seed: 1).flattenedClone())
@@ -638,13 +646,9 @@ final class TacScene {
         for p in e.players {
             let rt = SCNNode()
             let col: UIColor = p.isPlayer ? UIColor(red: 0.3, green: 0.9, blue: 0.45, alpha: 1) : (p.team == e.me.team ? UIColor(red: 0.25, green: 0.6, blue: 1, alpha: 1) : UIColor(red: 1, green: 0.25, blue: 0.3, alpha: 1))
-            var shirtC = p.isPlayer ? col : (p.team == e.me.team ? UIColor(red: 0.2, green: 0.38, blue: 0.7, alpha: 1) : UIColor(red: 0.72, green: 0.3, blue: 0.14, alpha: 1))
-            var tint: UIColor? = nil
-            if p.isPlayer {
-                let oc = BRMeta.outfitColor()
-                shirtC = UIColor(red: oc.0, green: oc.1, blue: oc.2, alpha: 1)
-                if let sk = BRMeta.skinTint() { tint = UIColor(sk) }
-            }
+            let fcol: (CGFloat, CGFloat, CGFloat) = p.team == e.me.team ? TacSeason.factions[e.myFaction % 4].1 : TacSeason.enemyFactions[(e.gameMode == 4 ? p.id : e.foeFaction) % 3].1
+            let shirtC = p.isPlayer ? col : UIColor(red: fcol.0, green: fcol.1, blue: fcol.2, alpha: 1)
+            let tint: UIColor? = nil
             let sol = TwRig.soldier(shirt: shirtC, skin: skinTints[p.id % skinTints.count], tint: tint)
             let body = sol.root
             let gun = sol.holder
@@ -818,6 +822,54 @@ final class TacScene {
 
     func sx(_ p: CGPoint) -> CGFloat { p.x >= TMap.off ? p.x - TMap.off : p.x }
 
+    // MARK: streaming (distance + view culling)
+
+    struct CullItem { let node: SCNNode; let c: CGPoint; let r: CGFloat }
+    var cull: [CullItem] = []
+    var cullBuilt = false
+    var lastCull: CGFloat = -1
+
+    private func chunked(_ src: SCNNode, into dst: SCNNode, cell: Float = 700) {
+        var cells: [Int: SCNNode] = [:]
+        for ch in src.childNodes {
+            let (mn, mx) = ch.boundingBox
+            let c = ch.convertPosition(SCNVector3((mn.x + mx.x) / 2, (mn.y + mx.y) / 2, (mn.z + mx.z) / 2), to: src)
+            let key = Int(floor(c.x / cell)) * 1000 + Int(floor(c.z / cell))
+            let n = cells[key] ?? SCNNode()
+            cells[key] = n
+            ch.removeFromParentNode()
+            n.addChildNode(ch)
+        }
+        for (_, n) in cells { dst.addChildNode(n.flattenedClone()) }
+    }
+
+    private func registerCull() {
+        cull = []
+        for n in floorRoot[0].childNodes {
+            if ceilNodes.contains(where: { $0 === n }) { continue }
+            let (mn, mx) = n.boundingBox
+            if mx.x - mn.x <= 0 && mx.z - mn.z <= 0 { continue }
+            let c = n.convertPosition(SCNVector3((mn.x + mx.x) / 2, (mn.y + mx.y) / 2, (mn.z + mx.z) / 2), to: nil)
+            let r = CGFloat(hypot(mx.x - mn.x, mx.z - mn.z) / 2)
+            if r > 1400 { continue }
+            cull.append(CullItem(node: n, c: CGPoint(x: CGFloat(c.x), y: CGFloat(c.z)), r: r))
+        }
+    }
+
+    private func updateCull(_ ex: CGFloat, _ ez: CGFloat, _ fx: CGFloat, _ fz: CGFloat) {
+        let range: CGFloat = 1800
+        for it in cull {
+            let vx = it.c.x - ex, vz = it.c.y - ez
+            let d = max(1, hypot(vx, vz))
+            var vis = d - it.r < range
+            if vis && d > 500 + it.r {
+                let dot = (vx * fx + vz * fz) / d
+                if dot < -(it.r / d) * 1.2 { vis = false }
+            }
+            if it.node.isHidden == vis { it.node.isHidden = !vis }
+        }
+    }
+
     func sync(_ e: TacticalEngine) {
         guard !e.players.isEmpty, roots.count == e.players.count else { return }
         let focus: TPlayer = e.me.alive ? e.me : (e.players.first { $0.team == e.me.team && $0.alive } ?? e.me)
@@ -864,7 +916,10 @@ final class TacScene {
             let eh = CGFloat(TMap.eyeH) + CGFloat(sin(Double(min(1, e.jumpT / 0.55)) * Double.pi)) * 22 + (sh > 0 ? CGFloat.random(in: -sh...sh) * 0.25 : 0)
             fpFwd = CGPoint(x: dxv, y: dzv)
             fpEye = CGPoint(x: ex, y: ez)
+            if !cullBuilt { cullBuilt = true; registerCull() }
+            if abs(e.time - lastCull) > 0.1 { lastCull = e.time; updateCull(ex, ez, dxv, dzv) }
             camNode.camera?.zNear = 0.6
+            camNode.camera?.zFar = 2200
             vm.show(TWeapons.rig(focus.gun))
             vm.root.isHidden = !(focus.alive && !e.scoped)
             let mvg = Float(min(1, hypot(e.move.dx, e.move.dy)))
@@ -880,6 +935,7 @@ final class TacScene {
         } else {
             vm.root.isHidden = true
             camNode.camera?.zNear = 10
+            camNode.camera?.zFar = 3000
             camNode.camera?.fieldOfView = 52
             let pr: [(CGFloat, CGFloat, CGFloat, CGFloat)] = [(300, 170, 60, 30), (400, 250, 70, 40), (520, 70, 70, 50), (640, 400, 90, 60)]
             let c = pr[max(0, min(3, preset))]
@@ -926,7 +982,7 @@ final class TacScene {
                 flashes[i].isHidden = true
                 shirts[i].emission.contents = UIColor.black
             }
-            let img = e.sprites[p.handle]
+            let img: UIImage? = nil
             let key = p.handle + (img == nil ? "-n" : "-y")
             if headKey[i] != key {
                 headKey[i] = key

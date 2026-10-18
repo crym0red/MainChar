@@ -16,12 +16,21 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Generate response corpus
+      - name: Prune legacy files
         run: |
-          set -o pipefail
-          python3 tools/gen_responses.py Resources/responses.txt 2>&1 | tee gen.log
-          ls -la Resources/responses.txt | tee -a gen.log
-          wc -l Resources/responses.txt | tee -a gen.log
+          keep=" Lobby.swift MainShotCore.swift TacRadar.swift TacSeason.swift TacWeapons.swift Tactical.swift TacticalScene.swift TowerRig.swift TwProps.swift ViewModel.swift "
+          find Sources -name '*.swift' | while IFS= read -r f; do
+            case "$keep" in *" $(basename "$f") "*) ;; *) rm -f "$f" ;; esac
+          done
+          rm -f Resources/responses.txt tools/gen_responses.py
+          rm -rf tools Assets.xcassets/gun_*.imageset
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "build-bot"
+            git config user.email "build-bot@users.noreply.github.com"
+            git add -A
+            git commit -q -m "Prune legacy sources and corpus" || true
+            git push -q origin HEAD:main || true
+          fi
 
       - name: Generate project
         run: |
@@ -32,7 +41,7 @@ jobs:
         id: build
         run: |
           set -o pipefail
-          xcodebuild -project MainChar.xcodeproj -scheme MainChar -configuration Release \
+          xcodebuild -project MainShot.xcodeproj -scheme MainShot -configuration Release \
             -sdk iphoneos -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             build 2>&1 | tee build.log
@@ -41,9 +50,9 @@ jobs:
       - name: Collect errors
         if: failure()
         run: |
-          touch build.log xcodegen.log gen.log
+          touch build.log xcodegen.log
           grep -E "error:|fatal error:|Undefined symbol|ld: " build.log | sort -u > errors.txt || true
-          if [ ! -s errors.txt ]; then tail -n 80 build.log xcodegen.log gen.log > errors.txt; fi
+          if [ ! -s errors.txt ]; then tail -n 80 build.log xcodegen.log > errors.txt; fi
           {
             echo "## ❌ Build failed"
             echo
@@ -72,7 +81,6 @@ jobs:
           path: |
             build.log
             xcodegen.log
-            gen.log
             errors.txt
           if-no-files-found: ignore
 
@@ -97,10 +105,10 @@ jobs:
       - name: Package IPA
         run: |
           mkdir -p Payload
-          cp -R build/Build/Products/Release-iphoneos/MainChar.app Payload/
-          zip -qry MainChar.ipa Payload
+          cp -R build/Build/Products/Release-iphoneos/MainShot.app Payload/
+          zip -qry MainShot.ipa Payload
 
       - uses: actions/upload-artifact@v4
         with:
-          name: MainChar-ipa
-          path: MainChar.ipa
+          name: MainShot-ipa
+          path: MainShot.ipa

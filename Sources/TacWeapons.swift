@@ -24,6 +24,6 @@ enum TWeapons {
     static func rig(_ id: String) -> String { let c = cls(id); return c == "sniper" ? "rifle" : c }
 
     static let ladder = ["pistol", "eagle", "pump", "mp7", "p90", "ak", "m4", "awp"]
-    static let modeNames = ["BOMB DEFUSAL", "TEAM DEATHMATCH", "KILL CONFIRMED", "ARMS RACE"]
-    static let modeShort = ["DEFUSE", "TDM", "KILL CONF", "ARMS RACE"]
+    static let modeNames = ["BOMB DEFUSAL", "TEAM DEATHMATCH", "KILL CONFIRMED", "ARMS RACE", "FREE FOR ALL", "CONTROL POINT"]
+    static let modeShort = ["DEFUSE", "TDM", "KILL CONF", "ARMS", "FFA", "CONTROL"]
 }

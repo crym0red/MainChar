@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Persisted stats
 
@@ -7,6 +8,7 @@ struct TacData: Codable, Hashable {
     var losses = 0
     var kills = 0
     var rating = 1000
+    var sx: TacSeasonData? = nil
 }
 
 // MARK: - Geometry
@@ -417,7 +419,7 @@ enum TNav {
 
 final class TPlayer {
     let id: Int
-    let team: Int
+    var team: Int
     let name: String
     let handle: String
     let emoji: String
@@ -461,6 +463,8 @@ final class TPlayer {
     var cover: CGPoint? = nil
     var noiseT: CGFloat = 0
     var respawn: CGFloat = 0
+    var money = 800
+    var armorKind = 0
     var ladder = 0
     var roam = CGPoint.zero
     var altGun = "pistol"
@@ -574,6 +578,19 @@ final class TacticalEngine {
     var hitT: CGFloat = 0
     var wantReload = false
     var wantSwap = false
+    var buyT: CGFloat = 0
+    var buyOpen = false
+    var theme = 0
+    var killFx = "fx_none"
+    var charm = "charm_none"
+    var fxId = "fx_none"
+    var fxT: CGFloat = 0
+    var myFaction = 0
+    var foeFaction = 0
+    var cpProg: [CGFloat] = [0, 0, 0]
+    var cpT: CGFloat = 0
+    var rivalScore: Int { gameMode == 4 ? (scores.dropFirst().max() ?? 0) : scores[1] }
+    var cpZones: [CGRect] { [TMap.site(0), TMap.site(1), CGRect(x: 1150, y: 700, width: 350, height: 300)] }
     var gameMode = 0
     var killTarget = 30
     struct Tag { var pos: CGPoint; var team: Int; var life: CGFloat }
@@ -596,22 +613,22 @@ final class TacticalEngine {
     private let turn: [CGFloat] = [5, 8, 12]
     private let aimErr: [CGFloat] = [0.13, 0.07, 0.035]
 
-    func setup(cast: [NPC], persona: Persona, gun: String, diff: Int, mode: Int = 0) {
+    func setup(gun: String, diff: Int, mode: Int = 0) {
         self.diff = diff
         gameMode = mode
         tags = []
         myGun = gun
-        var names: [(String, String, String)] = []
-        for n in cast.shuffled().prefix(9) { names.append((n.name, n.handle, n.emoji)) }
-        while names.count < 9 {
-            let u = Crowd.make()
-            names.append((u.name, u.handle, "🙂"))
-        }
-        players = [TPlayer(id: 0, team: 0, name: "You", handle: persona.handle, emoji: persona.emoji, isPlayer: true)]
+        let names: [(String, String, String)] = BotNames.pick(9)
+        players = [TPlayer(id: 0, team: 0, name: "You", handle: "you", emoji: "", isPlayer: true)]
         for i in 0..<9 {
             players.append(TPlayer(id: i + 1, team: i < 4 ? 0 : 1, name: names[i].0, handle: names[i].1, emoji: names[i].2, isPlayer: false))
         }
         scores = [0, 0]
+        killTarget = mode == 4 ? 20 : (mode == 5 ? 100 : 30)
+        if mode == 4 {
+            for p in players { p.team = p.id }
+            scores = Array(repeating: 0, count: 10)
+        }
         round = 0
         phase = 0
         over = false
@@ -642,7 +659,10 @@ final class TacticalEngine {
         packs = TMap.packPos.map { Pack(pos: $0, taken: false) }
         var ai = 0, di = 0
         var defBots = 0
+        cpProg = [0, 0, 0]
+        cpT = 1.5
         for p in players {
+            let survived = p.alive
             p.hp = 100
             p.alive = true
             p.path = []
@@ -656,7 +676,7 @@ final class TacticalEngine {
             p.smokes = 1
             p.flashes = 1
             if p.isPlayer { scoped = false; pitch = 0 }
-            p.armor = 100
+            if gameMode != 0 { p.armor = 100; p.armorKind = 1 }
             p.blind = 0
             p.pingCd = 0
             p.crouch = false
@@ -668,15 +688,23 @@ final class TacticalEngine {
             if atk { ai += 1 } else { di += 1 }
             p.pos = spot
             p.aim = atan2(TMap.H / 2 - spot.y, TMap.floorW / 2 - spot.x)
-            p.gun = p.isPlayer ? myGun : gunPick()
-            if gameMode == 3 { p.gun = TWeapons.ladder[0]; p.ladder = 0 }
-            p.mag = TGuns.get(p.gun).mag
-            p.spare = TWeapons.isPistol(p.gun) ? 99 : 2
             p.respawn = 0
-            if p.isPlayer {
-                p.altGun = p.gun == "pistol" ? "eagle" : "pistol"
-                p.altMag = TGuns.get(p.altGun).mag
-                p.altSpare = 99
+            if gameMode == 0 {
+                if round == 1 { p.money = 800; p.armor = 0; p.armorKind = 0; p.gun = "pistol" }
+                else if !survived { p.armor = 0; p.armorKind = 0; p.gun = "pistol" }
+                p.mag = TGuns.get(p.gun).mag
+                p.spare = TWeapons.isPistol(p.gun) ? 99 : 2
+                if p.isPlayer && round == 1 { p.altGun = "pistol"; p.altMag = 15; p.altSpare = 99 }
+            } else {
+                p.gun = p.isPlayer ? myGun : gunPick()
+                if gameMode == 3 { p.gun = TWeapons.ladder[0]; p.ladder = 0 }
+                p.mag = TGuns.get(p.gun).mag
+                p.spare = TWeapons.isPistol(p.gun) ? 99 : 2
+                if p.isPlayer {
+                    p.altGun = p.gun == "pistol" ? "eagle" : "pistol"
+                    p.altMag = TGuns.get(p.altGun).mag
+                    p.altSpare = 99
+                }
             }
             p.role = 0
             if !atk && !p.isPlayer { p.site = defBots % 2; defBots += 1 }
@@ -690,6 +718,13 @@ final class TacticalEngine {
             atkTeam = 0
             banner = TWeapons.modeNames[gameMode]
             tags = []
+            for p in players { respawnPlayer(p) }
+        } else {
+            timer = 6
+            buyT = 16
+            buyOpen = me.alive
+            for p in players where !p.isPlayer { botBuy(p) }
+            banner = "\(TacSeason.factions[myFaction % 4].0) vs \(TacSeason.enemyFactions[foeFaction % 3].0)"
         }
         bannerT = 3.5
     }
@@ -712,6 +747,9 @@ final class TacticalEngine {
         shake = max(0, shake - dt * 30)
         recoil = max(0, recoil - dt * 2.4)
         jumpT = max(0, jumpT - dt)
+        fxT = max(0, fxT - dt * 1.4)
+        buyT = max(0, buyT - dt)
+        if buyT <= 0 { buyOpen = false }
         kick = max(0, kick - dt * (22 + kick * 3))
         for i in feed.indices { feed[i].life -= dt }
         feed.removeAll { $0.life <= 0 }
@@ -814,6 +852,59 @@ final class TacticalEngine {
         if !planted && timer <= 0 { endRound(winner: 1 - atkTeam, text: "TIME RAN OUT") }
     }
 
+    // MARK: economy
+
+    func price(_ id: String) -> Int {
+        switch id {
+        case "kev": return 650
+        case "vest": return 1000
+        case "spec": return 2000
+        case "flashb": return 200
+        case "smokeb": return 300
+        case "fragb": return 300
+        default: return TWeapons.w(id).price
+        }
+    }
+
+    @discardableResult func buyItem(_ p: TPlayer, _ id: String) -> Bool {
+        guard gameMode == 0, p.alive else { return false }
+        let c = price(id)
+        guard p.money >= c else { return false }
+        switch id {
+        case "kev": guard p.armorKind < 1 || p.armor < 50 else { return false }; p.armor = 100; p.armorKind = 1
+        case "vest": guard p.armorKind < 2 || p.armor < 50 else { return false }; p.armor = 100; p.armorKind = 2
+        case "spec": guard p.armorKind < 3 || p.armor < 75 else { return false }; p.armor = 150; p.armorKind = 3
+        case "flashb": guard p.flashes < 2 else { return false }; p.flashes += 1
+        case "smokeb": guard p.smokes < 1 else { return false }; p.smokes += 1
+        case "fragb": guard p.nades < 1 else { return false }; p.nades += 1
+        default:
+            guard p.gun != id, p.altGun != id else { return false }
+            if TWeapons.isPistol(id) {
+                if TWeapons.isPistol(p.gun) { setGun(p, id) } else { p.altGun = id; p.altMag = TGuns.get(id).mag; p.altSpare = 99 }
+            } else {
+                if TWeapons.isPistol(p.gun) { p.altGun = p.gun; p.altMag = p.mag; p.altSpare = 99 }
+                setGun(p, id)
+            }
+        }
+        p.money -= c
+        return true
+    }
+
+    private func botBuy(_ p: TPlayer) {
+        if TWeapons.isPistol(p.gun) {
+            let prim = TWeapons.all.filter { !TWeapons.isPistol($0.id) && $0.price <= p.money - (p.armorKind == 0 ? 650 : 0) && ($0.id != "awp" || Int.random(in: 0..<4) == 0) }
+            if let w = prim.randomElement() { buyItem(p, w.id) }
+            else if p.money >= 700 + 650, Int.random(in: 0..<2) == 0 { buyItem(p, "eagle") }
+        }
+        if p.armorKind == 0 || p.armor < 40 {
+            if p.money >= 2400, Int.random(in: 0..<3) == 0 { buyItem(p, "spec") }
+            else if p.money >= 1000 { buyItem(p, "vest") }
+            else if p.money >= 650 { buyItem(p, "kev") }
+        }
+        if p.money >= 300, p.nades == 0 { buyItem(p, "fragb") }
+        if p.money >= 300, p.smokes == 0 { buyItem(p, "smokeb") }
+    }
+
     // MARK: deathmatch-style modes
 
     private func setGun(_ p: TPlayer, _ id: String) {
@@ -824,7 +915,7 @@ final class TacticalEngine {
     }
 
     private func respawnPlayer(_ p: TPlayer) {
-        let list = p.team == 0 ? TMap.atkSpawn : TMap.defSpawn
+        let list = p.id % 2 == 0 ? TMap.atkSpawn : TMap.defSpawn
         var best = list[0], bd: CGFloat = -1
         for c in list {
             var near = CGFloat.greatestFiniteMagnitude
@@ -878,15 +969,29 @@ final class TacticalEngine {
         }
         if gameMode == 3 {
             if let w = players.first(where: { $0.ladder >= TWeapons.ladder.count }) { finishMatch(w.team); return }
-        } else if scores[0] >= killTarget || scores[1] >= killTarget {
-            finishMatch(scores[0] >= scores[1] ? 0 : 1); return
+        } else if let wi = scores.firstIndex(where: { $0 >= killTarget }) {
+            finishMatch(wi); return
+        }
+        if gameMode == 5 {
+            let zs = cpZones
+            for i in 0..<3 {
+                var n0 = 0, n1 = 0
+                for p in players where p.alive && zs[i].contains(p.pos) { if p.team == 0 { n0 += 1 } else { n1 += 1 } }
+                let d = n0 - n1
+                if d != 0 { cpProg[i] = max(-1, min(1, cpProg[i] + CGFloat(d.signum()) * dt * 0.22 * CGFloat(min(abs(d), 3)))) }
+            }
+            cpT -= dt
+            if cpT <= 0 {
+                cpT = 1.5
+                for i in 0..<3 { if cpProg[i] >= 1 { scores[0] += 1 } else if cpProg[i] <= -1 { scores[1] += 1 } }
+            }
         }
         if timer <= 0 {
             if gameMode == 3 {
                 let a = players.filter { $0.team == 0 }.map { $0.ladder }.reduce(0, +)
                 let b = players.filter { $0.team == 1 }.map { $0.ladder }.reduce(0, +)
                 finishMatch(a >= b ? 0 : 1)
-            } else { finishMatch(scores[0] >= scores[1] ? 0 : 1) }
+            } else { finishMatch(scores.firstIndex(of: scores.max() ?? 0) ?? 0) }
         }
     }
 
@@ -906,6 +1011,7 @@ final class TacticalEngine {
 
     private func endRound(winner: Int, text: String) {
         scores[winner] += 1
+        for p in players { p.money = min(16000, p.money + (p.team == winner ? 3000 : 1900)) }
         phase = 3
         timer = 3.5
         let w = winner == me.team
@@ -1121,7 +1227,11 @@ final class TacticalEngine {
     private func damage(_ victim: TPlayer, _ amt: CGFloat, by owner: Int) {
         guard victim.alive else { return }
         var amt = amt
-        if victim.armor > 0 { let ab = min(victim.armor, amt * 0.5); victim.armor -= ab; amt -= ab * 0.8 }
+        if victim.armor > 0 {
+            let ratio: CGFloat = victim.armorKind >= 3 ? 0.75 : (victim.armorKind == 2 ? 0.6 : 0.5)
+            let red: CGFloat = victim.armorKind >= 3 ? 0.9 : (victim.armorKind == 2 ? 0.85 : 0.8)
+            let ab = min(victim.armor, amt * ratio); victim.armor -= ab; amt -= ab * red
+        }
         victim.hp -= victim.crouch ? amt * 0.7 : amt
         victim.hurt = 0.25
         if owner == 0 && victim.team != me.team { hitT = 0.2 }
@@ -1133,7 +1243,11 @@ final class TacticalEngine {
             victim.hp = 0
             victim.alive = false
             let killer = players.first { $0.id == owner }
-            if let k = killer, k.team != victim.team { k.kills += 1 }
+            if let k = killer, k.team != victim.team {
+                k.kills += 1
+                if gameMode == 0 { k.money = min(16000, k.money + 300) }
+                if k.isPlayer { fxT = 1; fxId = killFx }
+            }
             if gameMode != 0 {
                 victim.respawn = 3
                 if gameMode == 1, let k = killer, k.team != victim.team { scores[k.team] += 1 }
@@ -1267,6 +1381,13 @@ final class TacticalEngine {
     }
 
     private func objective(_ p: TPlayer) -> CGPoint {
+        if gameMode == 5 {
+            let zs = cpZones
+            let notMine = (0..<3).filter { !(p.team == 0 ? cpProg[$0] >= 1 : cpProg[$0] <= -1) }
+            let pick = notMine.isEmpty ? p.id % 3 : notMine[p.id % notMine.count]
+            let r = zs[pick]
+            return CGPoint(x: r.midX + cos(CGFloat(p.id) * 1.9) * r.width * 0.3, y: r.midY + sin(CGFloat(p.id) * 2.7) * r.height * 0.3)
+        }
         if gameMode != 0 {
             if gameMode == 2, let t = tags.min(by: { tDist($0.pos, p.pos) < tDist($1.pos, p.pos) }), tDist(t.pos, p.pos) < 900 { return t.pos }
             if p.roam == .zero || tDist(p.pos, p.roam) < 50 {
@@ -1414,732 +1535,132 @@ final class TacticalEngine {
     // MARK: drawing
 
     func draw(_ ctx: inout GraphicsContext, _ size: CGSize) {
-        if view3D { drawOverlay3D(&ctx, size); return }
-        if fp { drawFP(&ctx, size); return }
+        drawOverlay3D(&ctx, size)
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    func drawMinimapPublic(_ ctx: inout GraphicsContext) {
+        drawRadar(&ctx)
+    }
+
+    /// First-person radar: baked map image rotated heading-up inside a circle, live markers on top.
+    private func drawRadar(_ ctx: inout GraphicsContext) {
         let focus: TPlayer = me.alive ? me : (players.first { $0.team == me.team && $0.alive } ?? me)
-        let camX = min(max(0, focus.pos.x - size.width / 2), max(0, TMap.W - size.width))
-        let camY = min(max(0, focus.pos.y - size.height / 2), max(0, TMap.H - size.height))
-        var w = ctx
-        let sx = shake > 0 ? CGFloat.random(in: -shake...shake) * 0.5 : 0
-        let sy = shake > 0 ? CGFloat.random(in: -shake...shake) * 0.5 : 0
-        w.translateBy(x: -camX + sx, y: -camY + sy)
-        // floors
-        let cam = CGRect(x: camX - 20, y: camY - 20, width: size.width + 40, height: size.height + 40)
-        w.fill(Path(CGRect(x: -400, y: -400, width: TMap.W + 800, height: TMap.H + 800)), with: .color(Color(red: 0.04, green: 0.05, blue: 0.07)))
-        for rm in TMap.rooms {
-            let vis = rm.r.intersection(cam)
-            if vis.isNull || vis.isEmpty { continue }
-            floorFill(&w, rm, vis)
+        let cx: CGFloat = 84, cy: CGFloat = 128, R: CGFloat = 64
+        let s: CGFloat = 0.12
+        let th = -CGFloat.pi / 2 - focus.aim
+        let ct = cos(th), st = sin(th)
+        let circle = Path(ellipseIn: CGRect(x: cx - R, y: cy - R, width: R * 2, height: R * 2))
+        ctx.fill(circle, with: .color(Color(red: 0.04, green: 0.05, blue: 0.07)))
+        func P(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            let dx = (x - focus.pos.x) * s, dy = (y - focus.pos.y) * s
+            return CGPoint(x: cx + dx * ct - dy * st, y: cy + dx * st + dy * ct)
         }
-        for rg in TMap.rugs {
-            if !rg.0.intersects(cam) { continue }
-            w.fill(Path(roundedRect: rg.0, cornerRadius: 10), with: .color(rg.1.opacity(0.85)))
-            w.stroke(Path(roundedRect: rg.0.insetBy(dx: 8, dy: 8), cornerRadius: 6), with: .color(.white.opacity(0.16)), lineWidth: 2)
-        }
-        // sites
-        for i in 0..<2 {
-            let r = TMap.site(i)
-            w.fill(Path(roundedRect: r, cornerRadius: 10), with: .color(Color(red: 0.15, green: 0.45, blue: 0.85).opacity(0.22)))
-            w.stroke(Path(roundedRect: r.insetBy(dx: 6, dy: 6), cornerRadius: 8), with: .color(Color(red: 0.98, green: 0.8, blue: 0.08).opacity(0.85)), style: StrokeStyle(lineWidth: 3, dash: [14, 8]))
-            let c = CGPoint(x: r.midX, y: r.midY)
-            w.fill(Path(ellipseIn: CGRect(x: c.x - 24, y: c.y - 24, width: 48, height: 48)), with: .color(.black.opacity(0.5)))
-            w.stroke(Path(ellipseIn: CGRect(x: c.x - 24, y: c.y - 24, width: 48, height: 48)), with: .color(.white.opacity(0.9)), lineWidth: 2.5)
-            w.draw(Text(i == 0 ? "A" : "B").font(.system(size: 26, weight: .heavy)).foregroundColor(.white), at: c)
-        }
-        // doors
-        for dr in TMap.doors {
-            w.fill(Path(dr), with: .color(Color(red: 0.62, green: 0.5, blue: 0.32)))
-            let horiz = dr.width > dr.height
-            let a = horiz ? CGRect(x: dr.minX - 2, y: dr.minY - 3, width: 5, height: dr.height + 6) : CGRect(x: dr.minX - 3, y: dr.minY - 2, width: dr.width + 6, height: 5)
-            let b = horiz ? CGRect(x: dr.maxX - 3, y: dr.minY - 3, width: 5, height: dr.height + 6) : CGRect(x: dr.minX - 3, y: dr.maxY - 3, width: dr.width + 6, height: 5)
-            w.fill(Path(a), with: .color(Color(red: 0.3, green: 0.2, blue: 0.1)))
-            w.fill(Path(b), with: .color(Color(red: 0.3, green: 0.2, blue: 0.1)))
-        }
-        // walls + props, depth sorted, extruded
-        var items: [(CGFloat, Int, Int)] = []
-        for (i, o) in TMap.walls.enumerated() where o.insetBy(dx: -60, dy: -60).intersects(cam) { items.append((o.maxY, 0, i)) }
-        for (i, pr) in TMap.props.enumerated() where pr.r.insetBy(dx: -60, dy: -60).intersects(cam) { items.append((pr.r.maxY, 1, i)) }
-        items.sort { $0.0 < $1.0 }
-        for it in items {
-            if it.1 == 0 { drawWall(&w, TMap.walls[it.2]) } else { drawProp3(&w, TMap.props[it.2]) }
-        }
-        for k in packs where !k.taken {
-            w.fill(Path(ellipseIn: CGRect(x: k.pos.x - 13, y: k.pos.y - 13, width: 26, height: 26)), with: .color(Color(red: 0.2, green: 0.8, blue: 0.4).opacity(0.9)))
-            w.fill(Path(CGRect(x: k.pos.x - 3, y: k.pos.y - 8, width: 6, height: 16)), with: .color(.white))
-            w.fill(Path(CGRect(x: k.pos.x - 8, y: k.pos.y - 3, width: 16, height: 6)), with: .color(.white))
-        }
-        // bomb
-        if planted {
-            let pulse = 0.5 + 0.5 * sin(time * (bombT < 10 ? 14 : 6))
-            w.fill(Path(ellipseIn: CGRect(x: bombPos.x - 40, y: bombPos.y - 40, width: 80, height: 80)), with: .color(Color.red.opacity(0.08 + 0.12 * Double(pulse))))
-            w.fill(Path(ellipseIn: CGRect(x: bombPos.x - 9, y: bombPos.y - 9, width: 18, height: 18)), with: .color(Color.red))
-            w.draw(Text(String(format: "%.0f", max(0, bombT))).font(.system(size: 13, weight: .heavy)).foregroundColor(.white), at: CGPoint(x: bombPos.x, y: bombPos.y - 24))
-        }
-        // dead bodies
-        for p in players where !p.alive {
-            var x = Path()
-            x.move(to: CGPoint(x: p.pos.x - 8, y: p.pos.y - 8)); x.addLine(to: CGPoint(x: p.pos.x + 8, y: p.pos.y + 8))
-            x.move(to: CGPoint(x: p.pos.x + 8, y: p.pos.y - 8)); x.addLine(to: CGPoint(x: p.pos.x - 8, y: p.pos.y + 8))
-            w.stroke(x, with: .color((p.team == me.team ? Color.blue : Color.red).opacity(0.6)), lineWidth: 3)
-        }
-        let lg = Gradient(colors: [Color(red: 1, green: 0.85, blue: 0.55).opacity(0.16), Color.clear])
-        w.fill(Path(ellipseIn: CGRect(x: focus.pos.x - 260, y: focus.pos.y - 260, width: 520, height: 520)), with: .radialGradient(lg, center: focus.pos, startRadius: 0, endRadius: 260))
-        // vision darkness
-        let vp = focus.pos
-        var poly = Path()
-        let n = 140
-        for i in 0...n {
-            let a = CGFloat(i) / CGFloat(n) * 2 * .pi
-            let d = TMap.rayDist(vp, a, 720)
-            let pt = CGPoint(x: vp.x + cos(a) * d, y: vp.y + sin(a) * d)
-            if i == 0 { poly.move(to: pt) } else { poly.addLine(to: pt) }
-        }
-        poly.closeSubpath()
-        var dark = Path(CGRect(x: camX - 80, y: camY - 80, width: size.width + 160, height: size.height + 160))
-        dark.addPath(poly)
-        w.fill(dark, with: .color(.black.opacity(0.74)), style: FillStyle(eoFill: true))
-        // projectiles
-        for b in bullets {
-            var t = Path()
-            t.move(to: b.pos)
-            t.addLine(to: CGPoint(x: b.pos.x - b.vel.dx * 0.03, y: b.pos.y - b.vel.dy * 0.03))
-            w.stroke(t, with: .color(b.team == me.team ? Color(red: 0.7, green: 0.9, blue: 1) : Color(red: 1, green: 0.55, blue: 0.4)), style: StrokeStyle(lineWidth: 2.6, lineCap: .round))
-        }
-        for g in nades {
-            w.fill(Path(ellipseIn: CGRect(x: g.pos.x - 5, y: g.pos.y - 5, width: 10, height: 10)), with: .color(g.kind == 1 ? Color(white: 0.75) : Color(red: 0.4, green: 0.9, blue: 0.4)))
-        }
-        // characters (allies always, enemies when spotted)
-        for p in players where p.alive && (p.team == me.team || p.spotted) { drawPlayer(&w, p) }
-        for s in smokeClouds {
-            let fade = Double(min(1, s.life / 1.5))
-            for i in 0..<9 {
-                let ang = CGFloat(i) * 0.7 + time * 0.2
-                let dist = s.r * (i == 0 ? 0 : 0.5)
-                let cx = s.pos.x + cos(ang) * dist
-                let cy = s.pos.y + sin(ang) * dist
-                let rr = s.r * (i == 0 ? 0.9 : 0.62)
-                let g = Gradient(colors: [Color(white: 0.9).opacity(0.97 * fade), Color(white: 0.72).opacity(0.85 * fade), Color(white: 0.6).opacity(0)])
-                w.fill(Path(ellipseIn: CGRect(x: cx - rr, y: cy - rr, width: rr * 2, height: rr * 2)), with: .radialGradient(g, center: CGPoint(x: cx, y: cy), startRadius: 0, endRadius: rr))
-            }
-        }
-        for b in booms {
-            let k = 1 - b.life / 0.45
-            let rr = b.r * (0.35 + k * 0.7)
-            w.fill(Path(ellipseIn: CGRect(x: b.pos.x - rr, y: b.pos.y - rr, width: rr * 2, height: rr * 2)), with: .color(Color.orange.opacity(0.5 * (1 - Double(min(1, k))))))
-            w.stroke(Path(ellipseIn: CGRect(x: b.pos.x - rr, y: b.pos.y - rr, width: rr * 2, height: rr * 2)), with: .color(.yellow.opacity(Double(max(0, 1 - k)))), lineWidth: 3)
-        }
-        for p in pops {
-            w.draw(Text(p.text).font(.system(size: 16, weight: .heavy)).foregroundColor(p.color.opacity(Double(p.life))), at: CGPoint(x: p.pos.x, y: p.pos.y - 24 - (1 - p.life) * 24))
-        }
-        for pg in pings {
-            let al = Double(min(1, pg.life))
-            var dm = Path()
-            dm.move(to: CGPoint(x: pg.pos.x, y: pg.pos.y - 12)); dm.addLine(to: CGPoint(x: pg.pos.x + 8, y: pg.pos.y - 22))
-            dm.addLine(to: CGPoint(x: pg.pos.x, y: pg.pos.y - 32)); dm.addLine(to: CGPoint(x: pg.pos.x - 8, y: pg.pos.y - 22)); dm.closeSubpath()
-            w.fill(dm, with: .color(Color.orange.opacity(al)))
-            w.draw(Text(pg.text).font(.system(size: 12, weight: .heavy)).foregroundColor(Color.yellow.opacity(al)), at: CGPoint(x: pg.pos.x, y: pg.pos.y - 44))
-        }
-        let vg = Gradient(colors: [Color.clear, Color.black.opacity(0.5)])
-        ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .radialGradient(vg, center: CGPoint(x: size.width / 2, y: size.height / 2), startRadius: min(size.width, size.height) * 0.45, endRadius: max(size.width, size.height) * 0.72))
-        // minimap (screen space)
-        drawMinimap(&ctx)
-        if me.hurt > 0 {
-            ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color.red.opacity(Double(me.hurt) * 0.45)))
-        }
-        if !me.alive {
-            ctx.draw(Text("SPECTATING " + focus.name.uppercased()).font(.system(size: 12, weight: .heavy)).foregroundColor(.white.opacity(0.7)), at: CGPoint(x: size.width / 2, y: size.height - 90))
-        }
-    }
-
-    // MARK: first-person raycast view
-
-    private struct FPBill {
-        var perp: CGFloat
-        var sx: CGFloat
-        var kind: Int
-        var p: TPlayer?
-        var r: CGFloat
-        var a: CGFloat
-    }
-
-    private func fpColor(_ k: PropKind?) -> (CGFloat, CGFloat, CGFloat) {
-        guard let kk = k else { return (0.62, 0.66, 0.72) }
-        switch kk {
-        case .bed: return (0.32, 0.4, 0.62)
-        case .couch: return (0.55, 0.26, 0.3)
-        case .table: return (0.62, 0.44, 0.26)
-        case .counter: return (0.78, 0.8, 0.82)
-        case .crate: return (0.52, 0.38, 0.22)
-        case .car: return (0.2, 0.38, 0.62)
-        case .shelf: return (0.3, 0.22, 0.15)
-        case .barrel: return (0.5, 0.2, 0.14)
-        case .sandbag: return (0.76, 0.68, 0.44)
-        case .tv: return (0.1, 0.12, 0.16)
-        case .plant: return (0.16, 0.45, 0.22)
-        }
-    }
-
-    private func fpWallColor(_ m: WallMat) -> (CGFloat, CGFloat, CGFloat) {
-        switch m {
-        case .brick: return (0.56, 0.3, 0.25)
-        case .concrete: return (0.6, 0.62, 0.66)
-        case .wood: return (0.55, 0.4, 0.25)
-        case .glass: return (0.5, 0.78, 0.92)
-        }
-    }
-
-    private func fpHeight(_ k: PropKind?) -> CGFloat {
-        guard let kk = k else { return 1 }
-        switch kk {
-        case .bed: return 0.35
-        case .couch: return 0.45
-        case .table: return 0.4
-        case .counter: return 0.5
-        case .crate: return 0.55
-        case .car: return 0.6
-        case .shelf: return 0.95
-        case .barrel: return 0.5
-        case .sandbag: return 0.3
-        case .tv: return 0.5
-        case .plant: return 0.6
-        }
-    }
-
-    private func rayRect(_ ox: CGFloat, _ oy: CGFloat, _ dx: CGFloat, _ dy: CGFloat, _ r: CGRect) -> (CGFloat, Int)? {
-        var t0: CGFloat = 0
-        var t1: CGFloat = 5000
-        var side = 0
-        if abs(dx) < 1e-7 {
-            if ox < r.minX || ox > r.maxX { return nil }
-        } else {
-            var ta = (r.minX - ox) / dx
-            var tb = (r.maxX - ox) / dx
-            if ta > tb { let tmp = ta; ta = tb; tb = tmp }
-            if ta > t0 { t0 = ta; side = 0 }
-            t1 = min(t1, tb)
-            if t0 > t1 { return nil }
-        }
-        if abs(dy) < 1e-7 {
-            if oy < r.minY || oy > r.maxY { return nil }
-        } else {
-            var ta = (r.minY - oy) / dy
-            var tb = (r.maxY - oy) / dy
-            if ta > tb { let tmp = ta; ta = tb; tb = tmp }
-            if ta > t0 { t0 = ta; side = 1 }
-            t1 = min(t1, tb)
-            if t0 > t1 { return nil }
-        }
-        if t0 <= 0.001 { return nil }
-        return (t0, side)
-    }
-
-    func drawFP(_ ctx: inout GraphicsContext, _ size: CGSize) {
-        let focus: TPlayer = me.alive ? me : (players.first { $0.team == me.team && $0.alive } ?? me)
-        let pos = focus.pos
-        let ang = focus.aim
-        let W = size.width
-        let H = size.height
-        let hz = H / 2
-        let fov: CGFloat = 1.15
-        let tanH = tan(fov / 2)
-        // ceiling + floor
-        ctx.fill(Path(CGRect(x: 0, y: 0, width: W, height: hz)), with: .color(Color(red: 0.07, green: 0.08, blue: 0.11)))
-        var mat = 1
-        for rm in TMap.rooms where rm.r.contains(pos) { mat = rm.mat }
-        let fcs: [(CGFloat, CGFloat, CGFloat)] = [(0.45, 0.31, 0.19), (0.34, 0.36, 0.38), (0.27, 0.24, 0.33), (0.5, 0.54, 0.56), (0.28, 0.19, 0.13), (0.4, 0.4, 0.42)]
-        let fc = fcs[mat]
-        for b in 0..<6 {
-            let k = 0.35 + 0.1 * CGFloat(b)
-            ctx.fill(Path(CGRect(x: 0, y: hz + CGFloat(b) * hz / 6, width: W, height: hz / 6 + 1)), with: .color(Color(red: fc.0 * k, green: fc.1 * k, blue: fc.2 * k)))
-        }
-        let n = max(60, Int(W / 4))
-        let cw = W / CGFloat(n)
-        var z = [CGFloat](repeating: 9999, count: n)
-        var near: [Int] = []
-        for (k, r) in TMap.solid.enumerated() {
-            let cx = min(max(pos.x, r.minX), r.maxX)
-            let cy = min(max(pos.y, r.minY), r.maxY)
-            if tDist(pos, CGPoint(x: cx, y: cy)) < 1300 { near.append(k) }
-        }
-        for i in 0..<n {
-            let sxn = (CGFloat(i) + 0.5) / CGFloat(n) * 2 - 1
-            let off = atan(sxn * tanH)
-            let a = ang + off
-            let dx = cos(a)
-            let dy = sin(a)
-            var hits: [(CGFloat, Int, Int)] = []
-            for k in near {
-                if let h = rayRect(pos.x, pos.y, dx, dy, TMap.solid[k]) { hits.append((h.0, k, h.1)) }
-            }
-            hits.sort { $0.0 > $1.0 }
-            let co = cos(off)
-            for h in hits {
-                let perp = max(8, h.0 * co)
-                let u = H * 0.72 / perp
-                let kind = TMap.solidKind[h.1]
-                let mt = TMap.solidMat[h.1]
-                let hgt: CGFloat = kind == nil ? TMap.wallH : TMap.propH(kind!)
-                let bottom = hz + TMap.eyeH * u
-                let top = bottom - hgt * u
-                var sh = max(0.22, min(1, 1.25 - perp / 950))
-                if h.2 == 1 { sh *= 0.78 }
-                let c = kind == nil ? fpWallColor(mt) : fpColor(kind)
-                let col = Color(red: Double(c.0 * sh), green: Double(c.1 * sh), blue: Double(c.2 * sh))
-                let rect = CGRect(x: CGFloat(i) * cw, y: top, width: cw + 0.6, height: bottom - top)
-                if mt == .glass {
-                    ctx.fill(Path(rect), with: .color(col.opacity(0.3)))
-                    ctx.fill(Path(CGRect(x: rect.minX, y: top, width: rect.width, height: 2)), with: .color(.white.opacity(0.55)))
-                    ctx.fill(Path(CGRect(x: rect.minX, y: bottom - 2, width: rect.width, height: 2)), with: .color(.white.opacity(0.35)))
-                    continue
-                }
-                ctx.fill(Path(rect), with: .color(col))
-                if kind == nil && mt == .brick {
-                    let rows = max(1, Int((bottom - top) / max(4, 9 * u)))
-                    for rr in 1..<(rows + 1) {
-                        let yy = top + CGFloat(rr) * (bottom - top) / CGFloat(rows + 1)
-                        ctx.fill(Path(CGRect(x: rect.minX, y: yy, width: rect.width, height: 1)), with: .color(.black.opacity(0.22)))
-                    }
-                } else if kind == nil && mt == .wood {
-                    ctx.fill(Path(CGRect(x: rect.minX, y: top, width: rect.width, height: 2)), with: .color(.black.opacity(0.3)))
-                }
-                let hi = Color(red: Double(min(1, c.0 * sh * 1.3)), green: Double(min(1, c.1 * sh * 1.3)), blue: Double(min(1, c.2 * sh * 1.3)))
-                ctx.fill(Path(CGRect(x: rect.minX, y: top, width: rect.width, height: max(2, hgt * u * 0.05))), with: .color(hi))
-            }
-            if let nearest = hits.last(where: { TMap.solidMat[$0.1] != .glass }) { z[i] = nearest.0 * co }
-        }
-        // billboards
-        var bills: [FPBill] = []
-        for p in players where p.alive && p.id != focus.id {
-            if !see(pos, p.pos) { continue }
-            let dx = p.pos.x - pos.x
-            let dy = p.pos.y - pos.y
+        func clamp(_ p: CGPoint) -> (CGPoint, Bool) {
+            let dx = p.x - cx, dy = p.y - cy
             let d = hypot(dx, dy)
-            let diff = tAngDiff(atan2(dy, dx), ang)
-            if abs(diff) > 1.1 { continue }
-            let perp = d * cos(diff)
-            if perp < 12 { continue }
-            bills.append(FPBill(perp: perp, sx: W / 2 + tan(diff) / tanH * W / 2, kind: 0, p: p, r: 0, a: 1))
+            if d <= R - 5 { return (p, false) }
+            return (CGPoint(x: cx + dx / d * (R - 5), y: cy + dy / d * (R - 5)), true)
         }
-        var inSmoke: CGFloat = 0
-        for s in smokeClouds {
-            let dx = s.pos.x - pos.x
-            let dy = s.pos.y - pos.y
-            let d = hypot(dx, dy)
-            let fade = min(1, s.life / 1.5)
-            if d < s.r * 0.8 { inSmoke = max(inSmoke, fade); continue }
-            let diff = tAngDiff(atan2(dy, dx), ang)
-            if abs(diff) > 1.3 { continue }
-            let perp = d * cos(diff)
-            if perp < 12 { continue }
-            bills.append(FPBill(perp: perp, sx: W / 2 + tan(diff) / tanH * W / 2, kind: 1, p: nil, r: s.r, a: fade))
-        }
-        if planted && TMap.los(pos, bombPos) {
-            let dx = bombPos.x - pos.x
-            let dy = bombPos.y - pos.y
-            let diff = tAngDiff(atan2(dy, dx), ang)
-            let perp = hypot(dx, dy) * cos(diff)
-            if abs(diff) < 1.1 && perp > 12 {
-                bills.append(FPBill(perp: perp, sx: W / 2 + tan(diff) / tanH * W / 2, kind: 2, p: nil, r: 0, a: 1))
-            }
-        }
-        for k in packs where !k.taken && TMap.los(pos, k.pos) {
-            let dx = k.pos.x - pos.x
-            let dy = k.pos.y - pos.y
-            let diff = tAngDiff(atan2(dy, dx), ang)
-            let perp = hypot(dx, dy) * cos(diff)
-            if abs(diff) < 1.1 && perp > 12 {
-                bills.append(FPBill(perp: perp, sx: W / 2 + tan(diff) / tanH * W / 2, kind: 3, p: nil, r: 0, a: 1))
-            }
-        }
-        bills.sort { $0.perp > $1.perp }
-        for s in bills {
-            let u = H * 0.72 / s.perp
-            let floorY = hz + TMap.eyeH * u
-            let half: CGFloat = (s.kind == 1 ? s.r : 14) * u
-            let c0 = max(0, Int((s.sx - half) / cw))
-            let c1 = min(n - 1, Int((s.sx + half) / cw))
-            if c0 > c1 { continue }
-            var clip = Path()
-            for c in c0...c1 where z[c] > s.perp {
-                clip.addRect(CGRect(x: CGFloat(c) * cw, y: 0, width: cw + 0.6, height: H))
-            }
-            if clip.isEmpty { continue }
-            ctx.drawLayer { l in
-                l.clip(to: clip)
-                if s.kind == 0, let p = s.p {
-                    let ally = p.team == me.team
-                    let col: Color = ally ? Color(red: 0.25, green: 0.6, blue: 1) : Color(red: 1, green: 0.25, blue: 0.3)
-                    l.fill(Path(ellipseIn: CGRect(x: s.sx - 14 * u, y: floorY - 4 * u, width: 28 * u, height: 8 * u)), with: .color(.black.opacity(0.35)))
-                    l.fill(Path(roundedRect: CGRect(x: s.sx - 12 * u, y: floorY - 56 * u, width: 24 * u, height: 56 * u), cornerRadius: 6 * u), with: .color(col.opacity(0.85)))
-                    let head = CGRect(x: s.sx - 11 * u, y: floorY - 80 * u, width: 22 * u, height: 22 * u)
-                    if let img = sprites[p.handle] {
-                        let im = l.resolve(Image(uiImage: img))
-                        l.drawLayer { l2 in
-                            l2.clip(to: Path(ellipseIn: head))
-                            l2.draw(im, in: head)
-                        }
-                    } else {
-                        l.fill(Path(ellipseIn: head), with: .color(Color(red: 0.9, green: 0.75, blue: 0.62)))
-                    }
-                    l.stroke(Path(ellipseIn: head), with: .color(col), lineWidth: max(1, 2 * u))
-                    if p.flash > 0 {
-                        l.fill(Path(ellipseIn: CGRect(x: s.sx + 6 * u, y: floorY - 42 * u, width: 16 * u, height: 16 * u)), with: .color(.yellow.opacity(0.9)))
-                    }
-                    if s.perp < 750 {
-                        l.draw(Text(p.name).font(.system(size: 11, weight: .bold)).foregroundColor(col), at: CGPoint(x: s.sx, y: floorY - 90 * u))
-                        let bx = s.sx - 18
-                        let by = floorY - 82 * u
-                        l.fill(Path(CGRect(x: bx, y: by, width: 36, height: 4)), with: .color(.black.opacity(0.6)))
-                        l.fill(Path(CGRect(x: bx, y: by, width: 36 * max(0, p.hp / 100), height: 4)), with: .color(col))
-                    }
-                } else if s.kind == 1 {
-                    let rr = s.r * u
-                    l.fill(Path(ellipseIn: CGRect(x: s.sx - rr, y: floorY - 50 * u - rr, width: rr * 2, height: rr * 2)), with: .color(Color(white: 0.72).opacity(0.93 * Double(s.a))))
-                } else if s.kind == 2 {
-                    let pulse = 0.6 + 0.4 * sin(time * 8)
-                    l.fill(Path(ellipseIn: CGRect(x: s.sx - 9 * u, y: floorY - 14 * u, width: 18 * u, height: 14 * u)), with: .color(Color.red.opacity(Double(pulse))))
-                    l.draw(Text("BOMB").font(.system(size: 11, weight: .heavy)).foregroundColor(.white), at: CGPoint(x: s.sx, y: floorY - 26 * u))
-                } else {
-                    l.fill(Path(ellipseIn: CGRect(x: s.sx - 10 * u, y: floorY - 22 * u, width: 20 * u, height: 20 * u)), with: .color(Color(red: 0.2, green: 0.8, blue: 0.4)))
-                    l.fill(Path(CGRect(x: s.sx - 2 * u, y: floorY - 20 * u, width: 4 * u, height: 16 * u)), with: .color(.white))
-                    l.fill(Path(CGRect(x: s.sx - 8 * u, y: floorY - 14 * u, width: 16 * u, height: 4 * u)), with: .color(.white))
-                }
-            }
-        }
-        if inSmoke > 0 {
-            ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(white: 0.72).opacity(0.92 * Double(inSmoke))))
-        }
-        // crosshair
-        let cx = W / 2
-        var ch = Path()
-        ch.move(to: CGPoint(x: cx - 14, y: hz)); ch.addLine(to: CGPoint(x: cx - 5, y: hz))
-        ch.move(to: CGPoint(x: cx + 5, y: hz)); ch.addLine(to: CGPoint(x: cx + 14, y: hz))
-        ch.move(to: CGPoint(x: cx, y: hz - 14)); ch.addLine(to: CGPoint(x: cx, y: hz - 5))
-        ch.move(to: CGPoint(x: cx, y: hz + 5)); ch.addLine(to: CGPoint(x: cx, y: hz + 14))
-        ctx.stroke(ch, with: .color(.white.opacity(0.85)), lineWidth: 2)
-        if hitT > 0 {
-            var hm = Path()
-            hm.move(to: CGPoint(x: cx - 9, y: hz - 9)); hm.addLine(to: CGPoint(x: cx + 9, y: hz + 9))
-            hm.move(to: CGPoint(x: cx + 9, y: hz - 9)); hm.addLine(to: CGPoint(x: cx - 9, y: hz + 9))
-            ctx.stroke(hm, with: .color(.red), lineWidth: 3)
-        }
-        // viewmodel
-        if me.alive { drawViewGun(&ctx, size) }
-        drawMinimap(&ctx)
-        if me.hurt > 0 {
-            ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color.red.opacity(Double(me.hurt) * 0.45)))
-        }
-        if !me.alive {
-            ctx.draw(Text("SPECTATING " + focus.name.uppercased()).font(.system(size: 12, weight: .heavy)).foregroundColor(.white.opacity(0.7)), at: CGPoint(x: size.width / 2, y: size.height - 70))
-        }
-    }
-
-    func drawViewGun(_ ctx: inout GraphicsContext, _ size: CGSize) {
-        let id = me.gun
-        let img = GunSprites.image(id)
-        let mz = GunSprites.muzzle(id)
-        let rec: CGFloat = me.flash > 0 ? 1 : 0
-        let moving = hypot(move.dx, move.dy)
-        let bob = CGFloat(sin(Double(time) * 9)) * 6 * moving
-        let spr = ctx.resolve(Image(uiImage: img))
-        var rect = GunSprites.rect(size)
-        let dip: CGFloat = me.reloadT > 0 ? min(1, me.reloadT * 2.5) * rect.height * 0.35 : 0
-        rect.origin.x += rec * 12
-        rect.origin.y += dip + bob + rec * 14
-        ctx.draw(spr, in: rect)
-        if me.flash > 0 {
-            let p = CGPoint(x: rect.minX + mz.x * rect.width, y: rect.minY + mz.y * rect.height)
-            ctx.fill(Path(ellipseIn: CGRect(x: p.x - 30, y: p.y - 30, width: 60, height: 60)), with: .color(.yellow.opacity(0.85)))
-            ctx.fill(Path(ellipseIn: CGRect(x: p.x - 14, y: p.y - 14, width: 28, height: 28)), with: .color(.white.opacity(0.95)))
-        }
-    }
-
-    private func propLift(_ k: PropKind) -> CGFloat {
-        switch k {
-        case .bed: return 8
-        case .couch: return 14
-        case .table: return 12
-        case .counter: return 18
-        case .crate: return 18
-        case .car: return 18
-        case .shelf: return 28
-        case .barrel: return 16
-        case .sandbag: return 10
-        case .tv: return 14
-        case .plant: return 12
-        }
-    }
-
-    private func drawWall(_ w: inout GraphicsContext, _ o: CGRect) {
-        let h: CGFloat = 26
-        w.fill(Path(CGRect(x: o.minX - 2, y: o.maxY, width: o.width + 6, height: 14)), with: .color(.black.opacity(0.22)))
-        w.fill(Path(CGRect(x: o.minX, y: o.maxY, width: o.width + 3, height: 8)), with: .color(.black.opacity(0.22)))
-        let face = CGRect(x: o.minX, y: o.maxY - h, width: o.width, height: h)
-        w.fill(Path(face), with: .color(Color(red: 0.3, green: 0.33, blue: 0.4)))
-        if o.width > o.height {
-            var ln = Path()
-            var y = face.minY + 8
-            while y < face.maxY { ln.move(to: CGPoint(x: face.minX, y: y)); ln.addLine(to: CGPoint(x: face.maxX, y: y)); y += 8 }
-            w.stroke(ln, with: .color(.black.opacity(0.28)), lineWidth: 1)
-        }
-        let top = o.offsetBy(dx: 0, dy: -h)
-        w.fill(Path(top), with: .color(Color(red: 0.66, green: 0.69, blue: 0.74)))
-        w.stroke(Path(top), with: .color(Color(red: 0.36, green: 0.4, blue: 0.46)), lineWidth: 1.5)
-        w.fill(Path(CGRect(x: top.minX, y: top.minY, width: top.width, height: min(3, top.height))), with: .color(.white.opacity(0.35)))
-    }
-
-    private func drawProp3(_ w: inout GraphicsContext, _ pr: TProp) {
-        let lift = propLift(pr.k)
-        let r = pr.r
-        w.fill(Path(roundedRect: r.offsetBy(dx: 5, dy: 8).insetBy(dx: -2, dy: -2), cornerRadius: 6), with: .color(.black.opacity(0.3)))
-        let c = fpColor(pr.k)
-        let side = Color(red: Double(c.0 * 0.5), green: Double(c.1 * 0.5), blue: Double(c.2 * 0.5))
-        if pr.k == .barrel || pr.k == .plant {
-            w.fill(Path(ellipseIn: r), with: .color(side))
-            w.fill(Path(CGRect(x: r.minX, y: r.midY - lift, width: r.width, height: lift + r.height / 2)), with: .color(side))
-        } else {
-            w.fill(Path(roundedRect: CGRect(x: r.minX, y: r.maxY - lift, width: r.width, height: lift), cornerRadius: 3), with: .color(side))
-        }
-        w.drawLayer { l in
-            l.translateBy(x: 0, y: -lift)
-            drawProp(&l, TProp(r: r, k: pr.k))
-        }
-    }
-
-    private func floorFill(_ w: inout GraphicsContext, _ rm: TRoom, _ vis: CGRect) {
-        let cols: [Color] = [
-            Color(red: 0.45, green: 0.31, blue: 0.19),
-            Color(red: 0.34, green: 0.36, blue: 0.38),
-            Color(red: 0.27, green: 0.24, blue: 0.33),
-            Color(red: 0.5, green: 0.54, blue: 0.56),
-            Color(red: 0.28, green: 0.19, blue: 0.13),
-            Color(red: 0.4, green: 0.4, blue: 0.42)
-        ]
-        w.fill(Path(vis), with: .color(cols[rm.mat]))
-        var ln = Path()
-        switch rm.mat {
-        case 0, 4:
-            var y = (vis.minY / 26).rounded(.down) * 26
-            while y < vis.maxY {
-                ln.move(to: CGPoint(x: vis.minX, y: y)); ln.addLine(to: CGPoint(x: vis.maxX, y: y)); y += 26
-            }
-        case 3, 5:
-            var x = (vis.minX / 56).rounded(.down) * 56
-            while x < vis.maxX { ln.move(to: CGPoint(x: x, y: vis.minY)); ln.addLine(to: CGPoint(x: x, y: vis.maxY)); x += 56 }
-            var y = (vis.minY / 56).rounded(.down) * 56
-            while y < vis.maxY { ln.move(to: CGPoint(x: vis.minX, y: y)); ln.addLine(to: CGPoint(x: vis.maxX, y: y)); y += 56 }
-        case 1:
-            var x = (vis.minX / 140).rounded(.down) * 140
-            while x < vis.maxX { ln.move(to: CGPoint(x: x, y: vis.minY)); ln.addLine(to: CGPoint(x: x, y: vis.maxY)); x += 140 }
-            var y = (vis.minY / 140).rounded(.down) * 140
-            while y < vis.maxY { ln.move(to: CGPoint(x: vis.minX, y: y)); ln.addLine(to: CGPoint(x: vis.maxX, y: y)); y += 140 }
-        default:
-            break
-        }
-        w.stroke(ln, with: .color(.black.opacity(0.17)), lineWidth: 1.2)
-        let fs: CGFloat = rm.r.width < 200 ? 11 : 15
-        w.draw(Text(rm.name.uppercased()).font(.system(size: fs, weight: .heavy)).foregroundColor(.white.opacity(0.2)), at: CGPoint(x: rm.r.midX, y: rm.r.minY + 28))
-    }
-
-    private func drawProp(_ w: inout GraphicsContext, _ pr: TProp) {
-        let r = pr.r
-        w.fill(Path(r.offsetBy(dx: 0, dy: 7)), with: .color(.black.opacity(0.4)))
-        let rr = Path(roundedRect: r, cornerRadius: 5)
-        switch pr.k {
-        case .bed:
-            w.fill(rr, with: .color(Color(red: 0.32, green: 0.4, blue: 0.62)))
-            w.fill(Path(roundedRect: CGRect(x: r.minX + 8, y: r.minY + 8, width: r.width - 16, height: 28), cornerRadius: 6), with: .color(.white.opacity(0.85)))
-            w.fill(Path(CGRect(x: r.minX, y: r.minY + 70, width: r.width, height: 3)), with: .color(.black.opacity(0.25)))
-        case .couch:
-            w.fill(rr, with: .color(Color(red: 0.55, green: 0.26, blue: 0.3)))
-            if r.width >= r.height {
-                w.fill(Path(CGRect(x: r.minX, y: r.minY, width: r.width, height: min(16, r.height * 0.35))), with: .color(.black.opacity(0.28)))
-            } else {
-                w.fill(Path(CGRect(x: r.minX, y: r.minY, width: min(16, r.width * 0.35), height: r.height)), with: .color(.black.opacity(0.28)))
-            }
-        case .table:
-            w.fill(rr, with: .color(Color(red: 0.62, green: 0.44, blue: 0.26)))
-            w.stroke(Path(roundedRect: r.insetBy(dx: 5, dy: 5), cornerRadius: 3), with: .color(.black.opacity(0.22)), lineWidth: 1.5)
-        case .counter:
-            w.fill(rr, with: .color(Color(red: 0.78, green: 0.8, blue: 0.82)))
-            w.stroke(Path(roundedRect: r.insetBy(dx: 4, dy: 4), cornerRadius: 3), with: .color(.black.opacity(0.3)), lineWidth: 2)
-        case .crate:
-            w.fill(rr, with: .color(Color(red: 0.52, green: 0.38, blue: 0.22)))
-            w.stroke(rr, with: .color(.black.opacity(0.35)), lineWidth: 2)
-            var x = Path()
-            x.move(to: CGPoint(x: r.minX + 5, y: r.minY + 5)); x.addLine(to: CGPoint(x: r.maxX - 5, y: r.maxY - 5))
-            x.move(to: CGPoint(x: r.maxX - 5, y: r.minY + 5)); x.addLine(to: CGPoint(x: r.minX + 5, y: r.maxY - 5))
-            w.stroke(x, with: .color(.black.opacity(0.25)), lineWidth: 2)
-        case .car:
-            w.fill(Path(roundedRect: r, cornerRadius: 16), with: .color(Color(red: 0.2, green: 0.38, blue: 0.62)))
-            w.fill(Path(roundedRect: CGRect(x: r.minX + r.width * 0.55, y: r.minY + 8, width: r.width * 0.2, height: r.height - 16), cornerRadius: 5), with: .color(Color(red: 0.1, green: 0.14, blue: 0.2)))
-            w.fill(Path(ellipseIn: CGRect(x: r.maxX - 10, y: r.minY + 8, width: 6, height: 10)), with: .color(.yellow))
-            w.fill(Path(ellipseIn: CGRect(x: r.maxX - 10, y: r.maxY - 18, width: 6, height: 10)), with: .color(.yellow))
-        case .shelf:
-            w.fill(rr, with: .color(Color(red: 0.3, green: 0.22, blue: 0.15)))
-            var ln = Path()
-            if r.width >= r.height {
-                var x = r.minX + 12
-                while x < r.maxX { ln.move(to: CGPoint(x: x, y: r.minY)); ln.addLine(to: CGPoint(x: x, y: r.maxY)); x += 12 }
-            } else {
-                var y = r.minY + 12
-                while y < r.maxY { ln.move(to: CGPoint(x: r.minX, y: y)); ln.addLine(to: CGPoint(x: r.maxX, y: y)); y += 12 }
-            }
-            w.stroke(ln, with: .color(.black.opacity(0.35)), lineWidth: 1.5)
-        case .barrel:
-            w.fill(Path(ellipseIn: r), with: .color(Color(red: 0.5, green: 0.2, blue: 0.14)))
-            w.stroke(Path(ellipseIn: r.insetBy(dx: 7, dy: 7)), with: .color(.black.opacity(0.35)), lineWidth: 2)
-        case .sandbag:
-            w.fill(rr, with: .color(Color(red: 0.76, green: 0.68, blue: 0.44)))
-            w.stroke(rr, with: .color(.black.opacity(0.3)), style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
-        case .tv:
-            w.fill(rr, with: .color(Color(red: 0.08, green: 0.09, blue: 0.11)))
-            w.fill(Path(CGRect(x: r.minX + 6, y: r.minY + 6, width: r.width - 12, height: r.height - 14)), with: .color(Color(red: 0.2, green: 0.45, blue: 0.7).opacity(0.8)))
-        case .plant:
-            w.fill(Path(ellipseIn: r), with: .color(Color(red: 0.16, green: 0.45, blue: 0.22)))
-            w.fill(Path(ellipseIn: r.insetBy(dx: r.width * 0.3, dy: r.height * 0.3)), with: .color(Color(red: 0.4, green: 0.28, blue: 0.18)))
-        }
-    }
-
-    private func drawPlayer(_ w: inout GraphicsContext, _ p: TPlayer) {
-        let ally = p.team == me.team
-        let ring: Color = p.isPlayer ? Color(red: 0.4, green: 0.95, blue: 0.5) : (ally ? Color(red: 0.25, green: 0.6, blue: 1) : Color(red: 1, green: 0.25, blue: 0.3))
-        w.fill(Path(ellipseIn: CGRect(x: p.pos.x - 13, y: p.pos.y + 8, width: 26, height: 10)), with: .color(.black.opacity(0.35)))
-        w.drawLayer { l in
-            l.translateBy(x: p.pos.x, y: p.pos.y)
-            l.rotate(by: .radians(Double(p.aim)))
-            l.fill(Path(roundedRect: CGRect(x: 8, y: -3.5, width: 22, height: 7), cornerRadius: 2), with: .color(Color(white: 0.85)))
-            l.fill(Path(CGRect(x: 26, y: -2.2, width: 9, height: 4.4)), with: .color(Color(white: 0.45)))
-            if p.flash > 0 { l.fill(Path(ellipseIn: CGRect(x: 32, y: -8, width: 16, height: 16)), with: .color(.yellow.opacity(0.9))) }
-        }
-        let rect = CGRect(x: p.pos.x - 14, y: p.pos.y - 14, width: 28, height: 28)
-        if let img = sprites[p.handle] {
-            let im = w.resolve(Image(uiImage: img))
-            w.drawLayer { l in
-                l.clip(to: Path(ellipseIn: rect))
-                l.draw(im, in: rect)
-            }
-        } else {
-            w.fill(Path(ellipseIn: rect), with: .color(ring.opacity(0.6)))
-            w.draw(Text(p.emoji).font(.system(size: 18)), at: p.pos)
-        }
-        w.stroke(Path(ellipseIn: rect), with: .color(p.hurt > 0 ? .white : ring), lineWidth: 3)
-        // name + hp
-        w.draw(Text(p.name).font(.system(size: 11, weight: .bold)).foregroundColor(ring), at: CGPoint(x: p.pos.x, y: p.pos.y - 32))
-        let bar = CGRect(x: p.pos.x - 18, y: p.pos.y - 25, width: 36, height: 4)
-        w.fill(Path(bar), with: .color(.black.opacity(0.6)))
-        w.fill(Path(CGRect(x: bar.minX, y: bar.minY, width: 36 * max(0, p.hp / 100), height: 4)), with: .color(ring))
-        if p.reloadT > 0 {
-            w.draw(Text("reload").font(.system(size: 9, weight: .semibold)).foregroundColor(.white.opacity(0.8)), at: CGPoint(x: p.pos.x, y: p.pos.y + 26))
-        }
-    }
-
-    func drawMinimapPublic(_ ctx: inout GraphicsContext) { drawMinimap(&ctx) }
-
-    private func drawMinimap(_ ctx: inout GraphicsContext) {
-        let s: CGFloat = 0.055
-        let ox: CGFloat = fp ? 12 : 10, oy: CGFloat = fp ? 58 : 26
-        let focus: TPlayer = me.alive ? me : (players.first { $0.team == me.team && $0.alive } ?? me)
-        let fl = TMap.floorOf(focus.pos)
-        let fo: CGFloat = fl == 1 ? TMap.off : 0
-        let w = TMap.floorW * s, h = TMap.H * s
-        func P(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: ox + (x - fo) * s, y: oy + y * s) }
-        func R(_ r: CGRect) -> CGRect { CGRect(x: ox + (r.minX - fo) * s, y: oy + r.minY * s, width: r.width * s, height: r.height * s) }
-        func here(_ p: CGPoint) -> Bool { TMap.floorOf(p) == fl }
-        func hereR(_ r: CGRect) -> Bool { TMap.floorOf(CGPoint(x: r.midX, y: r.midY)) == fl }
-        let frame = CGRect(x: ox - 5, y: oy - 5, width: w + 10, height: h + 10)
-        ctx.fill(Path(roundedRect: frame, cornerRadius: 10), with: .color(Color(red: 0.04, green: 0.05, blue: 0.08).opacity(0.82)))
-        ctx.stroke(Path(roundedRect: frame, cornerRadius: 10), with: .color(.white.opacity(0.35)), lineWidth: 1.5)
-        if !fp { ctx.draw(Text(fl == 0 ? "GROUND FLOOR" : "UPSTAIRS").font(.system(size: 9, weight: .heavy)).foregroundColor(fl == 0 ? Color.white.opacity(0.8) : Color(red: 0.85, green: 0.93, blue: 0.2)), at: CGPoint(x: ox + w / 2, y: oy - 11)) }
-        let floors: [Color] = [Color(red: 0.45, green: 0.31, blue: 0.19), Color(red: 0.34, green: 0.36, blue: 0.38), Color(red: 0.27, green: 0.24, blue: 0.33), Color(red: 0.5, green: 0.54, blue: 0.56), Color(red: 0.28, green: 0.19, blue: 0.13), Color(red: 0.4, green: 0.4, blue: 0.42)]
-        for rm in TMap.rooms where hereR(rm.r) {
-            ctx.fill(Path(R(rm.r)), with: .color(floors[rm.mat % floors.count].opacity(0.55)))
-        }
-        for pr in TMap.props where hereR(pr.r) {
-            ctx.fill(Path(roundedRect: R(pr.r), cornerRadius: 1.5), with: .color(.black.opacity(0.35)))
-        }
-        for d in TMap.doors where hereR(d) {
-            ctx.fill(Path(R(d)), with: .color(Color(red: 0.7, green: 0.5, blue: 0.25).opacity(0.9)))
-        }
-        for (k, wl) in TMap.walls.enumerated() where hereR(wl) {
-            let r = R(wl)
-            let rr = CGRect(x: r.minX, y: r.minY, width: max(2, r.width), height: max(2, r.height))
-            let c: Color
-            switch TMap.wallMats[k] {
-            case .brick: c = Color(red: 0.85, green: 0.5, blue: 0.42)
-            case .concrete: c = Color(red: 0.82, green: 0.86, blue: 0.95)
-            case .wood: c = Color(red: 0.8, green: 0.6, blue: 0.35)
-            case .glass: c = Color(red: 0.5, green: 0.85, blue: 1)
-            }
-            ctx.fill(Path(rr), with: .color(c.opacity(TMap.wallMats[k] == .glass ? 0.55 : 0.92)))
-        }
-        for rm in TMap.rooms where hereR(rm.r) && !fp {
-            ctx.draw(Text(rm.name.uppercased()).font(.system(size: 6, weight: .bold)).foregroundColor(.white.opacity(0.55)), at: CGPoint(x: R(rm.r).midX, y: R(rm.r).minY + 8))
+        var g = ctx
+        g.clip(to: circle)
+        var mg = g
+        mg.translateBy(x: cx, y: cy)
+        mg.rotate(by: .radians(Double(th)))
+        mg.scaleBy(x: s, y: s)
+        mg.translateBy(x: -focus.pos.x, y: -focus.pos.y)
+        mg.draw(Image(uiImage: TacRadar.image), in: CGRect(x: 0, y: 0, width: TMap.floorW, height: TMap.H))
+        // dynamic doors (closed ones as bars)
+        for (i, d) in TMap.doors.enumerated() where i < TMap.doorOpen.count && TMap.doorOpen[i] < 0.5 {
+            mg.fill(Path(d), with: .color(Color(red: 0.75, green: 0.55, blue: 0.28)))
         }
         let pulse = 0.5 + 0.5 * sin(Double(time) * 4)
-        for i in 0..<2 where hereR(TMap.site(i)) {
-            let r = R(TMap.site(i))
-            let hot = i == atkSite && !planted
-            ctx.fill(Path(roundedRect: r, cornerRadius: 3), with: .color(Color.yellow.opacity(hot ? 0.25 + 0.2 * pulse : 0.18)))
-            ctx.stroke(Path(roundedRect: r, cornerRadius: 3), with: .color(Color.yellow.opacity(0.85)), style: StrokeStyle(lineWidth: 1.2, dash: [3, 2]))
-            ctx.draw(Text(i == 0 ? "A" : "B").font(.system(size: 14, weight: .heavy)).foregroundColor(.yellow), at: CGPoint(x: r.midX, y: r.midY))
-        }
-        for i in TMap.stairs.indices {
-            let r = R(TMap.stairRect(i, floor: fl))
-            ctx.fill(Path(roundedRect: r, cornerRadius: 2), with: .color(.white.opacity(0.22)))
-            var st = Path()
-            var yy = r.minY + 3
-            while yy < r.maxY - 1 { st.move(to: CGPoint(x: r.minX + 2, y: yy)); st.addLine(to: CGPoint(x: r.maxX - 2, y: yy)); yy += 3 }
-            ctx.stroke(st, with: .color(.white.opacity(0.55)), lineWidth: 0.8)
-            ctx.draw(Text(fl == 0 ? "UP" : "DN").font(.system(size: 6, weight: .heavy)).foregroundColor(.white), at: CGPoint(x: r.midX, y: r.midY))
-        }
-        for pk in packs where !pk.taken && here(pk.pos) {
-            let c = P(pk.pos.x, pk.pos.y)
-            ctx.fill(Path(CGRect(x: c.x - 3, y: c.y - 1, width: 6, height: 2)), with: .color(.green))
-            ctx.fill(Path(CGRect(x: c.x - 1, y: c.y - 3, width: 2, height: 6)), with: .color(.green))
-        }
-        for sm in smokeClouds where here(sm.pos) {
-            let c = P(sm.pos.x, sm.pos.y)
-            ctx.fill(Path(ellipseIn: CGRect(x: c.x - sm.r * s, y: c.y - sm.r * s, width: sm.r * 2 * s, height: sm.r * 2 * s)), with: .color(.white.opacity(0.35)))
-        }
-        if me.alive && here(me.pos) {
-            let c = P(me.pos.x, me.pos.y)
-            var cone = Path()
-            cone.move(to: c)
-            cone.addArc(center: c, radius: fp ? 40 : 70, startAngle: .radians(Double(me.aim) - 0.55), endAngle: .radians(Double(me.aim) + 0.55), clockwise: false)
-            cone.closeSubpath()
-            ctx.fill(cone, with: .color(.green.opacity(0.18)))
-        }
-        for p in players where p.alive && here(p.pos) && (p.team == me.team || p.spotted) {
-            let c = P(p.pos.x, p.pos.y)
-            let col: Color = p.isPlayer ? Color(red: 0.3, green: 0.95, blue: 0.45) : (p.team == me.team ? Color(red: 0.3, green: 0.62, blue: 1) : Color(red: 1, green: 0.28, blue: 0.3))
-            let a = Double(p.aim)
-            var tri = Path()
-            let sz: CGFloat = p.isPlayer ? 6.5 : 5
-            tri.move(to: CGPoint(x: c.x + CGFloat(cos(a)) * sz * 1.4, y: c.y + CGFloat(sin(a)) * sz * 1.4))
-            tri.addLine(to: CGPoint(x: c.x + CGFloat(cos(a + 2.5)) * sz, y: c.y + CGFloat(sin(a + 2.5)) * sz))
-            tri.addLine(to: CGPoint(x: c.x + CGFloat(cos(a - 2.5)) * sz, y: c.y + CGFloat(sin(a - 2.5)) * sz))
-            tri.closeSubpath()
-            ctx.fill(tri, with: .color(col))
-            ctx.stroke(tri, with: .color(.black.opacity(0.7)), lineWidth: 0.8)
-            if p.team != me.team {
-                ctx.stroke(Path(ellipseIn: CGRect(x: c.x - 8, y: c.y - 8, width: 16, height: 16)), with: .color(col.opacity(0.4 + 0.4 * pulse)), lineWidth: 1)
+        if gameMode == 5 {
+            for (i, z) in cpZones.enumerated() {
+                let c = P(z.midX, z.midY)
+                let pr = cpProg[i]
+                let col: Color = pr == 0 ? .gray : (pr > 0 ? Color(red: 0.3, green: 0.62, blue: 1) : Color(red: 0.96, green: 0.62, blue: 0.16))
+                g.stroke(Path(ellipseIn: CGRect(x: c.x - 11, y: c.y - 11, width: 22, height: 22)), with: .color(col.opacity(0.9)), lineWidth: 2)
+                g.draw(Text(["A", "B", "C"][i]).font(.system(size: 10, weight: .heavy)).foregroundColor(col), at: c)
             }
         }
-        for p in players where !p.alive && here(p.pos) && (p.team == me.team || p.seenEver) {
-            ctx.draw(Text("\u{2715}").font(.system(size: 8, weight: .heavy)).foregroundColor(.white.opacity(0.6)), at: P(p.pos.x, p.pos.y))
+        for t in tags {
+            let c = clamp(P(t.pos.x, t.pos.y)).0
+            let col: Color = t.team == me.team ? Color(red: 0.3, green: 0.62, blue: 1) : Color.yellow
+            g.fill(Path(CGRect(x: c.x - 3, y: c.y - 3, width: 6, height: 6)), with: .color(col))
         }
-        for pg in pings where here(pg.pos) {
-            let c = P(pg.pos.x, pg.pos.y)
-            ctx.stroke(Path(ellipseIn: CGRect(x: c.x - 7, y: c.y - 7, width: 14, height: 14)), with: .color(.orange.opacity(Double(min(1, pg.life)))), lineWidth: 1.5)
+        for pk in packs where !pk.taken {
+            let c = P(pk.pos.x, pk.pos.y)
+            g.fill(Path(CGRect(x: c.x - 3, y: c.y - 1, width: 6, height: 2)), with: .color(.green))
+            g.fill(Path(CGRect(x: c.x - 1, y: c.y - 3, width: 2, height: 6)), with: .color(.green))
         }
-        if planted && here(bombPos) {
-            let c = P(bombPos.x, bombPos.y)
+        for sm in smokeClouds {
+            let c = P(sm.pos.x, sm.pos.y)
+            g.fill(Path(ellipseIn: CGRect(x: c.x - sm.r * s, y: c.y - sm.r * s, width: sm.r * 2 * s, height: sm.r * 2 * s)), with: .color(.white.opacity(0.4)))
+        }
+        // view cone
+        var cone = Path()
+        cone.move(to: CGPoint(x: cx, y: cy))
+        cone.addArc(center: CGPoint(x: cx, y: cy), radius: R, startAngle: .radians(-Double.pi / 2 - 0.5), endAngle: .radians(-Double.pi / 2 + 0.5), clockwise: false)
+        cone.closeSubpath()
+        g.fill(cone, with: .linearGradient(Gradient(colors: [Color.green.opacity(0.32), Color.green.opacity(0)]), startPoint: CGPoint(x: cx, y: cy), endPoint: CGPoint(x: cx, y: cy - R)))
+        for p in players where p.alive && !p.isPlayer && (p.team == me.team || p.spotted) {
+            let (c, edge) = clamp(P(p.pos.x, p.pos.y))
+            let ally = p.team == me.team
+            let col: Color = ally ? Color(red: 0.3, green: 0.62, blue: 1) : Color(red: 1, green: 0.28, blue: 0.3)
+            if edge {
+                g.fill(Path(ellipseIn: CGRect(x: c.x - 3, y: c.y - 3, width: 6, height: 6)), with: .color(col))
+                continue
+            }
+            let a = Double(p.aim + th)
+            var tri = Path()
+            tri.move(to: CGPoint(x: c.x + CGFloat(cos(a)) * 7, y: c.y + CGFloat(sin(a)) * 7))
+            tri.addLine(to: CGPoint(x: c.x + CGFloat(cos(a + 2.5)) * 5, y: c.y + CGFloat(sin(a + 2.5)) * 5))
+            tri.addLine(to: CGPoint(x: c.x + CGFloat(cos(a - 2.5)) * 5, y: c.y + CGFloat(sin(a - 2.5)) * 5))
+            tri.closeSubpath()
+            g.fill(tri, with: .color(col))
+            g.stroke(tri, with: .color(.black.opacity(0.7)), lineWidth: 0.8)
+            if !ally { g.stroke(Path(ellipseIn: CGRect(x: c.x - 9, y: c.y - 9, width: 18, height: 18)), with: .color(col.opacity(0.3 + 0.4 * pulse)), lineWidth: 1) }
+        }
+        for pg in pings {
+            let c = clamp(P(pg.pos.x, pg.pos.y)).0
+            g.stroke(Path(ellipseIn: CGRect(x: c.x - 7, y: c.y - 7, width: 14, height: 14)), with: .color(.orange.opacity(Double(min(1, pg.life)))), lineWidth: 1.5)
+        }
+        if planted {
+            let c = clamp(P(bombPos.x, bombPos.y)).0
             let rr = 5 + 5 * CGFloat(pulse)
-            ctx.stroke(Path(ellipseIn: CGRect(x: c.x - rr, y: c.y - rr, width: rr * 2, height: rr * 2)), with: .color(.red.opacity(0.8)), lineWidth: 1.5)
-            ctx.fill(Path(ellipseIn: CGRect(x: c.x - 3.5, y: c.y - 3.5, width: 7, height: 7)), with: .color(.orange))
+            g.stroke(Path(ellipseIn: CGRect(x: c.x - rr, y: c.y - rr, width: rr * 2, height: rr * 2)), with: .color(.red.opacity(0.8)), lineWidth: 1.5)
+            g.fill(Path(ellipseIn: CGRect(x: c.x - 3.5, y: c.y - 3.5, width: 7, height: 7)), with: .color(.orange))
         }
+        // me, always centre, pointing up
+        var me3 = Path()
+        me3.move(to: CGPoint(x: cx, y: cy - 8))
+        me3.addLine(to: CGPoint(x: cx + 5.5, y: cy + 5))
+        me3.addLine(to: CGPoint(x: cx, y: cy + 2))
+        me3.addLine(to: CGPoint(x: cx - 5.5, y: cy + 5))
+        me3.closeSubpath()
+        g.fill(me3, with: .color(Color(red: 0.3, green: 0.95, blue: 0.45)))
+        g.stroke(me3, with: .color(.black.opacity(0.8)), lineWidth: 1)
+        // vignette + bezel
+        ctx.fill(circle, with: .radialGradient(Gradient(colors: [.clear, .black.opacity(0.5)]), center: CGPoint(x: cx, y: cy), startRadius: R * 0.62, endRadius: R))
+        ctx.stroke(circle, with: .color(.white.opacity(0.55)), lineWidth: 2.5)
+        ctx.stroke(Path(ellipseIn: CGRect(x: cx - R - 3, y: cy - R - 3, width: R * 2 + 6, height: R * 2 + 6)), with: .color(.black.opacity(0.6)), lineWidth: 2)
+        ctx.draw(Text("N").font(.system(size: 9, weight: .heavy)).foregroundColor(.red), at: CGPoint(x: cx + st * (R - 9), y: cy - ct * (R - 9)))
     }
+
+
 
     // MARK: HUD helpers
 
@@ -2163,7 +1684,6 @@ struct TacticalPlay: View {
     @EnvironmentObject var game: Game
     @Environment(\.dismiss) private var dismiss
     var diff: Int
-    var fpMode = false
     var modeId = 0
     @State private var engine = TacticalEngine()
     @State private var lStart: CGPoint? = nil
@@ -2171,10 +1691,9 @@ struct TacticalPlay: View {
     @State private var rStart: CGPoint? = nil
     @State private var rKnob: CGPoint = .zero
     @State private var collected = false
-    @State private var mode = 0
     @State private var autoOn = true
     @State private var bridge: TacScene? = nil
-    private var fp: Bool { mode == 1 }
+    private var fp: Bool { true }
     @State private var lastLook: CGFloat = 0
     @State private var lastLookY: CGFloat = 0
     @State private var lookOn = false
@@ -2199,31 +1718,80 @@ struct TacticalPlay: View {
             .ignoresSafeArea()
             controls
             hud
+            buyLayer
             if engine.paused && !engine.over { pauseView }
             if engine.over { overView }
         }
         .statusBarHidden(true)
         .onAppear {
             OrientationLock.set(landscape: true)
-            mode = fpMode ? 1 : 0
-            engine.fp = fpMode
+            engine.fp = true
             engine.view3D = true
             engine.autoAim = true
             autoOn = true
-            let st = game.s
-            let cast = st.npcs.filter { $0.id != "newsdesk" }
-            let owned = (st.ex.surv ?? SurvData()).guns
-            let gun = owned.contains("rifle") ? "rifle" : (owned.contains("smg") ? "smg" : "pistol")
-            engine.setup(cast: cast, persona: st.persona, gun: gun, diff: diff, mode: modeId)
+            Task.detached(priority: .utility) { _ = TacRadar.image }
+            let sxd = game.sx
+            engine.killFx = sxd.fx
+            engine.charm = sxd.charm
+            engine.theme = TacSeason.themes.firstIndex(of: sxd.map) ?? 0
+            engine.myFaction = sxd.faction
+            engine.foeFaction = Int.random(in: 0..<3)
+            let gc = TacSeason.cos(sxd.gloves).rgb
+            TwViewModel.gloveColor = UIColor(red: gc.0, green: gc.1, blue: gc.2, alpha: 1)
+            engine.setup(gun: "rifle", diff: diff, mode: modeId)
             let b = TacScene()
-            b.fpMode = fpMode
+            b.fpMode = true
             b.build(engine)
             bridge = b
             engine.project = { [weak b] p, h in b?.project(p, h) }
-            Task { @MainActor in
-                engine.sprites[st.persona.handle] = SurvivalSprites.render(emoji: st.persona.emoji, key: st.persona.handle, size: 64)
-                for p in engine.players where !p.isPlayer {
-                    engine.sprites[p.handle] = SurvivalSprites.render(emoji: p.emoji, key: p.handle, size: 64)
+        }
+    }
+
+    private func buyBtn(_ e: TacticalEngine, _ id: String, _ name: String) -> some View {
+        let c = e.price(id)
+        let own = e.me.gun == id || e.me.altGun == id
+        let ok = e.me.money >= c && !own
+        return Button { e.buyItem(e.me, id) } label: {
+            HStack {
+                Text(name).font(.jk(12, .heavy)).foregroundColor(.white)
+                Spacer(minLength: 4)
+                Text(own ? "OWNED" : "$\(c)").font(.jk(11, .bold)).foregroundColor(own ? .gray : (ok ? Color(red: 0.55, green: 0.95, blue: 0.4) : .red.opacity(0.8)))
+            }
+            .padding(.horizontal, 8).frame(width: 128, height: 32)
+            .background(Color.white.opacity(ok ? 0.14 : 0.05)).clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+    }
+
+    private func buyCol(_ e: TacticalEngine, _ title: String, _ items: [(String, String)]) -> some View {
+        VStack(spacing: 5) {
+            Text(title).font(.jk(11, .heavy)).foregroundColor(.white.opacity(0.6))
+            ForEach(items, id: \.0) { it in buyBtn(e, it.0, it.1) }
+        }
+    }
+
+    private var buyLayer: some View {
+        TimelineView(.periodic(from: .now, by: 0.15)) { _ in
+            let e = engine
+            ZStack {
+                if e.buyOpen && e.gameMode == 0 && e.buyT > 0 && e.me.alive {
+                    VStack(spacing: 8) {
+                        HStack {
+                            Text("BUY MENU").font(.jk(16, .heavy)).foregroundColor(.white)
+                            Spacer()
+                            Text("$\(e.me.money)").font(.system(size: 20, weight: .heavy, design: .rounded)).foregroundColor(Color(red: 0.55, green: 0.95, blue: 0.4))
+                            Button { e.buyOpen = false } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 22)).foregroundColor(.white.opacity(0.8)) }
+                        }
+                        HStack(alignment: .top, spacing: 10) {
+                            buyCol(e, "PISTOL", [("eagle", "EAGLE-50")])
+                            buyCol(e, "SMG", [("smg", "VX-9 SMG"), ("mp7", "MP-7"), ("p90", "P-90")])
+                            buyCol(e, "RIFLE", [("rifle", "AR-27"), ("ak", "AK-74X"), ("m4", "M4-CQ")])
+                            buyCol(e, "HEAVY", [("pump", "PUMP-12"), ("shotgun", "BREACHER"), ("awp", "AWP-X")])
+                            buyCol(e, "GEAR", [("kev", "KEVLAR"), ("vest", "VEST + HELMET"), ("spec", "SPECIAL ARMOR"), ("flashb", "FLASHBANG"), ("smokeb", "SMOKE"), ("fragb", "FRAG")])
+                        }
+                    }
+                    .padding(14)
+                    .background(Color.black.opacity(0.82)).clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.25), lineWidth: 1))
                 }
             }
         }
@@ -2292,7 +1860,7 @@ struct TacticalPlay: View {
                         Spacer()
                         HStack {
                             Spacer()
-                            fireButton.padding(.trailing, 150).padding(.bottom, 8)
+                            fireButton.padding(.trailing, 108).padding(.bottom, 18)
                         }
                     }
                 }
@@ -2323,55 +1891,12 @@ struct TacticalPlay: View {
         .allowsHitTesting(false)
     }
 
-    private func chip(_ p: TPlayer, ally: Bool) -> some View {
-        let show = ally || p.seenEver
-        return VStack(spacing: 2) {
-            ZStack {
-                if show, let img = engine.sprites[p.handle] {
-                    Image(uiImage: img).resizable().scaledToFill().frame(width: 28, height: 28).clipShape(RoundedRectangle(cornerRadius: 6))
-                } else {
-                    RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.1)).frame(width: 28, height: 28)
-                    Text(show ? p.emoji : "?").font(.jk(14, .heavy)).foregroundColor(.white.opacity(0.7))
-                }
-                if !p.alive { Color.black.opacity(0.6).frame(width: 28, height: 28).clipShape(RoundedRectangle(cornerRadius: 6)) }
-                if !p.alive { Image(systemName: "xmark").font(.system(size: 12, weight: .black)).foregroundColor(.red) }
-            }
-            Capsule().fill(Color.white.opacity(0.15)).frame(width: 28, height: 3)
-                .overlay(alignment: .leading) {
-                    Capsule().fill(ally ? Color(red: 0.25, green: 0.6, blue: 1) : Color(red: 1, green: 0.3, blue: 0.35))
-                        .frame(width: 28 * max(0, p.alive ? p.hp / 100 : 0), height: 3)
-                }
-        }
-    }
 
     @ViewBuilder private var hud: some View {
-        if fp { fpHud } else { tdHud }
+        fpHud
     }
 
-    private func roundBtn(_ icon: String, _ size: CGFloat, on: Bool = false, dim: Bool = false) -> some View {
-        Image(systemName: icon).font(.system(size: size * 0.42, weight: .bold))
-            .foregroundColor(on ? .black : .white.opacity(dim ? 0.35 : 0.95))
-            .frame(width: size, height: size)
-            .background(on ? Color.yellow : Color.black.opacity(0.45))
-            .clipShape(Circle())
-            .overlay(Circle().stroke(Color.white.opacity(0.55), lineWidth: 1.5))
-    }
 
-    private func teamBox(_ list: [TPlayer], _ col: Color) -> some View {
-        HStack(spacing: 2) {
-            ForEach(list, id: \.id) { p in
-                Image(systemName: p.alive ? "person.fill" : "xmark")
-                    .font(.system(size: 13, weight: .heavy))
-                    .foregroundColor(p.alive ? .white : .white.opacity(0.35))
-                    .frame(width: 26, height: 24)
-                    .background(p.alive ? col : col.opacity(0.25))
-                    .overlay(alignment: .bottom) {
-                        Rectangle().fill(Color.white.opacity(0.9)).frame(width: 26 * max(0, p.alive ? p.hp / 100 : 0), height: 2)
-                            .frame(width: 26, alignment: .leading)
-                    }
-            }
-        }
-    }
 
     private func gridIcon(_ p: TPlayer?, ally: Bool) -> some View {
         let navy = Color(red: 0.09, green: 0.13, blue: 0.27)
@@ -2418,8 +1943,8 @@ struct TacticalPlay: View {
 
     private func nadeBubble(_ icon: String, _ n: Int) -> some View {
         ZStack(alignment: .bottomTrailing) {
-            Image(systemName: icon).font(.system(size: 26, weight: .bold)).foregroundColor(.white.opacity(n == 0 ? 0.3 : 0.95))
-                .frame(width: 64, height: 64)
+            Image(systemName: icon).font(.system(size: 20, weight: .bold)).foregroundColor(.white.opacity(n == 0 ? 0.3 : 0.95))
+                .frame(width: 48, height: 48)
                 .background(Color.black.opacity(0.4))
                 .clipShape(Circle())
                 .overlay(Circle().stroke(Color.white.opacity(0.5), lineWidth: 1.5))
@@ -2453,15 +1978,18 @@ struct TacticalPlay: View {
                     VStack(alignment: .leading, spacing: 3) {
                         statBar("plus", e.me.hp, e.me.hp < 35 ? .red : .white)
                         statBar("shield.fill", e.me.armor, .white)
+                        if e.gameMode == 0 {
+                            Text("$\(e.me.money)").font(.system(size: 18, weight: .heavy, design: .rounded)).foregroundColor(Color(red: 0.55, green: 0.95, blue: 0.4)).padding(.leading, 24)
+                        }
                     }
                     .padding(.leading, 14).padding(.top, 2)
                     .shadow(color: .black.opacity(0.6), radius: 3)
                     VStack(spacing: 8) {
                         Button { e.paused = true } label: { vbtn("gearshape.fill", 34) }
                     }
-                    .position(x: 12 + 165 + 34, y: 58 + 22)
+                    .position(x: 180, y: 84)
                     Text(TMap.roomName(e.me.pos).uppercased()).font(.jk(11, .heavy)).foregroundColor(Color(red: 1, green: 0.93, blue: 0.7))
-                        .shadow(radius: 3).position(x: 14 + 40, y: 58 + 99 + 18)
+                        .shadow(radius: 3).position(x: 84, y: 128 + 64 + 14)
 
                     // top-center: scoreboard
                     VStack(spacing: 4) {
@@ -2474,13 +2002,22 @@ struct TacticalPlay: View {
                                     .frame(width: 84, height: 30).background(navy.opacity(0.92))
                                 HStack(spacing: 2) {
                                     Text("\(e.scores[0])").foregroundColor(blue).frame(width: 41, height: 30).background(navy.opacity(0.92))
-                                    Text("\(e.scores[1])").foregroundColor(orange).frame(width: 41, height: 30).background(navy.opacity(0.92))
+                                    Text("\(e.rivalScore)").foregroundColor(orange).frame(width: 41, height: 30).background(navy.opacity(0.92))
                                 }
                                 .font(.system(size: 24, weight: .heavy, design: .rounded))
                             }
                             teamGrid(foes, ally: false)
                         }
                         Text(e.objectiveText).font(.jk(11, .semibold)).foregroundColor(.white.opacity(0.9)).shadow(radius: 3)
+                        if e.gameMode == 5 {
+                            HStack(spacing: 4) {
+                                ForEach(0..<3, id: \.self) { i in
+                                    let pr = e.cpProg[i]
+                                    Text(["A", "B", "C"][i]).font(.jk(12, .heavy)).foregroundColor(.white).frame(width: 28, height: 22)
+                                        .background(pr == 0 ? Color.gray.opacity(0.55) : (pr > 0 ? blue.opacity(0.35 + 0.65 * Double(pr)) : orange.opacity(0.35 + 0.65 * Double(-pr))))
+                                }
+                            }
+                        }
                         if e.bannerT > 0 {
                             Text(e.banner).font(.jk(24, .heavy)).foregroundColor(.white).shadow(radius: 6).multilineTextAlignment(.center)
                                 .padding(.top, 20).opacity(Double(min(1, e.bannerT)))
@@ -2499,8 +2036,11 @@ struct TacticalPlay: View {
 
                     // top-right: weapon panel + feed bar
                     VStack(alignment: .trailing, spacing: 0) {
-                        Image(uiImage: GunSprites.icon(TWeapons.rig(e.me.gun))).renderingMode(.template).resizable().scaledToFit()
-                            .foregroundColor(.white).frame(width: 130, height: 46).shadow(color: .black.opacity(0.5), radius: 2)
+                        HStack(spacing: 6) {
+                            Text(TacSeason.cos(e.charm).emoji).font(.system(size: 18))
+                            Image(uiImage: GunSprites.icon(TWeapons.rig(e.me.gun))).renderingMode(.template).resizable().scaledToFit()
+                                .foregroundColor(.white).frame(width: 120, height: 38).shadow(color: .black.opacity(0.5), radius: 2)
+                        }
                         HStack {
                             Button { e.wantSwap = true } label: {
                                 Image(systemName: "arrow.2.squarepath").font(.system(size: 15, weight: .bold)).foregroundColor(.white).frame(width: 34, height: 24)
@@ -2514,23 +2054,23 @@ struct TacticalPlay: View {
                         .frame(width: 190).padding(.top, 2)
                         Rectangle().fill(Color.white.opacity(0.25)).frame(width: 200, height: 1).padding(.vertical, 4)
                         HStack(alignment: .lastTextBaseline, spacing: 4) {
-                            Text(e.me.reloadT > 0 ? "RELOAD" : "\(e.me.mag)").font(.system(size: 26, weight: .medium, design: .rounded)).foregroundColor(e.me.mag == 0 ? .red : .white)
+                            Text(e.me.reloadT > 0 ? "RELOAD" : "\(e.me.mag)").font(.system(size: 22, weight: .medium, design: .rounded)).foregroundColor(e.me.mag == 0 ? .red : .white)
                             Text("/ \(TWeapons.isPistol(e.me.gun) ? "\u{221E}" : "\(e.me.spare * g.mag)")").font(.jk(13, .bold)).foregroundColor(.white.opacity(0.8))
                             Text("////").font(.system(size: 14, weight: .black).italic()).foregroundColor(.white)
                         }
                         VStack(alignment: .trailing, spacing: 0) {
-                            ForEach(Array(e.feed.suffix(2).enumerated()), id: \.offset) { _, f in
+                            ForEach(Array(e.feed.suffix(1).enumerated()), id: \.offset) { _, f in
                                 HStack(spacing: 10) {
-                                    Text(f.k).font(.jk(15, .medium)).foregroundColor(f.kTeam == e.me.team ? blue : orange)
+                                    Text(f.k.split(separator: " ").first.map(String.init) ?? f.k).font(.jk(13, .medium)).foregroundColor(f.kTeam == e.me.team ? blue : orange)
                                     Image(uiImage: GunSprites.icon(TWeapons.rig(f.gun))).renderingMode(.template).resizable().scaledToFit()
                                         .foregroundColor(.white).frame(width: 40, height: 16)
                                     if f.head { Text("\u{2620}\u{FE0E}").font(.system(size: 14, weight: .black)).foregroundColor(.white) }
-                                    Text(f.v).font(.jk(15, .medium)).foregroundColor(f.kTeam == e.me.team ? orange : blue)
+                                    Text(f.v.split(separator: " ").first.map(String.init) ?? f.v).font(.jk(13, .medium)).foregroundColor(f.kTeam == e.me.team ? orange : blue)
                                 }
-                                .padding(.horizontal, 10).frame(height: 28)
+                                .padding(.horizontal, 10).frame(height: 24)
                             }
                         }
-                        .frame(minWidth: 230, alignment: .trailing)
+                        .frame(minWidth: 200, alignment: .trailing)
                         .background(Color.black.opacity(e.feed.isEmpty ? 0 : 0.55))
                         .padding(.top, 4)
                     }
@@ -2538,22 +2078,21 @@ struct TacticalPlay: View {
                     .frame(width: W, alignment: .trailing)
 
                     if e.me.alive {
-                        // right-middle: grenade bubbles
+                        // right cluster: grenades + actions (clear of the feed and the fire button)
                         Button { e.wantSmoke = true } label: { nadeBubble("smoke.fill", e.me.smokes) }
-                            .position(x: W * 0.86, y: H * 0.50)
+                            .position(x: W - 36, y: 205)
                         Button { e.wantNade = true } label: { nadeBubble("circle.hexagongrid.fill", e.me.nades) }
-                            .position(x: W * 0.78, y: H * 0.62)
+                            .position(x: W - 96, y: 232)
                         Button { e.wantFlash = true } label: { nadeBubble("bolt.fill", e.me.flashes) }
-                            .position(x: W * 0.86, y: H * 0.74)
-                        // bottom-right: scope + reload + crouch + jump (fire is in controls)
-                        Button { e.scoped.toggle() } label: { vbtn("scope", 52, on: e.scoped) }
-                            .position(x: W - 186, y: H - 122)
-                        Button { e.wantReload = true } label: { vbtn("arrow.triangle.2.circlepath", 58) }
-                            .position(x: W - 290, y: H - 50)
-                        Button { e.toggleCover() } label: { vbtn("figure.stand", 56, on: e.me.crouch) }
-                            .position(x: W - 100, y: H - 128)
-                        Button { e.jumpT = max(e.jumpT, 0.55) } label: { vbtn("figure.jumprope", 56) }
-                            .position(x: W - 44, y: H - 200)
+                            .position(x: W - 36, y: 257)
+                        Button { e.scoped.toggle() } label: { vbtn("scope", 44, on: e.scoped) }
+                            .position(x: W - 96, y: 288)
+                        Button { e.toggleCover() } label: { vbtn("figure.stand", 44, on: e.me.crouch) }
+                            .position(x: W - 36, y: 309)
+                        Button { e.jumpT = max(e.jumpT, 0.55) } label: { vbtn("figure.jumprope", 44) }
+                            .position(x: W - 36, y: 361)
+                        Button { e.wantReload = true } label: { vbtn("arrow.triangle.2.circlepath", 48) }
+                            .position(x: W - 250, y: 352)
                     } else {
                         Button { e.fast.toggle() } label: {
                             Text(e.fast ? "Normal speed" : "Skip ahead").font(.jk(13, .bold)).foregroundColor(.white)
@@ -2562,6 +2101,24 @@ struct TacticalPlay: View {
                         .position(x: W - 110, y: H - 40)
                     }
 
+                    if e.gameMode == 0 && e.buyT > 0 && e.me.alive {
+                        Button { e.buyOpen.toggle() } label: {
+                            Text("BUY  \(Int(e.buyT))").font(.jk(13, .heavy)).foregroundColor(.black).padding(.horizontal, 14).frame(height: 36)
+                                .background(Color(red: 0.55, green: 0.95, blue: 0.4)).clipShape(Capsule())
+                        }
+                        .position(x: 70, y: H * 0.55)
+                    }
+                    if e.fxT > 0 && e.fxId != "fx_none" {
+                        ZStack {
+                            ForEach(0..<8, id: \.self) { i in
+                                let a = Double(i) * 0.785
+                                let rr = Double(150 * (1 - e.fxT) + 24)
+                                Text(TacSeason.cos(e.fxId).emoji).font(.system(size: 30)).offset(x: CGFloat(cos(a) * rr), y: CGFloat(sin(a) * rr)).opacity(Double(e.fxT))
+                            }
+                        }
+                        .position(x: W / 2, y: H / 2)
+                        .allowsHitTesting(false)
+                    }
                     // bottom-center: contextual
                     HStack(spacing: 10) {
                         if let di = e.nearestDoor() {
@@ -2583,123 +2140,6 @@ struct TacticalPlay: View {
         }
     }
 
-    private var tdHud: some View {
-        TimelineView(.periodic(from: .now, by: 0.1)) { _ in
-            let e = engine
-            let allies = e.players.filter { $0.team == e.me.team }
-            let foes = e.players.filter { $0.team != e.me.team }
-            let t = Int(max(0, e.timer))
-            let matchPoint = e.scores.contains(e.target - 1)
-            VStack(spacing: 0) {
-                HStack(alignment: .top, spacing: 0) {
-                    Spacer(minLength: 0)
-                    HStack(spacing: 3) { ForEach(allies, id: \.id) { chip($0, ally: true) } }
-                    Spacer().frame(width: 8)
-                    VStack(spacing: 2) {
-                        HStack(spacing: 6) {
-                            Text("\(e.scores[0])").font(.jk(16, .heavy)).foregroundColor(.white)
-                                .frame(width: 26, height: 26).background(Color(red: 0.25, green: 0.6, blue: 1)).clipShape(RoundedRectangle(cornerRadius: 5))
-                            Text(String(format: "%d:%02d", t / 60, t % 60)).font(.jk(18, .heavy)).foregroundColor(e.planted ? .red : .white)
-                            Text("\(e.scores[1])").font(.jk(16, .heavy)).foregroundColor(.white)
-                                .frame(width: 26, height: 26).background(Color(red: 1, green: 0.25, blue: 0.4)).clipShape(RoundedRectangle(cornerRadius: 5))
-                        }
-                        Text(matchPoint ? "Match Point" : "Round \(e.round)").font(.jk(11, .semibold)).foregroundColor(.white.opacity(0.85))
-                    }
-                    Spacer().frame(width: 8)
-                    HStack(spacing: 3) { ForEach(foes, id: \.id) { chip($0, ally: false) } }
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 8).padding(.top, 8)
-                Text(e.objectiveText).font(.jk(12, .semibold)).foregroundColor(.white.opacity(0.85)).padding(.top, 6)
-                HStack {
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 2) {
-                        ForEach(Array(e.feed.enumerated()), id: \.offset) { _, f in
-                            Text(f.text).font(.jk(10, .bold)).foregroundColor(f.mine ? .yellow : .white.opacity(0.8))
-                                .padding(.horizontal, 6).padding(.vertical, 2).background(Color.black.opacity(0.5)).clipShape(RoundedRectangle(cornerRadius: 4))
-                        }
-                    }
-                }
-                .padding(.horizontal, 10).padding(.top, 4)
-                if e.bannerT > 0 {
-                    Text(e.banner).font(.jk(26, .heavy)).foregroundColor(.white).shadow(radius: 6).multilineTextAlignment(.center)
-                        .padding(.top, 28).padding(.horizontal, 20).opacity(Double(min(1, e.bannerT)))
-                }
-                Spacer()
-                if e.plantProg > 0 || e.defuseProg > 0 {
-                    let pr = e.plantProg > 0 ? e.plantProg / 3 : e.defuseProg / 4
-                    VStack(spacing: 4) {
-                        Text(e.plantProg > 0 ? "PLANTING" : "DEFUSING").font(.jk(11, .heavy)).foregroundColor(.white)
-                        Capsule().fill(Color.white.opacity(0.2)).frame(width: 160, height: 8)
-                            .overlay(alignment: .leading) { Capsule().fill(Color.yellow).frame(width: 160 * min(1, pr), height: 8) }
-                    }
-                    .padding(.bottom, 6)
-                }
-                HStack(spacing: 10) {
-                    if !e.me.alive && e.phase < 3 {
-                        Button { e.fast.toggle() } label: {
-                            Text(e.fast ? "Normal speed" : "Skip ahead").font(.jk(13, .bold)).foregroundColor(.white)
-                                .padding(.horizontal, 14).frame(height: 38).background(Color.black.opacity(0.55)).clipShape(Capsule())
-                        }
-                    } else {
-                        Button { e.wantNade = true } label: {
-                            Text("Nade \(e.me.nades)").font(.jk(12, .bold)).foregroundColor(e.me.nades > 0 ? .white : .white.opacity(0.4))
-                                .padding(.horizontal, 12).frame(height: 38).background(Color.black.opacity(0.55)).clipShape(Capsule())
-                        }
-                        Button { e.wantSmoke = true } label: {
-                            Text("Smoke \(e.me.smokes)").font(.jk(12, .bold)).foregroundColor(e.me.smokes > 0 ? .white : .white.opacity(0.4))
-                                .padding(.horizontal, 12).frame(height: 38).background(Color.black.opacity(0.55)).clipShape(Capsule())
-                        }
-                        Text(e.me.reloadT > 0 ? "RELOADING" : "\(e.me.mag) / \(TWeapons.isPistol(e.me.gun) ? "∞" : "\(e.me.spare * TGuns.get(e.me.gun).mag)")")
-                            .font(.jk(17, .heavy)).foregroundColor(e.me.mag == 0 ? .red : .white)
-                        Button { e.wantReload = true } label: {
-                            Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 14, weight: .bold)).foregroundColor(.white)
-                                .frame(width: 38, height: 38).background(Color.black.opacity(0.55)).clipShape(Circle())
-                        }
-                        Button { e.toggleCover() } label: {
-                            Text(e.me.crouch ? "STAND" : "COVER").font(.jk(12, .heavy)).foregroundColor(e.me.crouch ? .black : .white)
-                                .padding(.horizontal, 11).frame(height: 38).background(e.me.crouch ? Color.yellow : Color.black.opacity(0.55)).clipShape(Capsule())
-                        }
-                        if let di = e.nearestDoor() {
-                            Button { e.toggleDoor() } label: {
-                                Text(TMap.doorWant[di] || TMap.doorOpen[di] > 0.5 ? "CLOSE DOOR" : "OPEN DOOR").font(.jk(12, .heavy)).foregroundColor(.black)
-                                    .padding(.horizontal, 12).frame(height: 40).background(Color.yellow).clipShape(Capsule())
-                            }
-                        }
-                        if e.meInSite || e.meNearBomb {
-                            Text(e.meInSite ? "HOLD PLANT" : "HOLD DEFUSE").font(.jk(12, .heavy)).foregroundColor(.black)
-                                .padding(.horizontal, 14).frame(height: 44).background(Color.yellow).clipShape(Capsule())
-                                .gesture(DragGesture(minimumDistance: 0).onChanged { _ in e.actHeld = true }.onEnded { _ in e.actHeld = false })
-                        }
-                    }
-                    Button { e.autoAim.toggle(); autoOn = e.autoAim } label: {
-                        Text(autoOn ? "AUTO" : "MAN").font(.jk(12, .heavy)).foregroundColor(autoOn ? .black : .white)
-                            .padding(.horizontal, 12).frame(height: 38).background(autoOn ? Color(red: 0.85, green: 0.93, blue: 0.2) : Color.black.opacity(0.55)).clipShape(Capsule())
-                    }
-                    Button { camP = (camP + 1) % 4; bridge?.preset = camP } label: {
-                        Text(["CLOSE", "TACT", "TOP", "WIDE"][camP]).font(.jk(12, .heavy)).foregroundColor(.white)
-                            .padding(.horizontal, 10).frame(height: 38).background(Color.black.opacity(0.55)).clipShape(Capsule())
-                    }
-                    Button {
-                        let b = bridge
-                        let y = ((b?.yaw ?? 0) / (CGFloat.pi / 2)).rounded() + 1
-                        b?.yaw = y * CGFloat.pi / 2
-                        baseYaw = b?.yaw ?? 0
-                    } label: {
-                        Text("TURN").font(.jk(12, .heavy)).foregroundColor(.white)
-                            .padding(.horizontal, 10).frame(height: 38).background(Color.black.opacity(0.55)).clipShape(Capsule())
-                    }
-                    Button { e.paused = true } label: {
-                        Image(systemName: "pause.fill").font(.system(size: 13, weight: .bold)).foregroundColor(.white)
-                            .frame(width: 38, height: 38).background(Color.black.opacity(0.55)).clipShape(Circle())
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: fpMode ? .leading : .center)
-                .padding(.leading, fpMode ? 200 : 0)
-                .padding(.bottom, 14)
-            }
-        }
-    }
 
     private var pauseView: some View {
         ZStack {
@@ -2723,8 +2163,8 @@ struct TacticalPlay: View {
             Color.black.opacity(0.82).ignoresSafeArea()
             VStack(spacing: 14) {
                 Text(e.won ? "VICTORY" : "DEFEAT").font(.jk(40, .heavy)).foregroundColor(e.won ? Color(red: 0.4, green: 0.95, blue: 0.5) : .red)
-                Text("\(e.scores[0])  :  \(e.scores[1])").font(.jk(28, .heavy))
-                Text("\(e.kills) kills   \(gems) gems").font(.jk(17, .semibold))
+                Text("\(e.scores[0])  :  \(e.rivalScore)").font(.jk(28, .heavy))
+                Text("\(e.kills) kills   \(gems) gems   +\(40 + e.kills * 10 + (e.won ? 60 : 0)) season XP").font(.jk(17, .semibold))
                 Button {
                     guard !collected else { return }
                     collected = true
@@ -2744,10 +2184,11 @@ extension Game {
         var d = st.ex.tac ?? TacData()
         if won { d.wins += 1; d.rating += 25 } else { d.losses += 1; d.rating = max(0, d.rating - 18) }
         d.kills += kills
+        var x = d.sx ?? TacSeasonData()
+        x.xp += 40 + kills * 10 + (won ? 60 : 0)
+        d.sx = x
         st.ex.tac = d
         st.ex.gems += gems
-        gainXP(&st, won ? 40 : 15)
         s = st
-        showToast("+\(gems) gems")
     }
 }
