@@ -448,73 +448,100 @@ struct CSKillcam: View {
         }
     }
 
+    static func killerRank(_ h: String) -> Int {
+        var acc = 0
+        for u in h.unicodeScalars { acc = (acc * 31 + Int(u.value)) % 997 }
+        return min(TacRank.ranks.count - 1, acc % 14 + 2)
+    }
+
+    private func header(_ W: CGFloat, _ H: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                SF("skull.fill", "scope").font(.system(size: 20)).foregroundColor(.white)
+                Text("KILLCAM").font(.jk(22, .heavy)).foregroundColor(.white)
+                Spacer()
+            }
+            .padding(.horizontal, 14).frame(height: 36).shadow(color: .black.opacity(0.7), radius: 3)
+            Rectangle().fill(Color.white.opacity(0.7)).frame(height: 2)
+            Spacer()
+        }
+        .frame(width: W, height: H, alignment: .top)
+    }
+
+    private var statusText: String {
+        if e.replayOn { return e.replayDone ? "REPLAY ENDED" : "WATCHING REPLAY" }
+        return "RESPAWN IN: \(max(1, Int(ceil(e.me.respawn))))s"
+    }
+
+    private func killedBy(_ k: TPlayer?, _ kri: Int) -> some View {
+        let nm: String = k?.name ?? "The Storm"
+        let tro: Int = k?.trophies ?? 0
+        let hd: String = k?.handle ?? ""
+        return VStack(spacing: 2) {
+            Text("KILLED BY").font(.jk(15, .semibold)).foregroundColor(.white).shadow(color: .black.opacity(0.8), radius: 3)
+            HStack(spacing: 0) {
+                VStack(spacing: 6) {
+                    HStack(spacing: 5) {
+                        Text(nm).font(.jk(15, .semibold)).foregroundColor(.white).lineLimit(1).minimumScaleFactor(0.6)
+                        LeagueBadge(rating: tro, size: 16)
+                    }
+                    SF("skull.fill", "scope").font(.system(size: 22)).foregroundColor(.white.opacity(0.85))
+                }
+                .frame(width: 150, height: 58).background(Color(red: 0.14, green: 0.12, blue: 0.1))
+                ZStack {
+                    LinearGradient(colors: [Color(red: 0.95, green: 0.55, blue: 0.1), Color(red: 0.6, green: 0.25, blue: 0.1)], startPoint: .top, endPoint: .bottom)
+                    if k != nil { PortraitAvatar(key: hd, size: 54, look: TacAvatar.look(for: hd)) }
+                }
+                .frame(width: 140, height: 58).clipped()
+                VStack(spacing: 0) {
+                    TacRankTile(idx: kri, size: 30, progress: nil, showName: false)
+                    Text("\(kri + 1)").font(.jk(16, .heavy)).foregroundColor(.white)
+                }
+                .frame(width: 70, height: 58)
+            }
+        }
+    }
+
+    private func killedWith(_ kg: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Killed with [\(TWeapons.w(kg).name)]").font(.jk(11, .semibold)).foregroundColor(.white.opacity(0.85))
+            Image(uiImage: GunSprites.icon(TWeapons.rig(kg))).renderingMode(.template).resizable().scaledToFit()
+                .foregroundColor(.white.opacity(0.8)).frame(width: 90, height: 34)
+        }
+        .shadow(color: .black.opacity(0.7), radius: 2)
+    }
+
+    private func buttons(_ W: CGFloat, _ H: CGFloat) -> some View {
+        ZStack {
+            CSButton(title: "CHANGE LOADOUT", w: 150, h: 30, size: 11) { changeLoadout() }.position(x: W - 100, y: 70)
+            if e.replayOn {
+                CSButton(title: "REPLAY", w: 130, h: 40, size: 15) { e.replayAgain() }.position(x: W - 250, y: H - 40)
+                CSButton(title: "RESPAWN", col: CS.orange, dark: CS.orangeDark, w: 150, h: 40, size: 16) { e.respawnNow() }.position(x: W - 100, y: H - 40)
+            }
+        }
+        .frame(width: W, height: H)
+    }
+
     var body: some View {
-        let k = e.players.first { $0.id == e.lastKiller }
-        let kg = k?.gun ?? "pistol"
-        let kri = k.map { min(TacRank.ranks.count - 1, $0.handle.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) % 997 } % 14 + 2) } ?? 0
+        let k: TPlayer? = e.players.first { $0.id == e.lastKiller }
+        let kg: String = k?.gun ?? "pistol"
+        let kri: Int = k == nil ? 0 : CSKillcam.killerRank(k!.handle)
         return GeometryReader { geo in
             let W = geo.size.width, H = geo.size.height
             ZStack {
-                // frame brackets
                 Bracket(tl: true, tr: true, bl: true, br: true).stroke(Color.white.opacity(0.85), lineWidth: 2)
                     .frame(width: W - 40, height: H - 90).position(x: W / 2, y: H / 2 + 16)
-                // header strip
-                VStack(spacing: 0) {
-                    HStack(spacing: 8) {
-                        SF("skull.fill", "scope").font(.system(size: 20)).foregroundColor(.white)
-                        Text("KILLCAM").font(.jk(22, .heavy)).foregroundColor(.white)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 14).frame(height: 36).shadow(color: .black.opacity(0.7), radius: 3)
-                    Rectangle().fill(Color.white.opacity(0.7)).frame(height: 2)
-                    Spacer()
-                }
-                .frame(width: W, height: H, alignment: .top)
+                header(W, H)
                 HStack(spacing: 5) {
                     Circle().fill(Color.red).frame(width: 9, height: 9)
                     Text("REPLAY").font(.jk(14, .heavy)).foregroundColor(.red)
                 }
                 .position(x: 70, y: 66)
-                Text(e.replayOn ? (e.replayDone ? "REPLAY ENDED" : "WATCHING REPLAY") : "RESPAWN IN: \(max(1, Int(ceil(e.me.respawn))))s").font(.jk(16, .heavy)).foregroundColor(.white)
+                Text(statusText).font(.jk(16, .heavy)).foregroundColor(.white)
                     .shadow(color: .black.opacity(0.8), radius: 3).position(x: W / 2, y: 62)
-                // killed by
-                VStack(spacing: 2) {
-                    Text("KILLED BY").font(.jk(15, .semibold)).foregroundColor(.white).shadow(color: .black.opacity(0.8), radius: 3)
-                    HStack(spacing: 0) {
-                        VStack(spacing: 6) {
-                            HStack(spacing: 5) {
-                                Text(k?.name ?? "The Storm").font(.jk(15, .semibold)).foregroundColor(.white).lineLimit(1).minimumScaleFactor(0.6)
-                                if let k = k { LeagueBadge(rating: k.trophies, size: 16) }
-                            }
-                            SF("skull.fill", "scope").font(.system(size: 22)).foregroundColor(.white.opacity(0.85))
-                        }
-                        .frame(width: 150, height: 58).background(Color(red: 0.14, green: 0.12, blue: 0.1))
-                        ZStack {
-                            LinearGradient(colors: [Color(red: 0.95, green: 0.55, blue: 0.1), Color(red: 0.6, green: 0.25, blue: 0.1)], startPoint: .top, endPoint: .bottom)
-                            if let k = k { PortraitAvatar(key: k.handle, size: 54, look: TacAvatar.look(for: k.handle)) }
-                        }
-                        .frame(width: 140, height: 58).clipped()
-                        VStack(spacing: 0) {
-                            TacRankTile(idx: kri, size: 30, progress: nil, showName: false)
-                            Text("\(kri + 1)").font(.jk(16, .heavy)).foregroundColor(.white)
-                        }
-                        .frame(width: 70, height: 58)
-                    }
-                }
-                .position(x: W / 2, y: H - 62)
-                // killed with
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Killed with [\(TWeapons.w(kg).name)]").font(.jk(11, .semibold)).foregroundColor(.white.opacity(0.85))
-                    Image(uiImage: GunSprites.icon(TWeapons.rig(kg))).renderingMode(.template).resizable().scaledToFit()
-                        .foregroundColor(.white.opacity(0.8)).frame(width: 90, height: 34)
-                }
-                .shadow(color: .black.opacity(0.7), radius: 2)
-                .position(x: 90, y: H - 46)
-                CSButton(title: "CHANGE LOADOUT", w: 150, h: 30, size: 11) { changeLoadout() }.position(x: W - 100, y: 70)
-                if e.replayOn {
-                    CSButton(title: "REPLAY", w: 130, h: 40, size: 15) { e.replayAgain() }.position(x: W - 250, y: H - 40)
-                    CSButton(title: "RESPAWN", col: CS.orange, dark: CS.orangeDark, w: 150, h: 40, size: 16) { e.respawnNow() }.position(x: W - 100, y: H - 40)
-                }
+                killedBy(k, kri).position(x: W / 2, y: H - 62)
+                killedWith(kg).position(x: 90, y: H - 46)
+                buttons(W, H)
             }
         }
     }
