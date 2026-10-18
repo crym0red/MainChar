@@ -46,6 +46,12 @@ final class TacScene {
     var flashes: [SCNNode] = []
     var headKey: [String] = []
     var shirts: [SCNMaterial] = []
+    var faceMats: [SCNMaterial] = []
+    var preset = 1
+    var lookOn = false
+    var yaw: CGFloat = 0
+    var pitch: CGFloat = 1.0
+    var dist: CGFloat = 430
     var legLs: [SCNNode] = []
     var legRs: [SCNNode] = []
     var gunVars: [[SCNNode]] = []
@@ -462,17 +468,10 @@ final class TacScene {
             gunShown.append(0)
             walkPh.append(0)
             lastPos.append(.zero)
-            let head = SCNNode(geometry: SCNPlane(width: 28, height: 28))
-            head.position = SCNVector3(0, 66, 0)
-            head.castsShadow = false
-            let bbc = SCNBillboardConstraint()
-            head.constraints = [bbc]
-            let hm = SCNMaterial()
-            hm.lightingModel = .constant
-            hm.isDoubleSided = true
-            hm.diffuse.contents = ringed(nil, emoji: p.emoji, color: col)
-            head.geometry?.firstMaterial = hm
-            rt.addChildNode(body); rt.addChildNode(head)
+            let head = sol.face
+            faceMats.append(sol.faceMat)
+            sol.faceMat.diffuse.contents = ringed(nil, emoji: p.emoji, color: col)
+            rt.addChildNode(body)
             root.addChildNode(rt)
             roots.append(rt); bodies.append(body); heads.append(head); guns.append(gun); flashes.append(fl)
             headKey.append("")
@@ -658,9 +657,17 @@ final class TacScene {
         } else {
             camNode.camera?.zNear = 10
             camNode.camera?.fieldOfView = 52
-            let lx = camX + cos(focus.aim) * 70, lz = camZ + sin(focus.aim) * 40
-            camNode.position = SCNVector3(Float(lx + jx), 400, Float(lz + 250 + jz))
-            camNode.look(at: SCNVector3(Float(lx), 0, Float(lz)))
+            let pr: [(CGFloat, CGFloat, CGFloat, CGFloat)] = [(300, 170, 60, 30), (400, 250, 70, 40), (520, 70, 70, 50), (640, 400, 90, 60)]
+            let c = pr[max(0, min(3, preset))]
+            if lookOn {
+                let cp = cos(pitch), sp = sin(pitch)
+                camNode.position = SCNVector3(Float(camX + dist * sin(yaw) * cp + jx), Float(dist * sp), Float(camZ + dist * cos(yaw) * cp + jz))
+                camNode.look(at: SCNVector3(Float(camX), 20, Float(camZ)))
+            } else {
+                let lx = camX + cos(focus.aim) * c.2, lz = camZ + sin(focus.aim) * c.3
+                camNode.position = SCNVector3(Float(lx + jx), Float(c.0), Float(lz + c.1 + jz))
+                camNode.look(at: SCNVector3(Float(lx), 0, Float(lz)))
+            }
         }
 
         for (i, p) in e.players.enumerated() {
@@ -670,6 +677,7 @@ final class TacScene {
             if !show { continue }
             rt.position = SCNVector3(Float(sx(p.pos)), 0, Float(p.pos.y))
             rt.eulerAngles = SCNVector3(0, Float(-p.aim), 0)
+            heads[i].eulerAngles = SCNVector3(0, Float(p.aim), 0)
             if p.alive {
                 bodies[i].eulerAngles = SCNVector3(0, 0, 0)
                 bodies[i].position = SCNVector3(0, 0, 0)
@@ -702,7 +710,7 @@ final class TacScene {
             if headKey[i] != key {
                 headKey[i] = key
                 let col: UIColor = p.isPlayer ? UIColor(red: 0.3, green: 0.9, blue: 0.45, alpha: 1) : (p.team == e.me.team ? UIColor(red: 0.25, green: 0.6, blue: 1, alpha: 1) : UIColor(red: 1, green: 0.25, blue: 0.3, alpha: 1))
-                heads[i].geometry?.firstMaterial?.diffuse.contents = ringed(img, emoji: p.emoji, color: col)
+                faceMats[i].diffuse.contents = ringed(img, emoji: p.emoji, color: col)
             }
         }
         // bullets
