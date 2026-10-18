@@ -213,7 +213,7 @@ extension BREngine {
         let tick = Int(time * 5)
         if tick != engTick {
             engTick = tick
-            sfx("engine", vol: 0.15 + 0.35 * abs(v.speed) / maxS)
+            sfx("engine", vol: Float(0.15 + 0.35 * abs(v.speed) / maxS))
         }
         if v.hp <= 0 {
             vehicles[inVeh] = v
