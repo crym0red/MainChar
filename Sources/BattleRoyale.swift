@@ -83,7 +83,9 @@ struct BattleRoyalePlay: View {
                     .scaleEffect(1.25).position(x: W - 92, y: H - 205)
                 roundButton("arrow.clockwise", "RELOAD") { engine.doReload() }.position(x: W - 160, y: H - 52)
                 roundButton("arrow.left.arrow.right", "SWAP") { engine.swapGun() }.position(x: W - 196, y: H - 112)
-                roundButton(engine.crouch ? "arrow.up.to.line" : "arrow.down.to.line", "CROUCH") { engine.crouch.toggle() }.position(x: W - 28, y: H - 64)
+                roundButton(engine.crouch ? "arrow.up.to.line" : "arrow.down.to.line", "CROUCH") { engine.crouch.toggle(); if engine.crouch { engine.prone = false } }.position(x: W - 28, y: H - 64)
+                roundButton(engine.prone ? "figure.stand" : "figure.fall", engine.me.sprinting ? "DIVE" : "PRONE") { engine.setProne() }.position(x: W - 28, y: H - 236)
+                roundButton("shield.lefthalf.filled", "PLATE \(engine.plates)") { engine.applyPlate() }.position(x: W - 28, y: H - 193)
                 roundButton("cross.case.fill", "HEAL \(engine.meds)") { engine.heal() }.position(x: W - 28, y: H - 150)
             }
         }
@@ -253,19 +255,16 @@ struct BattleRoyalePlay: View {
                 slot(e, 0)
                 slot(e, 1)
             }
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 3).fill(Color.black.opacity(0.55)).frame(width: 254, height: 8)
-                RoundedRectangle(cornerRadius: 3).fill(Color(red: 0.4, green: 0.95, blue: 0.5)).frame(width: 254 * max(0, min(1, me.hp / 100)), height: 8)
-            }
-            HStack(spacing: 4) {
-                ForEach(0..<3, id: \.self) { i in
-                    let fill = max(0, min(1, (me.armor - CGFloat(i) * 33.4) / 33.4))
-                    ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 2).fill(Color.black.opacity(0.55)).frame(width: 82, height: 5)
-                        RoundedRectangle(cornerRadius: 2).fill(Color(red: 0.35, green: 0.62, blue: 1)).frame(width: 82 * fill, height: 5)
-                    }
+            HStack(spacing: 6) {
+                ZStack(alignment: .leading) {
+                    Rectangle().fill(Color.black.opacity(0.55)).frame(width: 130, height: 9)
+                    Rectangle().fill(Color.white).frame(width: 130 * max(0, min(1, me.hp / 100)), height: 9)
                 }
+                .overlay(Rectangle().stroke(Color.white.opacity(0.35), lineWidth: 1))
+                .skewX(-0.35)
+                ForEach(0..<3, id: \.self) { i in plateCell(e, i) }
             }
+            .frame(width: 254, alignment: .leading)
             HStack {
                 Text("$ \(e.cash)").font(.jk(12, .heavy)).foregroundColor(Color(red: 0.4, green: 0.95, blue: 0.5))
                 Spacer()
@@ -273,6 +272,27 @@ struct BattleRoyalePlay: View {
             }
             .frame(width: 254)
         }
+    }
+
+    private func plateCell(_ e: BREngine, _ i: Int) -> some View {
+        let base = CGFloat(i) * 33.4
+        let have = max(0, min(1, (e.me.armor - base) / 33.4))
+        // the plate currently being applied is the first empty one
+        let applying = e.plateT > 0 && e.me.armor >= base - 0.01 && e.me.armor < base + 33.4 - 0.01
+        let prog = applying ? max(have, min(1, e.plateT) * (1 - have) + have) : have
+        let fillW: CGFloat = 38 * (applying ? prog : have)
+        let glow = applying ? 0.6 + 0.4 * sin(e.plateT * 30) : 0
+        return ZStack(alignment: .leading) {
+            Rectangle().fill(Color.black.opacity(0.55)).frame(width: 38, height: 9)
+            Rectangle().fill(LinearGradient(colors: [Color(red: 0.45, green: 0.72, blue: 1), Color(red: 0.2, green: 0.45, blue: 0.95)], startPoint: .top, endPoint: .bottom))
+                .frame(width: fillW, height: 9)
+            if applying {
+                Rectangle().fill(Color.white.opacity(0.55 * glow)).frame(width: 8, height: 9).offset(x: max(0, fillW - 8))
+            }
+        }
+        .overlay(Rectangle().stroke(applying ? Color.white : Color(red: 0.45, green: 0.72, blue: 1).opacity(0.6), lineWidth: 1))
+        .shadow(color: Color(red: 0.4, green: 0.7, blue: 1).opacity(glow), radius: 6)
+        .skewX(-0.35)
     }
 
     private func slot(_ e: BREngine, _ i: Int) -> some View {
@@ -345,5 +365,11 @@ struct BattleRoyalePlay: View {
                 }
             }
         }
+    }
+}
+
+private extension View {
+    func skewX(_ k: CGFloat) -> some View {
+        self.transformEffect(CGAffineTransform(a: 1, b: 0, c: k, d: 1, tx: 0, ty: 0))
     }
 }

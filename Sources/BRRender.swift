@@ -9,7 +9,7 @@ extension BREngine {
     func drawBase(_ ctx: inout GraphicsContext, _ size: CGSize, _ hz: CGFloat, _ focal: CGFloat) -> [CGFloat] {
         let m = me
         let W = size.width, H = size.height
-        let eye = BREngine.eyeH
+        let eye = eyeNow
         let sc = H / 390
 
         // sky
@@ -125,7 +125,7 @@ extension BREngine {
         if y0 >= H - 1 { return }
         let bw = 170, bh = 70
         let span = H - y0
-        let eye = BREngine.eyeH
+        let eye = eyeNow
         var cs = [CGFloat](repeating: 0, count: bw)
         var sn = [CGFloat](repeating: 0, count: bw)
         var ik = [CGFloat](repeating: 1, count: bw)
