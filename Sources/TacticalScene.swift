@@ -377,8 +377,8 @@ final class TacScene {
     func build(_ e: TacticalEngine) {
         let th = e.theme
         func C(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> UIColor { UIColor(red: r, green: g, blue: b, alpha: 1) }
-        let skyCols: [UIColor] = TMap.kind == 1 ? [C(0.42, 0.5, 0.58), C(0.66, 0.74, 0.78), C(0.82, 0.85, 0.8)] : th == 1 ? [C(0.02, 0.04, 0.12), C(0.05, 0.09, 0.2), C(0.12, 0.16, 0.3)] : (th == 2 ? [C(0.18, 0.07, 0.28), C(0.65, 0.25, 0.2), C(0.95, 0.55, 0.2)] : [C(0.25, 0.52, 0.9), C(0.62, 0.8, 0.96), C(0.95, 0.88, 0.72)])
-        let fogC: UIColor = TMap.kind == 1 ? C(0.6, 0.67, 0.65) : th == 1 ? C(0.04, 0.06, 0.12) : (th == 2 ? C(0.22, 0.12, 0.12) : C(0.3, 0.28, 0.26))
+        let skyCols: [UIColor] = TMap.kind == 2 ? [C(0.35, 0.4, 0.5), C(0.65, 0.62, 0.6), C(0.9, 0.72, 0.5)] : TMap.kind == 3 ? [C(0.3, 0.55, 0.9), C(0.72, 0.84, 0.95), C(0.98, 0.9, 0.7)] : TMap.kind == 1 ? [C(0.42, 0.5, 0.58), C(0.66, 0.74, 0.78), C(0.82, 0.85, 0.8)] : th == 1 ? [C(0.02, 0.04, 0.12), C(0.05, 0.09, 0.2), C(0.12, 0.16, 0.3)] : (th == 2 ? [C(0.18, 0.07, 0.28), C(0.65, 0.25, 0.2), C(0.95, 0.55, 0.2)] : [C(0.25, 0.52, 0.9), C(0.62, 0.8, 0.96), C(0.95, 0.88, 0.72)])
+        let fogC: UIColor = TMap.kind == 2 ? C(0.55, 0.52, 0.5) : TMap.kind == 3 ? C(0.85, 0.76, 0.6) : TMap.kind == 1 ? C(0.6, 0.67, 0.65) : th == 1 ? C(0.04, 0.06, 0.12) : (th == 2 ? C(0.22, 0.12, 0.12) : C(0.3, 0.28, 0.26))
         let ambI: CGFloat = th == 1 ? 560 : (th == 2 ? 560 : 520)
         let ambC: UIColor = th == 1 ? C(0.55, 0.65, 0.95) : (th == 2 ? C(0.9, 0.65, 0.7) : C(0.78, 0.8, 0.9))
         let sunI: CGFloat = (th == 1 ? 500 : (th == 2 ? 900 : 1500)) * 0.5
@@ -391,8 +391,8 @@ final class TacScene {
         }
         scene.background.contents = skyImg
         scene.fogColor = fogC
-        scene.fogStartDistance = fpMode ? (TMap.kind == 1 ? 450 : 1100) : 1400
-        scene.fogEndDistance = fpMode ? (TMap.kind == 1 ? 2000 : 3300) : 4200
+        scene.fogStartDistance = fpMode ? (TMap.kind == 1 ? 450 : (TMap.kind >= 2 ? 900 : 1100)) : 1400
+        scene.fogEndDistance = fpMode ? (TMap.kind == 1 ? 2000 : (TMap.kind >= 2 ? 3000 : 3300)) : 4200
         scene.fogDensityExponent = 1.4
         let root = scene.rootNode
         for i in 0..<3 {
@@ -494,13 +494,14 @@ final class TacScene {
         }
 
         // floors
-        let floorCols: [(CGFloat, CGFloat, CGFloat)] = [(0.72, 0.59, 0.41), (0.7, 0.6, 0.45), (0.5, 0.26, 0.2), (0.72, 0.5, 0.34), (0.4, 0.27, 0.17), (0.66, 0.56, 0.42), (0.22, 0.36, 0.17), (0.38, 0.3, 0.2)]
+        let floorCols: [(CGFloat, CGFloat, CGFloat)] = [(0.72, 0.59, 0.41), (0.7, 0.6, 0.45), (0.5, 0.26, 0.2), (0.72, 0.5, 0.34), (0.4, 0.27, 0.17), (0.66, 0.56, 0.42), (0.22, 0.36, 0.17), (0.38, 0.3, 0.2), (0.34, 0.35, 0.38)]
         for rm in TMap.floorTiles {
             let b = floorCols[rm.mat]
             let img: UIImage
             switch rm.mat {
             case 6: img = grassTex()
             case 7: img = noiseTex(b, "dirt7", dots: 2200, grid: false)
+            case 8: img = noiseTex(b, "asph8", dots: 3000, grid: true)
             case 0: img = noiseTex(b, "sand0", dots: 2600, grid: false)
             case 4: img = woodTex(b, "wood4")
             case 3, 5: img = tileTex(b, "tile\(rm.mat)")
@@ -510,7 +511,7 @@ final class TacScene {
             let tile: CGFloat = rm.mat == 6 ? 170 : (rm.mat == 1 ? 140 : (rm.mat == 3 || rm.mat == 5 ? 112 : 128))
             let top = mat(img, sx: rm.r.width / tile, sy: rm.r.height / tile)
             let side = mat(nil, color: ui(b, 0.5))
-            let n = box(rm.r, h: 1, y0: rm.name == "Woods" ? -2 : -1, mats: [side, side, side, side, top, side])
+            let n = box(rm.r, h: 1, y0: ["Woods", "Yard", "Desert"].contains(rm.name) ? -2 : -1, mats: [side, side, side, side, top, side])
             fr(rm.r.midX).addChildNode(n)
         }
         // rugs
@@ -521,7 +522,7 @@ final class TacScene {
             fr(rg.0.midX).addChildNode(n)
         }
         // sites
-        for i in 0..<2 where TMap.kind == 0 {
+        for i in 0..<2 where TMap.kind != 1 {
             let r = TMap.site(i)
             let m = mat(siteTex(i == 0 ? "A" : "B", r.width, r.height))
             m.lightingModel = .constant
@@ -558,8 +559,8 @@ final class TacScene {
         let wallH = TMap.wallH
         let capMats = [C(0.4, 0.41, 0.44), C(0.92, 0.88, 0.8), C(0.5, 0.38, 0.26)].map { mat(nil, color: $0) }
         let solidWalls = [MXNode(), MXNode(), MXNode()]
-        let woodsMap = TMap.kind == 1
-        let bark = woodTex((0.34, 0.24, 0.15), "bark")
+        let woodsMap = TMap.kind >= 1
+        let bark = TMap.kind == 3 ? noiseTex((0.78, 0.66, 0.46), "sandstone", dots: 2400, grid: false) : (TMap.kind == 2 ? cinder : woodTex((0.34, 0.24, 0.15), "bark"))
         for (k, o) in TMap.walls.enumerated() {
             let wf = TMap.floorOfX(o.midX)
             let img = wf == 0 ? cinder : (wf == 1 ? (woodsMap ? bark : paper) : plank)
@@ -880,7 +881,7 @@ final class TacScene {
             leaf.position = MXVector3(Float(r.midX), 30, Float(r.midY))
             g.addChildNode(pot); g.addChildNode(leaf)
         case .tree:
-            let tr = MXNode(geometry: MXCylinder(radius: r.width * 0.2, height: 70))
+            let tr = MXNode(geometry: MXCylinder(radius: r.width * 0.46, height: 70))
             tr.geometry?.firstMaterial = mat(nil, color: ui((0.3, 0.2, 0.12)))
             tr.position = MXVector3(Float(r.midX), 35, Float(r.midY))
             let top = MXNode(geometry: MXSphere(radius: r.width * 0.75))
@@ -888,7 +889,7 @@ final class TacScene {
             top.position = MXVector3(Float(r.midX), 100, Float(r.midY))
             g.addChildNode(tr); g.addChildNode(top)
         case .rock:
-            g.addChildNode(solid(r, h: 30, color: c, top: cl, chamfer: 8))
+            g.addChildNode(solid(r, h: TMap.propH(.rock), color: c, top: cl, chamfer: 8))
         }
         return g
     }
@@ -1097,7 +1098,7 @@ final class TacScene {
             lastVmT = e.time
             vm.update(dt: vdt, t: Float(e.time), move: Float(min(1, hypot(e.move.dx, e.move.dy))), kick: Float(e.kick), reload: rprog, flashing: focus.flash > 0, recoilScale: TWeapons.recoil(focus.gun))
             vm.flash(focus.flash > 0)
-            camNode.camera?.fieldOfView += ((e.scoped ? 26 : 62) - (camNode.camera?.fieldOfView ?? 62)) * 0.3
+            camNode.camera?.fieldOfView += ((e.scoped ? TAtt.mods(e.me.gun).zoomFOV : 62) - (camNode.camera?.fieldOfView ?? 62)) * 0.3
             camNode.position = MXVector3(Float(ex + jx * 0.3), Float(eh), Float(ez + jz * 0.3))
             camNode.look(at: MXVector3(Float(ex + dxv * 100), Float(eh), Float(ez + dzv * 100)))
         } else {

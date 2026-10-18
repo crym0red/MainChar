@@ -119,6 +119,7 @@ struct CSLoadout: View {
     @Binding var gun: String
     var countdown: Int? = nil
     var showBattle = false
+    var gunsmith: (() -> Void)? = nil
     let ok: () -> Void
     let battle: () -> Void
 
@@ -182,7 +183,11 @@ struct CSLoadout: View {
                 .padding(.horizontal, 12).padding(.top, 10)
                 .frame(width: W, height: H, alignment: .top)
                 Rectangle().fill(Color.white.opacity(0.35)).frame(width: W - 40, height: 1).position(x: W / 2, y: H * 0.62)
-                Text("BLUEPRINT").font(.jk(14, .heavy)).foregroundColor(.black).frame(width: 150, height: 32).background(Rectangle().fill(CS.gold)).position(x: W / 2, y: H * 0.68)
+                Button { gunsmith?() } label: {
+                    Text(gunsmith == nil ? "BLUEPRINT" : "GUNSMITH").font(.jk(14, .heavy)).foregroundColor(.black).frame(width: 170, height: 34).background(Rectangle().fill(CS.gold))
+                }
+                .buttonStyle(TuiPress())
+                .position(x: W / 2, y: H * 0.68)
                 CSButton(title: "OKAY", w: 160, h: 46, size: 20) { ok() }.position(x: 100, y: H - 36)
                 if let c = countdown {
                     HStack(spacing: 6) {
@@ -227,20 +232,20 @@ struct CSArsenal: View {
                     Spacer()
                 }
                 VStack(spacing: 6) {
-                    CSSlot(title: "PRIMARY", sub: TWeapons.w(gun).name, lvl: 15, w: lw, h: 96, icon: GunSprites.icon(TWeapons.rig(gun))) { editLoadout() }
-                    CSSlot(title: "SECONDARY", sub: "USP", lvl: 1, w: lw, h: 96, icon: GunSprites.icon("pistol")) { editLoadout() }
-                    CSSlot(title: "MELEE", sub: "KABAR", lvl: 1, w: lw, h: 96, sf: "scissors") { editLoadout() }
+                    CSSlot(title: "PRIMARY", sub: TWeapons.w(gun).name, lvl: 15, w: lw, h: 70, icon: GunSprites.icon(TWeapons.rig(gun))) { editLoadout() }
+                    CSSlot(title: "SECONDARY", sub: "USP", lvl: 1, w: lw, h: 70, icon: GunSprites.icon("pistol")) { editLoadout() }
+                    CSSlot(title: "MELEE", sub: "KABAR", lvl: 1, w: lw, h: 70, sf: "scissors") { editLoadout() }
                     Button(action: offer) {
                         ZStack(alignment: .bottomLeading) {
                             LinearGradient(colors: [Color(red: 0.12, green: 0.1, blue: 0.3), Color(red: 0.45, green: 0.1, blue: 0.5)], startPoint: .topLeading, endPoint: .bottomTrailing)
                             Text("X20 VALUE").font(.jk(10, .heavy)).foregroundColor(.white).padding(.horizontal, 5).background(Rectangle().fill(Color.red)).padding(4).frame(maxHeight: .infinity, alignment: .topLeading)
                             Text("TWIN TERRORS OFFER").font(.jk(11, .heavy)).foregroundColor(.white).padding(6)
                         }
-                        .frame(width: lw, height: 66).overlay(Rectangle().stroke(Color.white.opacity(0.7), lineWidth: 1))
+                        .frame(width: lw, height: 50).overlay(Rectangle().stroke(Color.white.opacity(0.7), lineWidth: 1))
                     }
                     .buttonStyle(TuiPress())
                 }
-                .position(x: 28 + lw / 2, y: H / 2 + 24)
+                .position(x: 28 + lw / 2, y: H / 2 + 30)
                 HStack(spacing: 6) {
                     Text("Hide Helmet").font(.jk(11, .semibold)).foregroundColor(.white)
                     Button { hideHelmet.toggle() } label: { SF(hideHelmet ? "eye.slash.fill" : "eye.fill").font(.system(size: 16)).foregroundColor(.white) }
@@ -248,23 +253,23 @@ struct CSArsenal: View {
                 .position(x: W * 0.69, y: H * 0.27)
                 VStack(spacing: 6) {
                     HStack(spacing: 6) {
-                        CSSlot(title: "CHARACTER", sub: "DEFAULT", lvl: 1, w: rw * 2 + 6, h: 96, sf: "person.fill") { editChar() }
+                        CSSlot(title: "CHARACTER", sub: "DEFAULT", lvl: 1, w: rw * 2 + 6, h: 70, sf: "person.fill") { editChar() }
                     }
                     HStack(spacing: 6) {
-                        CSSlot(title: "ARMOR", sub: "BASIC ARMOR", lvl: 2, w: rw, h: 96, sf: "shield.fill") { editCos() }
-                        CSSlot(title: "HELMET", sub: "SUNGLASSES", lvl: 3, w: rw, h: 96, sf: "eyeglasses") { editCos() }
+                        CSSlot(title: "ARMOR", sub: "BASIC ARMOR", lvl: 2, w: rw, h: 70, sf: "shield.fill") { editCos() }
+                        CSSlot(title: "HELMET", sub: "SUNGLASSES", lvl: 3, w: rw, h: 70, sf: "eyeglasses") { editCos() }
                     }
                     HStack(spacing: 6) {
-                        CSSlot(title: "BOOTS", w: rw, h: 96, empty: true, bar: CS.blue) { editCos() }
-                        CSSlot(title: "GLOVES", sub: "DEFAULT GLOVE", w: rw, h: 96, sf: "hand.raised.fill") { editCos() }
+                        CSSlot(title: "BOOTS", w: rw, h: 70, empty: true, bar: CS.blue) { editCos() }
+                        CSSlot(title: "GLOVES", sub: "DEFAULT GLOVE", w: rw, h: 70, sf: "hand.raised.fill") { editCos() }
                     }
                     HStack(spacing: 4) {
-                        CSSlot(title: "EXPLOSIVES", w: rw * 0.64, h: 66, sf: "burst.fill", count: "x15", bar: .red) { editLoadout() }
-                        CSSlot(title: "TACTICALS", w: rw * 0.64, h: 66, sf: "smoke.fill", count: "x1", bar: .green) { editLoadout() }
-                        CSSlot(title: "HEALTH KITS", w: rw * 0.64, h: 66, sf: "cross.case.fill", count: "x2", bar: .green) { editLoadout() }
+                        CSSlot(title: "EXPLOSIVES", w: rw * 0.64, h: 50, sf: "burst.fill", count: "x15", bar: .red) { editLoadout() }
+                        CSSlot(title: "TACTICALS", w: rw * 0.64, h: 50, sf: "smoke.fill", count: "x1", bar: .green) { editLoadout() }
+                        CSSlot(title: "HEALTH KITS", w: rw * 0.64, h: 50, sf: "cross.case.fill", count: "x2", bar: .green) { editLoadout() }
                     }
                 }
-                .position(x: W - 28 - (rw * 2 + 6) / 2, y: H / 2 + 24)
+                .position(x: W - 28 - (rw * 2 + 6) / 2, y: H / 2 + 30)
             }
         }
     }

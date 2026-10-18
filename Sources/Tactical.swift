@@ -429,6 +429,7 @@ final class TacticalEngine {
     var kick: CGFloat = 0
     var moving: Bool { hypot(move.dx, move.dy) > 0.1 }
     var myGun = "pistol"
+    var mapPick = 0
     var lastKiller = -1
     var kills: Int { me.kills }
 
@@ -439,7 +440,7 @@ final class TacticalEngine {
     func setup(gun: String, diff: Int, mode: Int = 0) {
         self.diff = diff
         gameMode = mode
-        TMap.load(mode == 6 ? 1 : 0)
+        TMap.load(mode == 6 ? 1 : mapPick)
         tags = []
         myGun = gun
         let nb = mode == 6 ? 19 : 9
@@ -527,18 +528,18 @@ final class TacticalEngine {
             if gameMode == 0 {
                 if round == 1 { p.money = 800; p.armor = 0; p.armorKind = 0; p.gun = "pistol" }
                 else if !survived { p.armor = 0; p.armorKind = 0; p.gun = "pistol" }
-                p.mag = TGuns.get(p.gun).mag
+                p.mag = magSize(p, p.gun)
                 p.spare = TWeapons.isPistol(p.gun) ? 99 : 2
                 if p.isPlayer && round == 1 { p.altGun = "pistol"; p.altMag = 15; p.altSpare = 99 }
             } else {
                 p.gun = p.isPlayer ? myGun : gunPick()
                 if gameMode == 3 { p.gun = TWeapons.ladder[0]; p.ladder = 0 }
                 if gameMode == 6 { p.gun = "pistol"; p.armor = 0; p.armorKind = 0; p.nades = 0; p.smokes = 0; p.flashes = 0 }
-                p.mag = TGuns.get(p.gun).mag
+                p.mag = magSize(p, p.gun)
                 p.spare = TWeapons.isPistol(p.gun) ? 99 : 2
                 if p.isPlayer {
                     p.altGun = p.gun == "pistol" ? "eagle" : "pistol"
-                    p.altMag = TGuns.get(p.altGun).mag
+                    p.altMag = magSize(p, p.altGun)
                     p.altSpare = 99
                     if gameMode == 6 { p.altGun = "pistol"; p.altMag = 15; p.altSpare = 99 }
                 }
@@ -719,7 +720,7 @@ final class TacticalEngine {
         default:
             guard p.gun != id, p.altGun != id else { return false }
             if TWeapons.isPistol(id) {
-                if TWeapons.isPistol(p.gun) { setGun(p, id) } else { p.altGun = id; p.altMag = TGuns.get(id).mag; p.altSpare = 99 }
+                if TWeapons.isPistol(p.gun) { setGun(p, id) } else { p.altGun = id; p.altMag = magSize(p, id); p.altSpare = 99 }
             } else {
                 if TWeapons.isPistol(p.gun) { p.altGun = p.gun; p.altMag = p.mag; p.altSpare = 99 }
                 setGun(p, id)
@@ -746,9 +747,14 @@ final class TacticalEngine {
 
     // MARK: deathmatch-style modes
 
+    func magSize(_ p: TPlayer, _ id: String) -> Int {
+        let b = TGuns.get(id).mag
+        return p.isPlayer ? max(1, Int(CGFloat(b) * TAtt.mods(id).magMul)) : b
+    }
+
     private func setGun(_ p: TPlayer, _ id: String) {
         p.gun = id
-        p.mag = TGuns.get(id).mag
+        p.mag = magSize(p, id)
         p.spare = TWeapons.isPistol(id) ? 99 : 2
         p.reloadT = 0
         p.knife = false
@@ -773,7 +779,7 @@ final class TacticalEngine {
         if p.isPlayer {
             scoped = false; pitch = 0
             p.altGun = p.gun == "pistol" ? "eagle" : "pistol"
-            p.altMag = TGuns.get(p.altGun).mag
+            p.altMag = magSize(p, p.altGun)
             p.altSpare = 99
         }
     }
@@ -1015,12 +1021,12 @@ final class TacticalEngine {
 
     func startReload(_ p: TPlayer) {
         let g = TGuns.get(p.gun)
-        guard !p.knife, p.reloadT <= 0, p.mag < g.mag, p.spare > 0 else { return }
-        p.reloadT = g.reload
+        guard !p.knife, p.reloadT <= 0, p.mag < magSize(p, p.gun), p.spare > 0 else { return }
+        p.reloadT = g.reload * (p.isPlayer ? TAtt.mods(p.gun).reloadMul : 1)
     }
 
     private func finishReload(_ p: TPlayer) {
-        p.mag = TGuns.get(p.gun).mag
+        p.mag = magSize(p, p.gun)
         if !TWeapons.isPistol(p.gun) { p.spare -= 1 }
     }
 
@@ -1066,13 +1072,14 @@ final class TacticalEngine {
         var muzzle: CGFloat = 20
         var sprd = g.spread + err
         if TWeapons.cls(p.gun) == "sniper" && !(p.isPlayer && scoped) { sprd += 0.06 }
+        let am = p.isPlayer ? TAtt.mods(p.gun) : TAttMods()
         if p.isPlayer {
-            sprd += recoil * 0.045 + (moving ? 0.03 : 0) + (p.crouch ? -0.004 : 0)
-            if scoped { sprd *= 0.35 }
+            sprd += recoil * 0.045 * am.recoilMul + (moving ? 0.03 : 0) + (p.crouch ? -0.004 : 0)
+            if scoped { sprd *= 0.35 * am.scopeMul }
             sprd = max(0.002, sprd)
             p.aim += CGFloat.random(in: -0.0035...0.0035) * (0.4 + recoil)
-            recoil = min(1.2, recoil + 0.13)
-            kick = min(38, kick + 6 + recoil * 4)
+            recoil = min(1.2, recoil + 0.13 * am.recoilMul)
+            kick = min(38, kick + (6 + recoil * 4) * am.recoilMul)
         }
         if p.isPlayer && p.crouch {
             let bx = cos(p.aim), by = sin(p.aim)
@@ -1082,16 +1089,16 @@ final class TacticalEngine {
             if muzzle > 20 { sprd *= 2.6 }
         }
         if p.blind > 0 { sprd += p.isPlayer ? 0.05 : 0.35 }
-        p.noiseT = 1.5
+        p.noiseT = am.silenced ? 0.45 : 1.5
         for _ in 0..<g.pellets {
             let a = p.aim + CGFloat.random(in: -sprd...sprd)
             bullets.append(Bullet(pos: CGPoint(x: p.pos.x + cos(a) * muzzle, y: p.pos.y + sin(a) * muzzle),
-                                  vel: CGVector(dx: cos(a) * spd, dy: sin(a) * spd), dmg: g.dmg * (p.isPlayer ? 1 : [0.85, 1, 1][diff]),
-                                  life: g.range / spd + 0.15, owner: p.id, team: p.team))
+                                  vel: CGVector(dx: cos(a) * spd, dy: sin(a) * spd), dmg: g.dmg * (p.isPlayer ? am.dmgMul : [0.85, 1, 1][diff]),
+                                  life: g.range * am.rangeMul / spd + 0.15, owner: p.id, team: p.team))
         }
         p.mag -= 1
         p.fireCd = (1 / g.rate) * (p.isPlayer ? 1 : 1.15)
-        p.flash = 0.05
+        p.flash = am.silenced ? 0 : 0.05
         if p.isPlayer { shake = max(shake, g.pellets > 1 ? 4 : 1.5) }
     }
 
@@ -1637,9 +1644,9 @@ final class TacticalEngine {
         if gameMode == 1 { return "First to \(killTarget) kills" }
         if gameMode == 2 { return "Collect enemy tags, deny yours" }
         if gameMode == 3 { return "Arms Race  \(min(me.ladder + 1, TWeapons.ladder.count))/\(TWeapons.ladder.count)  \(TGuns.get(me.gun).name)" }
-        if phase == 0 { return me.team == atkTeam ? "Attack: plant at \(atkSite == 0 ? "A · BASEMENT" : "B · ATTIC")" : "Defend A (basement) and B (attic)" }
+        if phase == 0 { return me.team == atkTeam ? "Attack: plant at \(TMap.siteNames[atkSite])" : "Defend \(TMap.siteNames[0]) and \(TMap.siteNames[1])" }
         if planted { return me.team == atkTeam ? "Protect the bomb" : "Defuse the bomb" }
-        return me.team == atkTeam ? "Plant the bomb at \(atkSite == 0 ? "A · BASEMENT" : "B · ATTIC")" : "Hold both sites"
+        return me.team == atkTeam ? "Plant the bomb at \(TMap.siteNames[atkSite])" : "Hold both sites"
     }
 }
 
@@ -1889,6 +1896,7 @@ struct TacticalPlay: View {
             } else {
                 TwViewModel.gloveColor = mine.gloves == 0 ? mine.skin : mine.gloveCol
             }
+            engine.mapPick = nav.tacMap
             engine.setup(gun: nav.tacGun, diff: diff, mode: modeId)
             _ = TacRadar.image(0)
             let b = TacScene()

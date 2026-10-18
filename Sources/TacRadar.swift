@@ -31,7 +31,7 @@ enum TacRadar {
             func col(_ r: CGFloat, _ gg: CGFloat, _ b: CGFloat, _ a: CGFloat = 1) -> CGColor { CGColor(red: r, green: gg, blue: b, alpha: a) }
             g.setFillColor(col(0.07, 0.075, 0.09))
             g.fill(CGRect(x: ox, y: 0, width: TMap.floorW, height: TMap.H))
-            let floors: [(CGFloat, CGFloat, CGFloat)] = [(0.55, 0.43, 0.3), (0.5, 0.47, 0.42), (0.42, 0.36, 0.3), (0.6, 0.55, 0.46), (0.4, 0.3, 0.22), (0.52, 0.5, 0.48), (0.2, 0.36, 0.17), (0.38, 0.3, 0.2)]
+            let floors: [(CGFloat, CGFloat, CGFloat)] = [(0.55, 0.43, 0.3), (0.5, 0.47, 0.42), (0.42, 0.36, 0.3), (0.6, 0.55, 0.46), (0.4, 0.3, 0.22), (0.52, 0.5, 0.48), (0.2, 0.36, 0.17), (0.38, 0.3, 0.2), (0.33, 0.34, 0.37)]
             for rm in TMap.floorTiles where rm.fl == fl {
                 let f = floors[rm.mat % floors.count]
                 g.setFillColor(col(f.0, f.1, f.2))
@@ -57,7 +57,7 @@ enum TacRadar {
                 g.fill(CGRect(x: p.x, y: p.y, width: 10 + rnd() * 16, height: 8 + rnd() * 10))
             }
             // sites
-            for i in 0..<2 where TMap.kind == 0 && here(TMap.site(i)) {
+            for i in 0..<2 where TMap.kind != 1 && here(TMap.site(i)) {
                 let r = TMap.site(i)
                 g.setFillColor(col(0.98, 0.8, 0.1, 0.22))
                 g.fill(r)

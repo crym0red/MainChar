@@ -13,6 +13,7 @@ final class TwViewModel {
         let groups: [String: MXNode]
         let dirs: [String: MXVector3]
         let flash: MXNode?
+        var sil: MXNode? = nil
     }
 
     private var rigs: [String: Rig] = [:]
@@ -25,6 +26,7 @@ final class TwViewModel {
     private var cycleDelay: Float = 0
     private var lastFlash = false
     private var lastGlove = UIColor.clear
+    private var lastAtt = ""
 
     static var gloveColor = UIColor(red: 0.165, green: 0.153, blue: 0.137, alpha: 1)
 
@@ -65,6 +67,7 @@ final class TwViewModel {
                 for (key, a) in an where a.count == 3 { dirs[key] = MXVector3(Float(a[0]), Float(a[1]), Float(a[2])) }
             }
             var fl: MXNode? = nil
+            var silNode: MXNode? = nil
             if let mz = rig["muzzle"] as? [Double], mz.count == 3 {
                 let f = MXNode(geometry: MXSphere(radius: 2.0))
                 let fm = MXMaterial()
@@ -80,9 +83,18 @@ final class TwViewModel {
                 f.castsShadow = false
                 gun.addChildNode(f)
                 fl = f
+                let sn = MXNode(geometry: MXCylinder(radius: 1.25, height: 9))
+                sn.geometry?.firstMaterial = TwGunLib.material("dark")
+                sn.eulerAngles = MXVector3(Float.pi / 2, 0, 0)
+                sn.position = MXVector3(Float(mz[0]), Float(mz[1]), Float(mz[2]) - 4.5)
+                sn.isHidden = true
+                sn.castsShadow = false
+                sn.renderingOrder = 1000
+                gun.addChildNode(sn)
+                silNode = sn
             }
             root.addChildNode(gun)
-            rigs[id] = Rig(node: gun, groups: groups, dirs: dirs, flash: fl)
+            rigs[id] = Rig(node: gun, groups: groups, dirs: dirs, flash: fl, sil: silNode)
         }
     }
 
@@ -149,6 +161,13 @@ final class TwViewModel {
         if TwViewModel.gloveColor != lastGlove {
             lastGlove = TwViewModel.gloveColor
             TwGunLib.mats["glove"]?.diffuse.contents = TwViewModel.gloveColor
+        }
+        let attKey = gid + "|" + TAtt.viewSig(gid)
+        if attKey != lastAtt {
+            lastAtt = attKey
+            TAtt.applyCamo(gid)
+            let sil = TAtt.mods(gid).silenced
+            for (key, r) in rigs { r.sil?.isHidden = !(key == gid && sil) }
         }
         if gid == shown { return }
         shown = gid

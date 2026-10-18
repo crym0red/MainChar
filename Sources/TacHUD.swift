@@ -3,9 +3,9 @@ import UIKit
 
 /// In-match HUD building blocks (landscape). All of them read straight from the engine and are redrawn at 10 Hz by the HUD timeline.
 enum THud {
-    static var floorTag: [String] { TMap.kind == 1 ? ["U", "W", "T"] : ["B", "G", "A"] }
-    static var floorCol: [Color] { TMap.kind == 1 ? [TUI.red, TUI.green, TUI.orange] : [TUI.red, TUI.blue, TUI.orange] }
-    static var floorShort: [String] { TMap.kind == 1 ? ["BUNKER", "WOODS", "TOWER"] : ["BASEMENT", "GROUND", "ATTIC"] }
+    static var floorTag: [String] { [["B", "G", "A"], ["U", "W", "T"], ["T", "Y", "C"], ["C", "O", "R"]][TMap.kind] }
+    static var floorCol: [Color] { TMap.kind == 0 ? [TUI.red, TUI.blue, TUI.orange] : [TUI.red, TUI.green, TUI.orange] }
+    static var floorShort: [String] { [["BASEMENT", "GROUND", "ATTIC"], ["BUNKER", "WOODS", "TOWER"], ["TUNNEL", "YARD", "CATWALK"], ["CELLAR", "OUTPOST", "ROOFTOP"]][TMap.kind] }
 
     static func clock(_ t: Int) -> String { String(format: "%d:%02d", t / 60, t % 60) }
 }

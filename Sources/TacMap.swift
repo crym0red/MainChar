@@ -86,10 +86,12 @@ enum TMap {
     static var spawns: [CGPoint] { cur.spawns }
 
     static func site(_ i: Int) -> CGRect { i == 0 ? siteA : siteB }
+    static var siteNames: [String] { cur.siteNames }
+    static let mapNames = ["THE HOUSE", "THE WOODS", "WAREHOUSE YARD", "DESERT OUTPOST"]
 
     static func roomName(_ p: CGPoint) -> String {
         for r in rooms where r.r.contains(p) { return r.name }
-        return kind == 1 ? "Woods" : "Stairs"
+        return kind == 1 ? "Woods" : (kind >= 2 ? "Outside" : "Stairs")
     }
 
     // MARK: layout (walls from everything that is not walkable)
@@ -183,7 +185,7 @@ enum TMap {
         if k == kind && !needsApply { return }
         needsApply = false
         kind = k
-        cur = k == 1 ? TWoods.shared : THouse.shared
+        cur = [THouse.shared, TWoods.shared, TWarehouse.shared, TDesert.shared][max(0, min(3, k))]
         let d = cur
         origBase = d.layout.walls + d.props.map { $0.r }
         baseSolid = origBase
@@ -328,6 +330,7 @@ struct MapData {
     var loot: [(CGPoint, String)]
     var roofs: [CGRect]
     var spawns: [CGPoint]
+    var siteNames: [String] = ["A · BASEMENT", "B · ATTIC"]
 }
 
 /// "The House": three stacked floors (0 basement, 1 ground floor, 2 attic).
@@ -611,12 +614,12 @@ enum TWoods {
         p(0, .bed, 750, 880, 200, 100); p(0, .bed, 750, 1030, 200, 100); p(0, .crate, 1060, 1080, 60, 60)
         p(0, .shelf, 1200, 870, 380, 28); p(0, .shelf, 1200, 1100, 380, 28); p(0, .crate, 1250, 960, 70, 70); p(0, .crate, 1500, 990, 60, 60)
         p(0, .counter, 1650, 870, 200, 40); p(0, .bed, 1650, 1060, 150, 80)
-        p(0, .crate, 2000, 880, 60, 60); p(0, .crate, 2200, 880, 60, 60); p(0, .crate, 2000, 1080, 60, 60)
+        p(0, .crate, 1900, 960, 60, 60); p(0, .crate, 2200, 1080, 60, 60); p(0, .crate, 2000, 1080, 60, 60)
         // cabins
-        p(1, .table, 400, 300, 120, 60); p(1, .crate, 570, 430, 50, 50); p(1, .shelf, 330, 280, 28, 110)
+        p(1, .table, 400, 300, 120, 60); p(1, .crate, 540, 400, 50, 50); p(1, .shelf, 330, 280, 28, 110)
         p(1, .counter, 1340, 1480, 200, 36); p(1, .crate, 1650, 1480, 60, 60); p(1, .table, 1500, 1360, 160, 70)
-        p(1, .couch, 2200, 1150, 200, 70); p(1, .table, 2400, 1250, 120, 70); p(1, .crate, 2500, 1320, 50, 50)
-        p(1, .crate, 300, 1240, 60, 60); p(1, .shelf, 500, 1230, 90, 28); p(1, .barrel, 560, 1400, 36, 36)
+        p(1, .couch, 2200, 1060, 200, 70); p(1, .table, 2400, 1250, 120, 70); p(1, .crate, 2500, 1320, 50, 50)
+        p(1, .crate, 300, 1240, 60, 60); p(1, .shelf, 400, 1110, 90, 28); p(1, .barrel, 380, 1400, 36, 36)
         // tower deck
         p(2, .crate, 2480, 280, 60, 60); p(2, .crate, 2780, 580, 60, 60); p(2, .sandbag, 2500, 560, 80, 30)
 

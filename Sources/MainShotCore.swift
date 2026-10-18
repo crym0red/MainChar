@@ -52,6 +52,7 @@ final class Nav: ObservableObject {
     @Published var tacPlay: Int? = nil
     @Published var tacMode = 0
     @Published var tacGun = "rifle"
+    @Published var tacMap = 0
 }
 
 struct Extras: Codable, Hashable {
