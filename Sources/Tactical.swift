@@ -1734,7 +1734,12 @@ struct TacticalPlay: View {
             engine.charm = sxd.charm
             engine.theme = TacSeason.themes.firstIndex(of: sxd.map) ?? 0
             let gc = TacSeason.cos(sxd.gloves).rgb
-            TwViewModel.gloveColor = UIColor(red: gc.0, green: gc.1, blue: gc.2, alpha: 1)
+            let mine = TacAvatar.style(TacAvatar.myKey)
+            if sxd.gloves != "gl_black" {
+                TwViewModel.gloveColor = UIColor(red: gc.0, green: gc.1, blue: gc.2, alpha: 1)
+            } else {
+                TwViewModel.gloveColor = mine.gloves == 0 ? mine.skin : mine.gloveCol
+            }
             engine.setup(gun: "rifle", diff: diff, mode: modeId)
             let b = TacScene()
             b.fpMode = true
