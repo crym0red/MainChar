@@ -142,6 +142,7 @@ struct LobbyView: View {
 
     private func rightColumn(_ t: TacData, _ w: CGFloat) -> some View {
         VStack(spacing: 8) {
+            mapCard(w)
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 6) {
                     SF(modeIcons[nav.tacMode], "circle.fill").font(.system(size: 13, weight: .bold)).foregroundColor(lime)
@@ -196,6 +197,30 @@ struct LobbyView: View {
             }
             .buttonStyle(TuiPress())
         }
+    }
+
+    private func mapCard(_ w: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                SF("house.fill", "circle.fill").font(.system(size: 13, weight: .bold)).foregroundColor(lime)
+                Text("THE HOUSE").font(.jk(14, .heavy)).tracking(2).foregroundColor(.white)
+                Spacer()
+                Text("3 FLOORS").font(.jk(10, .heavy)).foregroundColor(.black).padding(.horizontal, 7).frame(height: 18).background(Capsule().fill(TUI.gold))
+            }
+            HStack(spacing: 6) {
+                ForEach([("ATTIC", "B SITE", TUI.orange), ("GROUND", "SPAWNS", TUI.blue), ("BASEMENT", "A SITE", TUI.red)], id: \.0) { f in
+                    VStack(spacing: 2) {
+                        Text(f.0).font(.jk(9, .heavy)).tracking(1).foregroundColor(.white)
+                        Text(f.1).font(.jk(8, .heavy)).foregroundColor(f.2)
+                    }
+                    .frame(maxWidth: .infinity).frame(height: 34)
+                    .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.white.opacity(0.08)))
+                    .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(f.2.opacity(0.5), lineWidth: 1))
+                }
+            }
+            Text("Breakable walls and props. Stairs link all floors.").font(.jk(10, .semibold)).foregroundColor(.white.opacity(0.6))
+        }
+        .padding(12).frame(width: w).tuiGlass(18, fill: 0.55)
     }
 
     // MARK: bottom
