@@ -815,6 +815,8 @@ final class TacScene {
         case .sandbag: colors = (0.76, 0.68, 0.44)
         case .tv: colors = (0.1, 0.12, 0.16)
         case .plant: colors = (0.16, 0.45, 0.22)
+        case .tree: colors = (0.2, 0.4, 0.16)
+        case .rock: colors = (0.45, 0.46, 0.48)
         }
         let c = ui(colors)
         let cl = ui(colors, 1.2)
@@ -877,6 +879,16 @@ final class TacScene {
             leaf.geometry?.firstMaterial = mat(nil, color: c)
             leaf.position = MXVector3(Float(r.midX), 30, Float(r.midY))
             g.addChildNode(pot); g.addChildNode(leaf)
+        case .tree:
+            let tr = MXNode(geometry: MXCylinder(radius: r.width * 0.2, height: 70))
+            tr.geometry?.firstMaterial = mat(nil, color: ui((0.3, 0.2, 0.12)))
+            tr.position = MXVector3(Float(r.midX), 35, Float(r.midY))
+            let top = MXNode(geometry: MXSphere(radius: r.width * 0.75))
+            top.geometry?.firstMaterial = mat(nil, color: c)
+            top.position = MXVector3(Float(r.midX), 100, Float(r.midY))
+            g.addChildNode(tr); g.addChildNode(top)
+        case .rock:
+            g.addChildNode(solid(r, h: 30, color: c, top: cl, chamfer: 8))
         }
         return g
     }
