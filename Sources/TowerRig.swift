@@ -88,7 +88,7 @@ enum TwRig {
     /// Curved patch of the head ellipsoid facing +x. The face texture is projected onto it from the front.
     static func facePatch(rx: CGFloat, ry: CGFloat, rz: CGFloat, span: CGFloat) -> MXGeometry {
         let nA = 16, nE = 16
-        let azMax: CGFloat = 1.22, elMin: CGFloat = -1.0, elMax: CGFloat = 0.95
+        let azMax: CGFloat = 1.4, elMin: CGFloat = -1.15, elMax: CGFloat = 1.0
         var vs: [MXVector3] = [], ns: [MXVector3] = [], uv: [CGPoint] = []
         for j in 0...nE {
             let el = elMin + (elMax - elMin) * CGFloat(j) / CGFloat(nE)

@@ -173,13 +173,27 @@ final class MXGPU {
     func texture(_ image: UIImage, srgb: Bool) -> MTLTexture? {
         let key = "\(UInt(bitPattern: ObjectIdentifier(image).hashValue))_\(srgb)"
         if let c = texCache[key], c.0 === image { return c.1 }
-        guard let l = loader, let cg = image.cgImage else { return nil }
-        let opts: [MTKTextureLoader.Option: Any] = [
-            .SRGB: NSNumber(value: srgb),
-            .generateMipmaps: NSNumber(value: true),
-            .origin: MTKTextureLoader.Origin.topLeft
-        ]
-        guard let t = try? l.newTexture(cgImage: cg, options: opts) else { return nil }
+        guard let dev = device, let cg = image.cgImage else { return nil }
+        // explicit RGBA8 upload: avoids any red/blue channel swap between CoreGraphics bitmaps and the texture format
+        let w = cg.width, h = cg.height
+        guard w > 0, h > 0, let cs = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        var data = [UInt8](repeating: 0, count: w * h * 4)
+        let ok: Bool = data.withUnsafeMutableBytes { raw in
+            guard let ctx = CGContext(data: raw.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: cs,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return false }
+            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
+        }
+        guard ok else { return nil }
+        let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: srgb ? .rgba8Unorm_srgb : .rgba8Unorm, width: w, height: h, mipmapped: true)
+        td.usage = .shaderRead
+        guard let t = dev.makeTexture(descriptor: td) else { return nil }
+        data.withUnsafeBytes { t.replace(region: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: w * 4) }
+        if let q = queue, let cb = q.makeCommandBuffer(), let bl = cb.makeBlitCommandEncoder() {
+            bl.generateMipmaps(for: t)
+            bl.endEncoding()
+            cb.commit()
+        }
         if texCache.count > 400 { texCache.removeAll() }
         texCache[key] = (image, t)
         return t

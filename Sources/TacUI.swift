@@ -22,8 +22,17 @@ extension View {
     /// dark translucent card with a hairline edge
     func tuiGlass(_ radius: CGFloat = 12, fill: Double = 0.5) -> some View {
         self
-            .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Color.black.opacity(fill)))
-            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).stroke(Color.white.opacity(0.14), lineWidth: 1))
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: radius, style: .continuous).fill(.ultraThinMaterial)
+                    RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Color.black.opacity(fill * 0.8))
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        .fill(LinearGradient(colors: [Color.white.opacity(0.10), .clear], startPoint: .top, endPoint: .center))
+                }
+            )
+            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .stroke(LinearGradient(colors: [Color.white.opacity(0.34), Color.white.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1))
+            .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
     }
 }
 
@@ -32,6 +41,7 @@ struct TuiPress: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.94 : 1)
             .opacity(configuration.isPressed ? 0.85 : 1)
+            .animation(.spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)
     }
 }
 

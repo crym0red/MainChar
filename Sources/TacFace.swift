@@ -29,6 +29,7 @@ enum TacFace {
         let fmt = UIGraphicsImageRendererFormat()
         fmt.scale = 1
         fmt.opaque = true
+        if #available(iOS 12.0, *) { fmt.preferredRange = .standard }
         let skin = s.skin
         var sr: CGFloat = 0, sg: CGFloat = 0, sb: CGFloat = 0, sa: CGFloat = 0
         skin.getRed(&sr, green: &sg, blue: &sb, alpha: &sa)
@@ -48,6 +49,18 @@ enum TacFace {
             func ell(_ z: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ col: UIColor) {
                 col.setFill()
                 c.fillEllipse(in: CGRect(x: P(z, y).x - U(w) / 2, y: P(z, y).y - U(h) / 2, width: U(w), height: U(h)))
+            }
+            /// soft radial blob that fades to nothing at its rim (no hard edges near the patch border)
+            func soft(_ z: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ col: UIColor, _ a: CGFloat) {
+                var r0: CGFloat = 0, g0: CGFloat = 0, b0: CGFloat = 0, a0: CGFloat = 0
+                col.getRed(&r0, green: &g0, blue: &b0, alpha: &a0)
+                let cs = CGColorSpaceCreateDeviceRGB()
+                guard let g = CGGradient(colorsSpace: cs, colors: [UIColor(red: r0, green: g0, blue: b0, alpha: a).cgColor, UIColor(red: r0, green: g0, blue: b0, alpha: 0).cgColor] as CFArray, locations: [0, 1]) else { return }
+                c.saveGState()
+                c.translateBy(x: P(z, y).x, y: P(z, y).y)
+                c.scaleBy(x: U(w) / 2, y: U(h) / 2)
+                c.drawRadialGradient(g, startCenter: .zero, startRadius: 0, endCenter: .zero, endRadius: 1, options: [])
+                c.restoreGState()
             }
             func rect(_ z: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ col: UIColor, _ r: CGFloat = 0.15) {
                 col.setFill()
@@ -80,22 +93,21 @@ enum TacFace {
             // base skin + soft form shading (jaw and temples slightly darker, forehead and cheeks lighter)
             skin.setFill()
             c.fill(CGRect(x: 0, y: 0, width: N, height: N))
-            ell(0, 1.4, 7.6, 7.2, shade(1.03, 0.55))
-            ell(0, -3.4, 6.2, 3.6, shade(0.93, 0.45))
-            for sgn in [-1.0, 1.0] as [CGFloat] { ell(sgn * 3.7, 0.6, 1.8, 6.4, shade(0.9, 0.35)) }
+            soft(0, 1.6, 7.0, 6.0, shade(1.08), 0.55)
+            soft(0, -2.8, 6.0, 3.6, shade(0.84), 0.5)
 
             // blush
             let ba: CGFloat = [0.16, 0.0, 0.34][(l.blush ?? 0) % 3]
-            if ba > 0 { for sgn in [-1.0, 1.0] as [CGFloat] { ell(sgn * 2.55, -1.15, 1.9, 1.15, UIColor(red: 0.95, green: 0.35, blue: 0.4, alpha: ba)) } }
+            if ba > 0 { for sgn in [-1.0, 1.0] as [CGFloat] { soft(sgn * 2.55, -1.15, 2.6, 1.7, UIColor(red: 0.95, green: 0.35, blue: 0.4, alpha: 1), ba * 1.5) } }
 
             // nose
             let nk = (l.nose ?? 0) % 4
             let nw: CGFloat = [0.9, 1.3, 1.8, 0.9][nk]
             stroke([(0.2, 0.9), (0.55, -0.4), (0.2, -1.1)], 0.18, shade(0.78, 0.7))
-            ell(0, -1.25, nw + 0.9, 0.75, shade(0.86, 0.55))
+            soft(0, -1.25, nw + 1.6, 1.3, shade(0.8), 0.6)
             ell(-nw / 2 - 0.05, -1.4, 0.3, 0.2, shade(0.5, 0.8))
             ell(nw / 2 + 0.05, -1.4, 0.3, 0.2, shade(0.5, 0.8))
-            ell(0, -0.7, 0.5, 0.9, shade(1.12, 0.45))
+            soft(0, -0.7, 1.0, 1.8, shade(1.14), 0.5)
 
             // freckles / mole / scar
             if l.freckles == true {
@@ -124,7 +136,7 @@ enum TacFace {
                     stroke([(ez - 0.95, ey - 0.2), (ez, ey + 0.8), (ez + 0.95, ey - 0.2)], 0.28, UIColor(white: 0.08, alpha: 1))
                 } else {
                     let w: CGFloat = ek == 1 ? 2.25 : 1.9, h: CGFloat = ek == 1 ? 1.25 : 1.05
-                    ell(ez, ey - 0.02, w + 0.35, h + 0.3, shade(0.82, 0.55))      // socket shadow
+                    soft(ez, ey - 0.02, w + 1.0, h + 0.9, shade(0.78), 0.65)      // socket shadow
                     ell(ez, ey, w, h, UIColor(white: 0.97, alpha: 1))
                     ell(ez, ey + h * 0.28, w, h * 0.5, UIColor(white: 0.8, alpha: 0.35))   // lid shadow on the white
                     ell(ez - sgn * 0.05, ey - 0.02, 0.98, 0.98, eyeC)
@@ -151,7 +163,7 @@ enum TacFace {
             }
 
             // face shape cheek tweak (slim / round / wide / long are mostly silhouette, nudge the jaw tone)
-            if fs == 1 { for sgn in [-1.0, 1.0] as [CGFloat] { ell(sgn * 3.6, -2.4, 1.4, 3.2, shade(0.88, 0.3)) } }
+            if fs == 1 { for sgn in [-1.0, 1.0] as [CGFloat] { soft(sgn * 2.8, -2.4, 2.4, 3.4, shade(0.88), 0.3) } }
 
             // mouth
             let mk = (l.mouth ?? 0) % 4
@@ -190,11 +202,11 @@ enum TacFace {
             case 2:   // mustache
                 poly([(-1.9, -1.55), (0, -1.9), (1.9, -1.55), (1.5, -2.15), (0, -2.0), (-1.5, -2.15)], beardC)
             case 3:   // goatee
-                ell(0, -3.7, 1.9, 1.7, beardC)
+                ell(0, -3.5, 1.9, 1.5, beardC)
                 poly([(-1.5, -1.6), (0, -1.9), (1.5, -1.6), (1.0, -2.2), (-1.0, -2.2)], beardC)
             case 4:   // full beard
                 let p = UIBezierPath()
-                p.move(to: P(-3.9, -0.6)); p.addLine(to: P(-3.5, -4.6)); p.addQuadCurve(to: P(3.5, -4.6), controlPoint: P(0, -6.3)); p.addLine(to: P(3.9, -0.6))
+                p.move(to: P(-3.9, -0.6)); p.addLine(to: P(-3.5, -4.6)); p.addQuadCurve(to: P(3.5, -4.6), controlPoint: P(0, -5.0)); p.addLine(to: P(3.9, -0.6))
                 p.addLine(to: P(2.6, -1.4)); p.addQuadCurve(to: P(-2.6, -1.4), controlPoint: P(0, -1.0)); p.close()
                 beardC.setFill(); p.fill()
                 // mouth cut-out
@@ -204,7 +216,7 @@ enum TacFace {
             case 6:   // handlebar
                 poly([(-2.0, -1.55), (0, -1.9), (2.0, -1.55), (2.6, -1.0), (1.9, -1.9), (0, -2.2), (-1.9, -1.9), (-2.6, -1.0)], beardC)
             case 7:   // chinstrap
-                stroke([(-3.6, -0.6), (-3.3, -4.0), (0, -5.0), (3.3, -4.0), (3.6, -0.6)], 0.5, beardC, curve: false)
+                stroke([(-3.6, -0.6), (-3.3, -3.6), (0, -4.4), (3.3, -3.6), (3.6, -0.6)], 0.5, beardC, curve: false)
             default: break
             }
 

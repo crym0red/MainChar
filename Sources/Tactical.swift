@@ -13,7 +13,7 @@ struct TacData: Codable, Hashable {
 
 // MARK: - Geometry
 
-private func tSegT(_ a: CGPoint, _ b: CGPoint, _ r: CGRect) -> CGFloat? {
+func tSegT(_ a: CGPoint, _ b: CGPoint, _ r: CGRect) -> CGFloat? {
     var t0: CGFloat = 0
     var t1: CGFloat = 1
     let d: [(CGFloat, CGFloat, CGFloat, CGFloat)] = [(b.x - a.x, a.x, r.minX, r.maxX), (b.y - a.y, a.y, r.minY, r.maxY)]
@@ -32,16 +32,16 @@ private func tSegT(_ a: CGPoint, _ b: CGPoint, _ r: CGRect) -> CGFloat? {
     return t0
 }
 
-private func tDist(_ a: CGPoint, _ b: CGPoint) -> CGFloat { hypot(a.x - b.x, a.y - b.y) }
+func tDist(_ a: CGPoint, _ b: CGPoint) -> CGFloat { hypot(a.x - b.x, a.y - b.y) }
 
-private func tAngDiff(_ a: CGFloat, _ b: CGFloat) -> CGFloat {
+func tAngDiff(_ a: CGFloat, _ b: CGFloat) -> CGFloat {
     var d = a - b
     while d > .pi { d -= 2 * .pi }
     while d < -.pi { d += 2 * .pi }
     return d
 }
 
-private func tPointSeg(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
+func tPointSeg(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
     let dx = b.x - a.x, dy = b.y - a.y
     let l2 = dx * dx + dy * dy
     if l2 < 1e-6 { return tDist(p, a) }
@@ -62,262 +62,49 @@ struct TRoom {
     let name: String
     let r: CGRect
     let mat: Int
+    var fl: Int = 0
 }
 
 enum WallMat { case brick, concrete, wood, glass }
-
-enum TMap {
-    static let floorW: CGFloat = 3000
-    static let off: CGFloat = 3200
-    static let W: CGFloat = 3000
-    static let H: CGFloat = 1800
-    static let th: CGFloat = 14
-    static let wallH: CGFloat = 80
-    static let eyeH: CGFloat = 54
-
-    static func floorOf(_ p: CGPoint) -> Int { p.x >= off ? 1 : 0 }
-
-    static func propH(_ k: PropKind) -> CGFloat {
-        switch k {
-        case .bed: return 22
-        case .couch: return 34
-        case .table: return 29
-        case .counter: return 40
-        case .crate: return 38
-        case .car: return 44
-        case .shelf: return 66
-        case .barrel: return 34
-        case .sandbag: return 18
-        case .tv: return 40
-        case .plant: return 44
-        }
-    }
-
-    static func propMat(_ k: PropKind) -> WallMat {
-        switch k {
-        case .counter, .car, .barrel, .sandbag: return .concrete
-        case .tv: return .glass
-        default: return .wood
-        }
-    }
-
-    static let walkable: [(String, CGRect, Int)] = [
-        ("T Spawn", CGRect(x: 150, y: 100, width: 500, height: 350), 0),
-        ("Upper Lane", CGRect(x: 650, y: 150, width: 2000, height: 200), 1),
-        ("B Run", CGRect(x: 2450, y: 350, width: 350, height: 750), 1),
-        ("B Site", CGRect(x: 2200, y: 1100, width: 650, height: 550), 0),
-        ("West Ramp", CGRect(x: 250, y: 450, width: 300, height: 950), 1),
-        ("A Site", CGRect(x: 100, y: 1400, width: 700, height: 350), 0),
-        ("A Link", CGRect(x: 800, y: 1500, width: 500, height: 200), 1),
-        ("CT Spawn", CGRect(x: 1300, y: 1450, width: 500, height: 300), 0),
-        ("CT to B", CGRect(x: 1800, y: 1500, width: 400, height: 200), 1),
-        ("Mid", CGRect(x: 1150, y: 350, width: 350, height: 1100), 1),
-        ("Catwalk", CGRect(x: 550, y: 900, width: 600, height: 200), 1),
-        ("Suicide", CGRect(x: 1500, y: 1000, width: 700, height: 250), 1),
-        ("Short A", CGRect(x: 800, y: 1100, width: 350, height: 400), 1)
-    ]
-
-    static let layout: (walls: [CGRect], mats: [WallMat], doors: [CGRect]) = {
-        let cell: CGFloat = 50
-        let cols = Int(W / cell), rows = Int(H / cell)
-        var blocked = [Bool](repeating: true, count: cols * rows)
-        for wk in walkable {
-            for c in 0..<cols {
-                for rw in 0..<rows {
-                    let p = CGPoint(x: (CGFloat(c) + 0.5) * cell, y: (CGFloat(rw) + 0.5) * cell)
-                    if wk.1.contains(p) { blocked[rw * cols + c] = false }
-                }
-            }
-        }
-        var active: [String: (c0: Int, c1: Int, r0: Int)] = [:]
-        var rects: [CGRect] = []
-        for rw in 0...rows {
-            var cur: [String: (Int, Int)] = [:]
-            if rw < rows {
-                var c = 0
-                while c < cols {
-                    if blocked[rw * cols + c] {
-                        var e = c
-                        while e + 1 < cols && blocked[rw * cols + e + 1] { e += 1 }
-                        cur["\(c)-\(e)"] = (c, e)
-                        c = e + 1
-                    } else { c += 1 }
-                }
-            }
-            for (k, a) in active where cur[k] == nil {
-                rects.append(CGRect(x: CGFloat(a.c0) * cell, y: CGFloat(a.r0) * cell, width: CGFloat(a.c1 - a.c0 + 1) * cell, height: CGFloat(rw - a.r0) * cell))
-                active[k] = nil
-            }
-            for (k, v) in cur where active[k] == nil { active[k] = (v.0, v.1, rw) }
-        }
-        rects.sort { $0.minY != $1.minY ? $0.minY < $1.minY : $0.minX < $1.minX }
-        var m: [WallMat] = []
-        for i in rects.indices { m.append(i % 3 == 0 ? .concrete : .brick) }
-        let d: [CGRect] = [
-            CGRect(x: 1150, y: 650, width: 350, height: 14),
-            CGRect(x: 250, y: 700, width: 300, height: 14),
-            CGRect(x: 2450, y: 700, width: 350, height: 14)
-        ]
-        return (rects, m, d)
-    }()
-
-    static let walls: [CGRect] = layout.walls
-    static let wallMats: [WallMat] = layout.mats
-    static let doors: [CGRect] = layout.doors
-
-    static let rooms: [TRoom] = [
-        TRoom(name: "T Spawn", r: CGRect(x: 150, y: 100, width: 500, height: 350), mat: 0),
-        TRoom(name: "Upper Lane", r: CGRect(x: 650, y: 150, width: 2000, height: 200), mat: 1),
-        TRoom(name: "B Run", r: CGRect(x: 2450, y: 350, width: 350, height: 750), mat: 1),
-        TRoom(name: "B Site", r: CGRect(x: 2200, y: 1100, width: 650, height: 550), mat: 0),
-        TRoom(name: "West Ramp", r: CGRect(x: 250, y: 450, width: 300, height: 950), mat: 1),
-        TRoom(name: "A Site", r: CGRect(x: 100, y: 1400, width: 700, height: 350), mat: 0),
-        TRoom(name: "A Link", r: CGRect(x: 800, y: 1500, width: 500, height: 200), mat: 1),
-        TRoom(name: "CT Spawn", r: CGRect(x: 1300, y: 1450, width: 500, height: 300), mat: 0),
-        TRoom(name: "CT to B", r: CGRect(x: 1800, y: 1500, width: 400, height: 200), mat: 1),
-        TRoom(name: "Mid", r: CGRect(x: 1150, y: 350, width: 350, height: 1100), mat: 1),
-        TRoom(name: "Catwalk", r: CGRect(x: 550, y: 900, width: 600, height: 200), mat: 1),
-        TRoom(name: "Suicide", r: CGRect(x: 1500, y: 1000, width: 700, height: 250), mat: 1),
-        TRoom(name: "Short A", r: CGRect(x: 800, y: 1100, width: 350, height: 400), mat: 1)
-    ]
-
-    static func roomName(_ p: CGPoint) -> String {
-        for r in rooms where r.r.contains(p) { return r.name }
-        return "Outside"
-    }
-
-    static let props: [TProp] = {
-        let l: [TProp] = [
-            TProp(r: CGRect(x: 170, y: 120, width: 60, height: 60), k: .crate),
-            TProp(r: CGRect(x: 590, y: 130, width: 40, height: 40), k: .barrel),
-            TProp(r: CGRect(x: 1000, y: 300, width: 40, height: 40), k: .barrel),
-            TProp(r: CGRect(x: 1700, y: 160, width: 60, height: 60), k: .crate),
-            TProp(r: CGRect(x: 2000, y: 300, width: 100, height: 22), k: .sandbag),
-            TProp(r: CGRect(x: 2250, y: 200, width: 150, height: 70), k: .car),
-            TProp(r: CGRect(x: 260, y: 950, width: 70, height: 70), k: .crate),
-            TProp(r: CGRect(x: 450, y: 1150, width: 90, height: 22), k: .sandbag),
-            TProp(r: CGRect(x: 500, y: 600, width: 40, height: 40), k: .barrel),
-            TProp(r: CGRect(x: 800, y: 920, width: 60, height: 60), k: .crate),
-            TProp(r: CGRect(x: 260, y: 1600, width: 70, height: 70), k: .crate),
-            TProp(r: CGRect(x: 600, y: 1550, width: 80, height: 80), k: .crate),
-            TProp(r: CGRect(x: 700, y: 1690, width: 40, height: 40), k: .barrel),
-            TProp(r: CGRect(x: 850, y: 1250, width: 100, height: 22), k: .sandbag),
-            TProp(r: CGRect(x: 1060, y: 1350, width: 70, height: 70), k: .crate),
-            TProp(r: CGRect(x: 1000, y: 1550, width: 40, height: 40), k: .barrel),
-            TProp(r: CGRect(x: 1320, y: 1470, width: 60, height: 60), k: .crate),
-            TProp(r: CGRect(x: 1720, y: 1470, width: 60, height: 60), k: .crate),
-            TProp(r: CGRect(x: 1950, y: 1500, width: 22, height: 70), k: .sandbag),
-            TProp(r: CGRect(x: 1180, y: 800, width: 70, height: 70), k: .crate),
-            TProp(r: CGRect(x: 1400, y: 1000, width: 70, height: 70), k: .crate),
-            TProp(r: CGRect(x: 1200, y: 1250, width: 100, height: 22), k: .sandbag),
-            TProp(r: CGRect(x: 1300, y: 500, width: 140, height: 40), k: .counter),
-            TProp(r: CGRect(x: 1700, y: 1020, width: 60, height: 60), k: .crate),
-            TProp(r: CGRect(x: 1950, y: 1180, width: 40, height: 40), k: .barrel),
-            TProp(r: CGRect(x: 2480, y: 500, width: 70, height: 70), k: .crate),
-            TProp(r: CGRect(x: 2650, y: 900, width: 90, height: 22), k: .sandbag),
-            TProp(r: CGRect(x: 2250, y: 1150, width: 70, height: 70), k: .crate),
-            TProp(r: CGRect(x: 2700, y: 1200, width: 80, height: 80), k: .crate),
-            TProp(r: CGRect(x: 2400, y: 1580, width: 70, height: 70), k: .crate),
-            TProp(r: CGRect(x: 2700, y: 1500, width: 120, height: 70), k: .car),
-            TProp(r: CGRect(x: 2250, y: 1550, width: 40, height: 40), k: .barrel)
-        ]
-        return l
-    }()
-
-    static let rugs: [(CGRect, Color)] = []
-
-    static let packPos: [CGPoint] = [CGPoint(x: 400, y: 1000), CGPoint(x: 950, y: 1000), CGPoint(x: 1320, y: 1150), CGPoint(x: 2000, y: 1100), CGPoint(x: 2600, y: 800), CGPoint(x: 1050, y: 1620)]
-
-    static let stairs: [CGRect] = []
-
-    static func stairRect(_ i: Int, floor: Int) -> CGRect { floor == 0 ? stairs[i] : stairs[i].offsetBy(dx: off, dy: 0) }
-
-    static func stairAt(_ p: CGPoint) -> (Int, Int)? {
-        for i in stairs.indices {
-            if stairs[i].contains(p) { return (i, 0) }
-            if stairRect(i, floor: 1).contains(p) { return (i, 1) }
-        }
-        return nil
-    }
-
-    static let baseSolid: [CGRect] = layout.walls + props.map { $0.r }
-    static var solid: [CGRect] = baseSolid + layout.doors
-    static var solidKind: [PropKind?] = layout.walls.map { _ -> PropKind? in nil } + props.map { Optional($0.k) } + layout.doors.map { _ -> PropKind? in nil }
-    static var solidMat: [WallMat] = layout.mats + props.map { TMap.propMat($0.k) } + layout.doors.map { _ -> WallMat in .wood }
-    static var doorOpen: [CGFloat] = [CGFloat](repeating: 0, count: layout.doors.count)
-    static var doorWant: [Bool] = [Bool](repeating: false, count: layout.doors.count)
-    static var doorHold: [CGFloat] = [CGFloat](repeating: 0, count: layout.doors.count)
-
-    static func refreshDoors() {
-        let b = baseSolid.count
-        for i in doors.indices { solid[b + i] = doorOpen[i] > 0.8 ? CGRect(x: -9999, y: -9999, width: 1, height: 1) : doors[i] }
-    }
-
-    static func resetDoors() {
-        for i in doors.indices { doorOpen[i] = 0; doorWant[i] = false; doorHold[i] = 0 }
-        refreshDoors()
-    }
-
-    static func rectDist(_ r: CGRect, _ p: CGPoint) -> CGFloat {
-        let dx = max(r.minX - p.x, 0, p.x - r.maxX)
-        let dy = max(r.minY - p.y, 0, p.y - r.maxY)
-        return (dx * dx + dy * dy).squareRoot()
-    }
-    static let siteA = CGRect(x: 250, y: 1450, width: 300, height: 250)
-    static let siteB = CGRect(x: 2350, y: 1300, width: 300, height: 250)
-    static let atkSpawn: [CGPoint] = [CGPoint(x: 250, y: 200), CGPoint(x: 330, y: 200), CGPoint(x: 410, y: 200), CGPoint(x: 490, y: 200), CGPoint(x: 290, y: 290)]
-    static let defSpawn: [CGPoint] = [CGPoint(x: 1400, y: 1560), CGPoint(x: 1480, y: 1560), CGPoint(x: 1560, y: 1560), CGPoint(x: 1640, y: 1560), CGPoint(x: 1520, y: 1640)]
-
-    static func site(_ i: Int) -> CGRect { i == 0 ? siteA : siteB }
-
-    static func los(_ a: CGPoint, _ b: CGPoint) -> Bool {
-        if floorOf(a) != floorOf(b) { return false }
-        for k in solid.indices where solidMat[k] != .glass && tSegT(a, b, solid[k]) != nil { return false }
-        return true
-    }
-
-    static func rayDist(_ from: CGPoint, _ ang: CGFloat, _ maxD: CGFloat) -> CGFloat {
-        let b = CGPoint(x: from.x + cos(ang) * maxD, y: from.y + sin(ang) * maxD)
-        var best: CGFloat = 1
-        for k in solid.indices where solidMat[k] != .glass { if let t = tSegT(from, b, solid[k]), t < best { best = t } }
-        return maxD * best
-    }
-
-    static func push(_ p: inout CGPoint, _ r: CGFloat) {
-        p.x = min(max(r, p.x), W - r)
-        p.y = min(max(r, p.y), H - r)
-        for o in solid {
-            let cx = min(max(p.x, o.minX), o.maxX)
-            let cy = min(max(p.y, o.minY), o.maxY)
-            let dx = p.x - cx, dy = p.y - cy
-            let d = (dx * dx + dy * dy).squareRoot()
-            if d < r {
-                if d > 0.001 { p.x += dx / d * (r - d); p.y += dy / d * (r - d) }
-                else { p.y -= r }
-            }
-        }
-    }
-
-    static func inSolid(_ p: CGPoint) -> Bool { solid.contains { $0.contains(p) } }
-}
 
 // MARK: - Navigation (A* on a coarse grid)
 
 enum TNav {
     static let cell: CGFloat = 40
-    static let cols = Int(TMap.W / cell) + 1
+    static let cols = Int(TMap.totalW / cell) + 1
     static let rows = Int(TMap.H / cell) + 1
-    static let blocked: [Bool] = {
+    static let floorSolids: [[Int]] = {
+        var f: [[Int]] = [[], [], []]
+        for (k, r) in TMap.origBase.enumerated() { f[TMap.floorOfX(r.midX)].append(k) }
+        return f
+    }()
+
+    static func cellBlocked(_ c: Int, _ r: Int) -> Bool {
+        let p = CGPoint(x: CGFloat(c) * cell + cell / 2, y: CGFloat(r) * cell + cell / 2)
+        let fl = TMap.floorOf(p)
+        if p.x - TMap.origin(fl) > TMap.W - 20 || p.y > TMap.H - 20 { return true }
+        for k in floorSolids[fl] where TMap.baseSolid[k].insetBy(dx: -18, dy: -18).contains(p) { return true }
+        return false
+    }
+
+    static var blocked: [Bool] = {
         var b = [Bool](repeating: false, count: cols * rows)
-        for c in 0..<cols {
-            for r in 0..<rows {
-                let p = CGPoint(x: CGFloat(c) * cell + cell / 2, y: CGFloat(r) * cell + cell / 2)
-                if p.x > TMap.W - 20 || p.y > TMap.H - 20 { b[r * cols + c] = true; continue }
-                for o in TMap.baseSolid where o.insetBy(dx: -18, dy: -18).contains(p) { b[r * cols + c] = true; break }
-            }
-        }
+        for c in 0..<cols { for r in 0..<rows { b[r * cols + c] = cellBlocked(c, r) } }
         return b
     }()
+
+    /// re-evaluates the cells around a rect (after something was destroyed)
+    static func refresh(_ rect: CGRect) {
+        let q = rect.insetBy(dx: -30, dy: -30)
+        let c0 = max(0, Int(q.minX / cell)), c1 = min(cols - 1, Int(q.maxX / cell))
+        let r0 = max(0, Int(q.minY / cell)), r1 = min(rows - 1, Int(q.maxY / cell))
+        if c0 > c1 || r0 > r1 { return }
+        for c in c0...c1 { for r in r0...r1 { blocked[r * cols + c] = cellBlocked(c, r) } }
+    }
+
+    static func rebuild() {
+        for c in 0..<cols { for r in 0..<rows { blocked[r * cols + c] = cellBlocked(c, r) } }
+    }
 
     static func idx(_ p: CGPoint) -> Int {
         let c = min(cols - 1, max(0, Int(p.x / cell)))
@@ -458,6 +245,7 @@ final class TPlayer {
     var spotted = false
     var seenEver = false
     var onStair = false
+    var knife = false
     var crouch = false
     var hiding = false
     var hideT: CGFloat = 0
@@ -542,7 +330,7 @@ final class TacticalEngine {
     var pops: [Pop] = []
     var feed: [Feed] = []
     var sprites: [String: UIImage] = [:]
-    private let dummyMe = TPlayer(id: 0, team: 0, name: "You", handle: "you", emoji: "", isPlayer: true)
+    private let dummyMe = TPlayer(id: 0, team: 0, name: TacProfile.name, handle: "you", emoji: "", isPlayer: true)
     var me: TPlayer { players.first ?? dummyMe }
 
     var phase = 0              // 0 prep, 1 live, 2 planted, 3 round end, 4 match over
@@ -580,6 +368,9 @@ final class TacticalEngine {
     var hitT: CGFloat = 0
     var wantReload = false
     var wantSwap = false
+    var wantKnife = false
+    var wantGun = false
+    var knifeKill = false
     var buyT: CGFloat = 0
     var buyOpen = false
     var theme = 0
@@ -591,7 +382,7 @@ final class TacticalEngine {
     var cpProg: [CGFloat] = [0, 0, 0]
     var cpT: CGFloat = 0
     var rivalScore: Int { gameMode == 4 ? (scores.dropFirst().max() ?? 0) : scores[1] }
-    var cpZones: [CGRect] { [TMap.site(0), TMap.site(1), CGRect(x: 1150, y: 700, width: 350, height: 300)] }
+    var cpZones: [CGRect] { [TMap.site(0), TMap.site(1), TMap.hubZone] }
     var gameMode = 0
     var killTarget = 30
     struct Tag { var pos: CGPoint; var team: Int; var life: CGFloat }
@@ -601,6 +392,9 @@ final class TacticalEngine {
     var won = false
     var last: Date? = nil
     var time: CGFloat = 0
+    var squadGoals: [Int: (CGPoint, CGFloat)] = [:]
+    var roundT0: CGFloat = 0
+    var plantedAt: CGFloat = 0
     var spotT: CGFloat = 0
     var shake: CGFloat = 0
     var recoil: CGFloat = 0
@@ -620,7 +414,7 @@ final class TacticalEngine {
         tags = []
         myGun = gun
         let names: [(String, String, String)] = TacRoster.pick(9)
-        players = [TPlayer(id: 0, team: 0, name: "You", handle: "you", emoji: "", isPlayer: true)]
+        players = [TPlayer(id: 0, team: 0, name: TacProfile.name, handle: "you", emoji: "", isPlayer: true)]
         for i in 0..<9 {
             let bp = TPlayer(id: i + 1, team: i < 4 ? 0 : 1, name: names[i].0, handle: names[i].1, emoji: names[i].2, isPlayer: false)
             bp.rank = TacRoster.rank(of: names[i].1)
@@ -658,6 +452,9 @@ final class TacticalEngine {
         bullets = []; nades = []; booms = []; pops = []
         smokeClouds = []; pings = []
         TMap.resetDoors()
+        TMap.resetDestruction()
+        squadGoals = [:]
+        roundT0 = time
         lookDelta = 0
         packs = TMap.packPos.map { Pack(pos: $0, taken: false) }
         var ai = 0, di = 0
@@ -682,6 +479,7 @@ final class TacticalEngine {
             if gameMode != 0 { p.armor = 100; p.armorKind = 1 }
             p.blind = 0
             p.pingCd = 0
+            p.knife = false
             p.crouch = false
             p.hiding = false
             p.cover = nil
@@ -690,7 +488,7 @@ final class TacticalEngine {
             let spot = atk ? TMap.atkSpawn[ai % 5] : TMap.defSpawn[di % 5]
             if atk { ai += 1 } else { di += 1 }
             p.pos = spot
-            p.aim = atan2(TMap.H / 2 - spot.y, TMap.floorW / 2 - spot.x)
+            p.aim = TMap.aimAtCenter(spot)
             p.respawn = 0
             if gameMode == 0 {
                 if round == 1 { p.money = 800; p.armor = 0; p.armorKind = 0; p.gun = "pistol" }
@@ -800,6 +598,7 @@ final class TacticalEngine {
         }
         moveProjectiles(dt)
         for p in players where p.alive { stairCheck(p) }
+        reactToBreaches()
         // spotting
         spotT -= dt
         if spotT <= 0 {
@@ -825,6 +624,7 @@ final class TacticalEngine {
             if planting { plantProg += dt } else { plantProg = max(0, plantProg - dt * 2) }
             if plantProg >= 3 {
                 planted = true
+                plantedAt = time
                 phase = 2
                 bombT = 30
                 bombSite = atkSite
@@ -842,6 +642,7 @@ final class TacticalEngine {
             if defuseProg >= 4 { endRound(winner: 1 - atkTeam, text: "BOMB DEFUSED"); return }
             if bombT <= 0 {
                 booms.append(Boom(pos: bombPos, life: 0.8, r: 220))
+                TMap.blast(bombPos, radius: 330, dmg: 420)
                 shake = 14
                 endRound(winner: atkTeam, text: "BOMB DETONATED")
                 return
@@ -914,6 +715,7 @@ final class TacticalEngine {
         p.mag = TGuns.get(id).mag
         p.spare = TWeapons.isPistol(id) ? 99 : 2
         p.reloadT = 0
+        p.knife = false
     }
 
     private func respawnPlayer(_ p: TPlayer) {
@@ -929,7 +731,7 @@ final class TacticalEngine {
         p.hp = 100; p.armor = 100; p.alive = true; p.blind = 0; p.crouch = false
         p.path = []; p.targetID = -1; p.hunt = 0; p.reloadT = 0; p.fireCd = 0; p.hiding = false; p.cover = nil
         p.nades = 1; p.smokes = 1; p.flashes = 1
-        p.aim = atan2(TMap.H / 2 - p.pos.y, TMap.floorW / 2 - p.pos.x)
+        p.aim = TMap.aimAtCenter(p.pos)
         if gameMode == 3 { setGun(p, TWeapons.ladder[min(p.ladder, TWeapons.ladder.count - 1)]) }
         else { setGun(p, p.isPlayer ? myGun : gunPick()) }
         if p.isPlayer {
@@ -998,6 +800,7 @@ final class TacticalEngine {
     }
 
     private func swapGun(_ p: TPlayer) {
+        if p.knife { p.knife = false; p.fireCd = 0.3; return }
         guard gameMode != 3, p.reloadT <= 0 else { return }
         let g = p.gun, m = p.mag, s = p.spare
         p.gun = p.altGun; p.mag = p.altMag; p.spare = p.altSpare
@@ -1104,7 +907,7 @@ final class TacticalEngine {
         let p = me
         guard p.alive else { return }
         if p.crouch && !coverNear(p) { p.crouch = false }
-        let sp: CGFloat = (p.crouch ? 88 : 170) * (scoped ? 0.6 : 1)
+        let sp: CGFloat = (p.crouch ? 88 : (p.knife ? 195 : 170)) * (scoped ? 0.6 : 1)
         var mv = move
         let tgt = autoAim ? pickTarget(p) : nil
         autoTarget = tgt?.id ?? -1
@@ -1132,11 +935,13 @@ final class TacticalEngine {
         p.fireCd -= dt
         if wantReload { wantReload = false; startReload(p) }
         if wantSwap { wantSwap = false; swapGun(p) }
+        if wantKnife { wantKnife = false; if !p.knife { p.knife = true; p.reloadT = 0; scoped = false; p.fireCd = max(p.fireCd, 0.3) } }
+        if wantGun { wantGun = false; if p.knife { p.knife = false; p.fireCd = max(p.fireCd, 0.3) } }
         if p.reloadT > 0 {
             p.reloadT -= dt
             if p.reloadT <= 0 { finishReload(p) }
         } else if (firing || (autoFire && aligned)) && p.fireCd <= 0 && !actHeld {
-            if p.mag > 0 { shoot(p, 0) } else { startReload(p) }
+            if p.knife { slash(p) } else if p.mag > 0 { shoot(p, 0) } else { startReload(p) }
         }
         if wantNade { wantNade = false; throwNade(p, p.aim, 420) }
         if wantFlash { wantFlash = false; throwNade(p, p.aim, 400, flash: true) }
@@ -1161,7 +966,7 @@ final class TacticalEngine {
     }
 
     private func pickTarget(_ p: TPlayer) -> TPlayer? {
-        let range = TGuns.get(p.gun).range
+        let range = p.knife ? 110 : TGuns.get(p.gun).range
         var best: TPlayer? = nil
         var bd: CGFloat = .greatestFiniteMagnitude
         for e in players where e.alive && e.team != p.team {
@@ -1173,13 +978,49 @@ final class TacticalEngine {
 
     func startReload(_ p: TPlayer) {
         let g = TGuns.get(p.gun)
-        guard p.reloadT <= 0, p.mag < g.mag, p.spare > 0 else { return }
+        guard !p.knife, p.reloadT <= 0, p.mag < g.mag, p.spare > 0 else { return }
         p.reloadT = g.reload
     }
 
     private func finishReload(_ p: TPlayer) {
         p.mag = TGuns.get(p.gun).mag
         if !TWeapons.isPistol(p.gun) { p.spare -= 1 }
+    }
+
+    /// melee: hits the nearest enemy in a short front arc; from behind it is an instant kill; also chips breakables in front
+    private func slash(_ p: TPlayer) {
+        p.fireCd = 0.55
+        p.flash = 0.06
+        p.noiseT = 0.8
+        let fl = TMap.floorOf(p.pos)
+        var hit = false
+        var best: TPlayer? = nil
+        var bd: CGFloat = 62
+        for v in players where v.alive && v.team != p.team && TMap.floorOf(v.pos) == fl {
+            let d = tDist(p.pos, v.pos)
+            guard d < bd else { continue }
+            let ang = atan2(v.pos.y - p.pos.y, v.pos.x - p.pos.x)
+            guard abs(tAngDiff(ang, p.aim)) < 0.95, TMap.los(p.pos, v.pos) else { continue }
+            bd = d
+            best = v
+        }
+        if let v = best {
+            let ang = atan2(v.pos.y - p.pos.y, v.pos.x - p.pos.x)
+            let behind = abs(tAngDiff(v.aim, ang)) < 1.1
+            knifeKill = true
+            damage(v, behind ? 400 : 55 * (p.isPlayer ? 1 : [0.8, 1, 1][diff]), by: p.id)
+            knifeKill = false
+            if behind && p.isPlayer { pop(v.pos, "BACKSTAB", TUI.gold) }
+            hit = true
+        }
+        let tip = CGPoint(x: p.pos.x + cos(p.aim) * 34, y: p.pos.y + sin(p.aim) * 34)
+        for k in 0..<TMap.baseSolid.count where TMap.hp[k] > 0 && TMap.floorOfX(TMap.baseSolid[k].midX) == fl {
+            if TMap.rectDist(TMap.baseSolid[k], tip) < 12 { TMap.hit(k, 38); hit = true; break }
+        }
+        if p.isPlayer {
+            shake = max(shake, hit ? 5 : 1)
+            kick = min(38, kick + 5)
+        }
     }
 
     private func shoot(_ p: TPlayer, _ err: CGFloat) {
@@ -1259,7 +1100,7 @@ final class TacticalEngine {
                 }
             }
             let kn = killer?.name ?? "?"
-            feed.append(Feed(text: "\(kn)  >  \(victim.name)", life: 5, mine: killer?.isPlayer == true || victim.isPlayer, k: kn, v: victim.name, kTeam: killer?.team ?? 0, gun: killer?.gun ?? "pistol", head: amt >= 45))
+            feed.append(Feed(text: "\(kn)  >  \(victim.name)", life: 5, mine: killer?.isPlayer == true || victim.isPlayer, k: kn, v: victim.name, kTeam: killer?.team ?? 0, gun: knifeKill ? "knife" : (killer?.gun ?? "pistol"), head: knifeKill ? false : amt >= 45))
             if feed.count > 4 { feed.removeFirst() }
             pop(victim.pos, "X", .red)
         }
@@ -1280,9 +1121,9 @@ final class TacticalEngine {
             if b.life <= 0 { continue }
             var dead = false
             var hitK = -1
-            for k in TMap.solid.indices where tSegT(old, b.pos, TMap.solid[k]) != nil {
+            for k in TMap.floorIdx[TMap.floorOf(old)] where tSegT(old, b.pos, TMap.solid[k]) != nil {
                 let mt = TMap.solidMat[k]
-                if mt == .brick || mt == .concrete { dead = true; break }
+                if mt == .brick || mt == .concrete { TMap.hit(k, b.dmg * 0.9); dead = true; break }
                 hitK = k
             }
             if dead { continue }
@@ -1290,6 +1131,7 @@ final class TacticalEngine {
                 if hitK != b.inK {
                     let glass = TMap.solidMat[hitK] == .glass
                     b.inK = hitK
+                    TMap.hit(hitK, b.dmg * 0.9)
                     b.pens += 1
                     b.dmg *= glass ? 0.92 : 0.55
                     if !glass && (b.pens > 2 || b.dmg < 6) { continue }
@@ -1309,7 +1151,7 @@ final class TacticalEngine {
         for var n in nades {
             n.fuse -= dt
             var np = CGPoint(x: n.pos.x + n.vel.dx * dt, y: n.pos.y + n.vel.dy * dt)
-            for r in TMap.solid where r.contains(np) {
+            for r in TMap.floorIdx[TMap.floorOf(n.pos)].map({ TMap.solid[$0] }) where r.contains(np) {
                 let tryX = CGPoint(x: n.pos.x + n.vel.dx * dt, y: n.pos.y)
                 if r.contains(tryX) { n.vel.dx = -n.vel.dx * 0.5 } else { n.vel.dy = -n.vel.dy * 0.5 }
                 np = n.pos
@@ -1331,6 +1173,7 @@ final class TacticalEngine {
                 smokeClouds.append(Smoke(pos: n.pos, life: 10, r: 85))
             } else if n.fuse <= 0 {
                 booms.append(Boom(pos: n.pos, life: 0.45, r: 110))
+                TMap.blast(n.pos, radius: 170, dmg: 190)
                 shake = max(shake, tDist(n.pos, me.pos) < 300 ? 10 : 0)
                 for v in players where v.alive {
                     let d = tDist(v.pos, n.pos)
@@ -1353,13 +1196,14 @@ final class TacticalEngine {
     private func stairCheck(_ p: TPlayer) {
         if let s = TMap.stairAt(p.pos) {
             if !p.onStair {
-                let r = TMap.stairRect(s.0, floor: s.1 == 0 ? 1 : 0)
+                let up = s.1 == TMap.stairLo[s.0]
+                let r = TMap.stairRect(s.0, floor: up ? s.1 + 1 : s.1 - 1)
                 p.pos = CGPoint(x: r.midX, y: r.midY)
                 p.onStair = true
                 p.path = []
                 p.pathT = 0
                 p.targetID = -1
-                if p.isPlayer { pop(p.pos, s.1 == 0 ? "UPSTAIRS" : "DOWNSTAIRS", .white) }
+                if p.isPlayer { pop(p.pos, up ? "UPSTAIRS" : "DOWNSTAIRS", .white) }
             }
         } else {
             p.onStair = false
@@ -1367,17 +1211,56 @@ final class TacticalEngine {
     }
 
     private func routed(_ p: TPlayer, _ dest: CGPoint) -> CGPoint {
-        let pf = TMap.floorOf(p.pos)
-        if pf == TMap.floorOf(dest) { return dest }
-        var best = CGPoint.zero
+        let pf = TMap.floorOf(p.pos), df = TMap.floorOf(dest)
+        if pf == df { return dest }
+        let nf = pf + (df > pf ? 1 : -1)
+        let lo = min(pf, nf)
+        var best = dest
         var bd = CGFloat.greatestFiniteMagnitude
-        for i in TMap.stairs.indices {
+        for i in TMap.stairs.indices where TMap.stairLo[i] == lo {
             let here = TMap.stairRect(i, floor: pf)
-            let there = TMap.stairRect(i, floor: 1 - pf)
-            let c = tDist(p.pos, CGPoint(x: here.midX, y: here.midY)) + tDist(CGPoint(x: there.midX, y: there.midY), dest)
+            let there = TMap.stairRect(i, floor: nf)
+            let tail = nf == df ? tDist(CGPoint(x: there.midX, y: there.midY), dest) : CGFloat(abs(df - nf)) * 900
+            let c = tDist(p.pos, CGPoint(x: here.midX, y: here.midY)) + tail
             if c < bd { bd = c; best = CGPoint(x: here.midX, y: here.midY) }
         }
         return best
+    }
+
+    /// a wall or prop just broke: nearby bots drop their cached routes, and nearby squads may go and look
+    private func reactToBreaches() {
+        if TMap.breaches.isEmpty { return }
+        let list = TMap.breaches
+        TMap.breaches = []
+        for r in list {
+            let c = CGPoint(x: r.midX, y: r.midY)
+            let fl = TMap.floorOf(c)
+            var keys = Set<Int>()
+            for p in players where p.alive && !p.isPlayer && TMap.floorOf(p.pos) == fl && tDist(p.pos, c) < 800 {
+                p.path = []
+                p.pathT = 0
+                let idx = players.filter { $0.team == p.team }.firstIndex { $0 === p } ?? 0
+                keys.insert(p.team * 8 + idx / 2)
+            }
+            for k in keys where Bool.random() { squadGoals[k] = (c, time + 8) }
+        }
+    }
+
+    private func roomGoal() -> CGPoint {
+        let rs = TMap.rooms
+        let r = rs[Int.random(in: 0..<rs.count)].r
+        return CGPoint(x: r.midX + CGFloat.random(in: -r.width * 0.25...r.width * 0.25), y: r.midY + CGFloat.random(in: -r.height * 0.25...r.height * 0.25))
+    }
+
+    /// shared destination for a pair of bots on the same team
+    private func squadGoalFor(_ p: TPlayer, bias: CGPoint?) -> CGPoint {
+        let idx = players.filter { $0.team == p.team }.firstIndex { $0 === p } ?? 0
+        let key = p.team * 8 + idx / 2
+        if let g = squadGoals[key], g.1 > time { return g.0 }
+        var pos = roomGoal()
+        if let b = bias, Bool.random() { pos = b }
+        squadGoals[key] = (pos, time + CGFloat.random(in: 12...24))
+        return pos
     }
 
     private func objective(_ p: TPlayer) -> CGPoint {
@@ -1392,21 +1275,42 @@ final class TacticalEngine {
             if gameMode == 2, let t = tags.min(by: { tDist($0.pos, p.pos) < tDist($1.pos, p.pos) }), tDist(t.pos, p.pos) < 900 { return t.pos }
             if p.roam == .zero || tDist(p.pos, p.roam) < 50 {
                 if Int.random(in: 0..<100) < 40, let en = players.filter({ $0.alive && $0.team != p.team }).randomElement() { p.roam = en.pos }
-                else if let w = TMap.walkable.randomElement() {
-                    let r = w.1
-                    p.roam = CGPoint(x: r.minX + r.width * CGFloat.random(in: 0.2...0.8), y: r.minY + r.height * CGFloat.random(in: 0.2...0.8))
+                else {
+                    let g = squadGoalFor(p, bias: nil)
+                    p.roam = CGPoint(x: g.x + cos(CGFloat(p.id) * 2.1) * 55, y: g.y + sin(CGFloat(p.id) * 2.1) * 55)
                 }
             }
             return p.roam
         }
         let atk = p.team == atkTeam
         let o = CGPoint(x: cos(CGFloat(p.id) * 1.7) * 70, y: sin(CGFloat(p.id) * 2.3) * 45)
+        let idx = players.filter { $0.team == p.team }.firstIndex { $0 === p } ?? 0
+        let off = CGPoint(x: cos(CGFloat(p.id) * 2.1) * 60, y: sin(CGFloat(p.id) * 2.1) * 60)
         if planted {
-            if atk { return CGPoint(x: bombPos.x + o.x * 1.6, y: bombPos.y + o.y * 1.6) }
+            if atk {
+                // guards spread over the rooms around the bomb
+                let g = squadGoalFor(p, bias: bombPos)
+                let near = tDist(g, bombPos) < 700 && TMap.floorOf(g) == TMap.floorOf(bombPos)
+                let c = near ? g : bombPos
+                return CGPoint(x: c.x + off.x * 1.6, y: c.y + off.y * 1.6)
+            }
+            // defenders come in from different squads / directions
+            if idx % 2 == 1 && time - plantedAt < 6 {
+                let g = squadGoalFor(p, bias: nil)
+                return TMap.floorOf(g) == TMap.floorOf(bombPos) ? g : bombPos
+            }
             return bombPos
         }
         let r = TMap.site(atk ? atkSite : p.site)
-        return CGPoint(x: r.midX + o.x, y: r.midY + o.y)
+        if atk {
+            // squad 0 executes the site, the other squads flank through other floors and rooms, everyone commits after 35s
+            if idx / 2 == 0 || time - roundT0 > 35 { return CGPoint(x: r.midX + o.x, y: r.midY + o.y) }
+            let g = squadGoalFor(p, bias: CGPoint(x: r.midX, y: r.midY))
+            return CGPoint(x: g.x + off.x, y: g.y + off.y)
+        }
+        // defenders hold posts all over the house and rotate; half the posts lean on the sites
+        let g = squadGoalFor(p, bias: CGPoint(x: r.midX, y: r.midY))
+        return CGPoint(x: g.x + off.x, y: g.y + off.y)
     }
 
     private func botThink(_ p: TPlayer, _ dt: CGFloat, _ planting: inout Bool, _ defusing: inout Bool) {
@@ -1447,7 +1351,7 @@ final class TacticalEngine {
             p.aim += max(-mt, min(mt, df))
             p.reactT -= dt
             if p.reactT <= 0 && abs(df) < 0.14 && p.fireCd <= 0 && p.reloadT <= 0 && p.mag > 0 {
-                shoot(p, aimErr[diff])
+                if d < 46 && Int.random(in: 0..<100) < 70 { slash(p) } else { shoot(p, aimErr[diff]) }
             }
             if p.nades > 0 && d > 220 && Double.random(in: 0...1) < Double(dt) * 0.12 {
                 throwNade(p, ang, min(d / 1.4, 470))
@@ -1581,9 +1485,14 @@ final class TacticalEngine {
         mg.rotate(by: .radians(Double(th)))
         mg.scaleBy(x: s, y: s)
         mg.translateBy(x: -focus.pos.x, y: -focus.pos.y)
-        mg.draw(Image(uiImage: TacRadar.image), in: CGRect(x: 0, y: 0, width: TMap.floorW, height: TMap.H))
+        let rf = TMap.floorOf(focus.pos)
+        mg.draw(Image(uiImage: TacRadar.images[rf]), in: CGRect(x: TMap.origin(rf), y: 0, width: TMap.floorW, height: TMap.H))
+        // destroyed walls / props: paint the floor back over them so the radar matches the real geometry
+        for k in TMap.brokenAll where TMap.floorOfX(TMap.origBase[k].midX) == rf {
+            mg.fill(Path(TMap.origBase[k]), with: .color(Color(red: 0.5, green: 0.46, blue: 0.4)))
+        }
         // dynamic doors (closed ones as bars)
-        for (i, d) in TMap.doors.enumerated() where i < TMap.doorOpen.count && TMap.doorOpen[i] < 0.5 {
+        for (i, d) in TMap.doors.enumerated() where i < TMap.doorOpen.count && TMap.doorOpen[i] < 0.5 && TMap.floorOf(CGPoint(x: d.midX, y: d.midY)) == rf {
             mg.fill(Path(d), with: .color(Color(red: 0.75, green: 0.55, blue: 0.28)))
         }
         let pulse = 0.5 + 0.5 * sin(Double(time) * 4)
@@ -1601,7 +1510,7 @@ final class TacticalEngine {
             let col: Color = t.team == me.team ? Color(red: 0.3, green: 0.62, blue: 1) : Color.yellow
             g.fill(Path(CGRect(x: c.x - 3, y: c.y - 3, width: 6, height: 6)), with: .color(col))
         }
-        for pk in packs where !pk.taken {
+        for pk in packs where !pk.taken && TMap.floorOf(pk.pos) == rf {
             let c = P(pk.pos.x, pk.pos.y)
             g.fill(Path(CGRect(x: c.x - 3, y: c.y - 1, width: 6, height: 2)), with: .color(.green))
             g.fill(Path(CGRect(x: c.x - 1, y: c.y - 3, width: 2, height: 6)), with: .color(.green))
@@ -1616,7 +1525,7 @@ final class TacticalEngine {
         cone.addArc(center: CGPoint(x: cx, y: cy), radius: R, startAngle: .radians(-Double.pi / 2 - 0.5), endAngle: .radians(-Double.pi / 2 + 0.5), clockwise: false)
         cone.closeSubpath()
         g.fill(cone, with: .linearGradient(Gradient(colors: [Color.green.opacity(0.32), Color.green.opacity(0)]), startPoint: CGPoint(x: cx, y: cy), endPoint: CGPoint(x: cx, y: cy - R)))
-        for p in players where p.alive && !p.isPlayer && (p.team == me.team || p.spotted) {
+        for p in players where p.alive && !p.isPlayer && (p.team == me.team || p.spotted) && TMap.floorOf(p.pos) == rf {
             let (c, edge) = clamp(P(p.pos.x, p.pos.y))
             let ally = p.team == me.team
             let col: Color = ally ? Color(red: 0.3, green: 0.62, blue: 1) : Color(red: 1, green: 0.28, blue: 0.3)
@@ -1638,7 +1547,7 @@ final class TacticalEngine {
             let c = clamp(P(pg.pos.x, pg.pos.y)).0
             g.stroke(Path(ellipseIn: CGRect(x: c.x - 7, y: c.y - 7, width: 14, height: 14)), with: .color(.orange.opacity(Double(min(1, pg.life)))), lineWidth: 1.5)
         }
-        if planted {
+        if planted && TMap.floorOf(bombPos) == rf {
             let c = clamp(P(bombPos.x, bombPos.y)).0
             let rr = 5 + 5 * CGFloat(pulse)
             g.stroke(Path(ellipseIn: CGRect(x: c.x - rr, y: c.y - rr, width: rr * 2, height: rr * 2)), with: .color(.red.opacity(0.8)), lineWidth: 1.5)
@@ -1672,9 +1581,9 @@ final class TacticalEngine {
         if gameMode == 1 { return "First to \(killTarget) kills" }
         if gameMode == 2 { return "Collect enemy tags, deny yours" }
         if gameMode == 3 { return "Arms Race  \(min(me.ladder + 1, TWeapons.ladder.count))/\(TWeapons.ladder.count)  \(TGuns.get(me.gun).name)" }
-        if phase == 0 { return me.team == atkTeam ? "Attack: plant at \(atkSite == 0 ? "A" : "B")" : "Defend both sites" }
+        if phase == 0 { return me.team == atkTeam ? "Attack: plant at \(atkSite == 0 ? "A · BASEMENT" : "B · ATTIC")" : "Defend A (basement) and B (attic)" }
         if planted { return me.team == atkTeam ? "Protect the bomb" : "Defuse the bomb" }
-        return me.team == atkTeam ? "Plant the bomb at \(atkSite == 0 ? "A" : "B")" : "Hold the sites"
+        return me.team == atkTeam ? "Plant the bomb at \(atkSite == 0 ? "A · BASEMENT" : "B · ATTIC")" : "Hold both sites"
     }
 }
 
@@ -1728,7 +1637,7 @@ struct TacticalPlay: View {
             engine.view3D = true
             engine.autoAim = true
             autoOn = true
-            Task.detached(priority: .utility) { _ = TacRadar.image }
+            Task.detached(priority: .utility) { _ = TacRadar.images }
             let sxd = game.sx
             engine.killFx = sxd.fx
             engine.charm = sxd.charm
@@ -2127,88 +2036,21 @@ struct TacticalPlay: View {
             GeometryReader { geo in
                 let W = geo.size.width, H = geo.size.height
                 ZStack(alignment: .topLeading) {
+                    HudVignette(e: e)
                     // top-left: settings; the radar is drawn by the canvas
                     Button { e.paused = true } label: { vbtn("gearshape.fill", 34) }
                         .buttonStyle(TuiPress())
                         .position(x: 180, y: 84)
-                    Text(TMap.roomName(e.me.pos).uppercased()).font(.jk(10, .heavy)).tracking(1).foregroundColor(.white.opacity(0.95))
-                        .padding(.horizontal, 10).frame(height: 20).background(Capsule().fill(Color.black.opacity(0.45)))
-                        .position(x: 84, y: 206)
+                    let hf: TPlayer = e.me.alive ? e.me : (e.players.first { $0.team == e.me.team && $0.alive } ?? e.me)
+                    let hfl = TMap.floorOf(hf.pos)
+                    HudFloorStack(floor: hfl).position(x: 198, y: 150)
+                    HudRoomChip(floor: hfl, room: TMap.roomName(hf.pos)).position(x: 84, y: 206)
 
-                    // top-center: roster with custom avatars + score
-                    VStack(spacing: 4) {
-                        HStack(spacing: 8) {
-                            teamCards(allies, ally: true, me: e.me.id)
-                            VStack(spacing: 2) {
-                                HStack(spacing: 6) {
-                                    Text("\(e.scores[0])").font(.system(size: 17, weight: .heavy, design: .rounded)).foregroundColor(.white)
-                                        .frame(width: 30, height: 26).background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(TUI.blue.opacity(0.35)))
-                                        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(TUI.blue, lineWidth: 1.5))
-                                    Text(String(format: "%d:%02d", t / 60, t % 60))
-                                        .font(.system(size: 17, weight: .heavy, design: .monospaced))
-                                        .foregroundColor(e.planted ? TUI.red : .white)
-                                    Text("\(e.rivalScore)").font(.system(size: 17, weight: .heavy, design: .rounded)).foregroundColor(.white)
-                                        .frame(width: 30, height: 26).background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(TUI.orange.opacity(0.35)))
-                                        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(TUI.orange, lineWidth: 1.5))
-                                }
-                                if e.gameMode == 0 {
-                                    Text("Round \(e.round + 1)").font(.jk(10, .semibold)).foregroundColor(.white.opacity(0.85))
-                                }
-                            }
-                            teamCards(foes, ally: false, me: e.me.id)
-                        }
-                        .padding(.horizontal, 12).padding(.vertical, 6).tuiGlass(16, fill: 0.5)
-                        HStack(spacing: 6) {
-                            Text(TWeapons.modeNames[min(e.gameMode, TWeapons.modeNames.count - 1)].capitalized).font(.jk(11, .semibold)).foregroundColor(TUI.blue)
-                            Text("|").font(.jk(11, .regular)).foregroundColor(.white.opacity(0.4))
-                            Text(e.objectiveText).font(.jk(11, .semibold)).foregroundColor(.white.opacity(0.95))
-                        }
-                        .padding(.horizontal, 12).frame(height: 22).background(Capsule().fill(Color.black.opacity(0.4)))
-                        if e.gameMode == 5 {
-                            HStack(spacing: 5) {
-                                ForEach(0..<3, id: \.self) { i in
-                                    let pr = e.cpProg[i]
-                                    Text(["A", "B", "C"][i]).font(.jk(12, .heavy)).foregroundColor(.white).frame(width: 30, height: 24)
-                                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(pr == 0 ? Color.gray.opacity(0.55) : (pr > 0 ? TUI.blue.opacity(0.35 + 0.65 * Double(pr)) : TUI.orange.opacity(0.35 + 0.65 * Double(-pr)))))
-                                }
-                            }
-                        }
-                        if e.bannerT > 0 {
-                            Text(e.banner).font(.system(size: 34, weight: .regular)).tracking(1).foregroundColor(.white).multilineTextAlignment(.center)
-                                .padding(.horizontal, 30).padding(.vertical, 6).background(Color.black.opacity(0.35))
-                                .padding(.top, 12).opacity(Double(min(1, e.bannerT)))
-                        }
-                        if e.plantProg > 0 || e.defuseProg > 0 {
-                            let pr = e.plantProg > 0 ? e.plantProg / 3 : e.defuseProg / 4
-                            VStack(spacing: 4) {
-                                HStack(spacing: 5) {
-                                    SF(e.plantProg > 0 ? "timer" : "wrench.and.screwdriver.fill", "circle.fill").font(.system(size: 11, weight: .bold))
-                                    Text(e.plantProg > 0 ? "PLANTING" : "DEFUSING").font(.jk(11, .heavy))
-                                }
-                                .foregroundColor(.white)
-                                Capsule().fill(Color.white.opacity(0.22)).frame(width: 160, height: 7)
-                                    .overlay(alignment: .leading) { Capsule().fill(TUI.gold).frame(width: 160 * min(1, pr), height: 7) }
-                            }
-                            .padding(.top, 20)
-                        }
-                    }
-                    .frame(width: W).padding(.top, 2)
+                    // top-center: roster with floor tags, score, objective, bomb location
+                    HudScoreboard(e: e).frame(width: W).padding(.top, 2)
 
                     // top-right: kill feed
-                    VStack(alignment: .trailing, spacing: 6) {
-                        if let f = e.feed.last {
-                            HStack(spacing: 8) {
-                                Text(f.k.split(separator: " ").first.map(String.init) ?? f.k).font(.jk(12, .bold)).foregroundColor(f.kTeam == e.me.team ? TUI.blue : TUI.orange)
-                                Image(uiImage: GunSprites.icon(TWeapons.rig(f.gun))).renderingMode(.template).resizable().scaledToFit()
-                                    .foregroundColor(.white).frame(width: 36, height: 14)
-                                if f.head { SF("scope", "circle.fill").font(.system(size: 11, weight: .black)).foregroundColor(TUI.red) }
-                                Text(f.v.split(separator: " ").first.map(String.init) ?? f.v).font(.jk(12, .bold)).foregroundColor(f.kTeam == e.me.team ? TUI.orange : TUI.blue)
-                            }
-                            .padding(.horizontal, 10).frame(height: 24).tuiGlass(12, fill: 0.5)
-                        }
-                    }
-                    .padding(.trailing, 16).padding(.top, 4)
-                    .frame(width: W, alignment: .trailing)
+                    HudFeed(e: e).padding(.trailing, 16).padding(.top, 4).frame(width: W, alignment: .trailing)
 
                     if e.me.alive {
                         Button { e.scoped.toggle() } label: { vbtn("scope", 44, on: e.scoped) }
@@ -2223,7 +2065,7 @@ struct TacticalPlay: View {
                             .position(x: W - 198, y: H - 114)
                         togglePill("repeat", "AUTO", e.autoFire) { e.autoFire.toggle() }
                             .position(x: W - 198, y: H - 82)
-                        hotbar(e).position(x: min(W / 2, W - 250 - 140), y: H - 52)
+                        HudDock(e: e).position(x: min(W / 2, W - 250 - 140), y: H - 58)
                     } else {
                         Button { e.fast.toggle() } label: {
                             HStack(spacing: 6) {

@@ -46,9 +46,9 @@ enum TacSeason {
         TacCos(id: "gl_red", kind: "gl", label: "Crimson", sym: "", rgb: (0.6, 0.1, 0.1)),
         TacCos(id: "gl_camo", kind: "gl", label: "Woodland", sym: "", rgb: (0.25, 0.33, 0.17)),
         TacCos(id: "gl_blue", kind: "gl", label: "Navy", sym: "", rgb: (0.12, 0.2, 0.45)),
-        TacCos(id: "map_desert", kind: "map", label: "Desert Dust", sym: "", rgb: (0, 0, 0)),
-        TacCos(id: "map_station", kind: "map", label: "Station (Night)", sym: "", rgb: (0, 0, 0)),
-        TacCos(id: "map_grace", kind: "map", label: "Fallen Grace", sym: "", rgb: (0, 0, 0))
+        TacCos(id: "map_desert", kind: "map", label: "The House · Day", sym: "", rgb: (0, 0, 0)),
+        TacCos(id: "map_station", kind: "map", label: "The House · Night Shift", sym: "", rgb: (0, 0, 0)),
+        TacCos(id: "map_grace", kind: "map", label: "The House · Dusk", sym: "", rgb: (0, 0, 0))
     ]
     static func cos(_ id: String) -> TacCos { catalog.first { $0.id == id } ?? catalog[0] }
     static let baseOwned = ["fx_none", "charm_none", "gl_black", "map_desert"]

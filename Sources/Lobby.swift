@@ -7,17 +7,22 @@ struct LobbyView: View {
     @State private var showStats = false
     @State private var showAvatar = false
     @State private var showAdmin = false
+    @State private var showRanks = false
     @State private var bg: TacScene? = nil
     @State private var diff = 1
     @State private var seasonTab = 0
+    @State private var matchTab = 0
+    @State private var username = TacProfile.name
 
     private let lime = TUI.accent
     private let diffNames = ["EASY", "NORMAL", "HARD"]
+    private let modeIcons = ["timer", "person.2.fill", "tag.fill", "arrow.up.forward.circle.fill", "person.3.fill", "flag.fill"]
+    private let modeInfo = ["Plant or defuse the bomb. Buy gear each round.", "Two teams, first to the kill target wins.", "Collect dog tags from fallen enemies.", "Every kill upgrades your weapon.", "Everyone for themselves.", "Hold zones A, B and C to score."]
 
     var body: some View {
         GeometryReader { g in
             let t = game.s.ex.tac ?? TacData()
-            let colW = max(250, g.size.width * 0.3)
+            let colW = min(300, max(240, g.size.width * 0.34))
             ZStack {
                 Color.black.ignoresSafeArea()
                 if let b = bg {
@@ -27,18 +32,18 @@ struct LobbyView: View {
                     }
                     .frame(width: 1, height: 1).allowsHitTesting(false)
                 }
-                LinearGradient(colors: [Color.black.opacity(0.65), .clear, Color.black.opacity(0.45)], startPoint: .leading, endPoint: .trailing).ignoresSafeArea().allowsHitTesting(false)
-                LinearGradient(colors: [Color.black.opacity(0.5), .clear, Color.black.opacity(0.85)], startPoint: .top, endPoint: .bottom).ignoresSafeArea().allowsHitTesting(false)
+                LinearGradient(colors: [Color.black.opacity(0.7), .clear, Color.black.opacity(0.5)], startPoint: .leading, endPoint: .trailing).ignoresSafeArea().allowsHitTesting(false)
+                LinearGradient(colors: [Color.black.opacity(0.55), .clear, Color.black.opacity(0.85)], startPoint: .top, endPoint: .bottom).ignoresSafeArea().allowsHitTesting(false)
                 VStack(spacing: 0) {
-                    topBar(t)
-                    Spacer(minLength: 0)
-                    HStack(alignment: .bottom, spacing: 14) {
-                        leftCards(t)
+                    navBar(t)
+                    HStack(alignment: .top, spacing: 12) {
+                        leftPanel(t)
                         Spacer(minLength: 0)
-                        rightColumn(t, colW)
+                        rightPanel(colW)
                     }
-                    .padding(.bottom, 6)
-                    bottomBar(g.size.width - colW - 14)
+                    .padding(.top, 10)
+                    Spacer(minLength: 0)
+                    bottomBar()
                 }
                 .padding(.horizontal, 14)
             }
@@ -46,6 +51,7 @@ struct LobbyView: View {
         .onAppear {
             OrientationLock.set(landscape: true)
             ensureBg()
+            username = TacProfile.name
         }
         .onChange(of: nav.tacPlay) { v in
             if v != nil {
@@ -72,6 +78,9 @@ struct LobbyView: View {
         .sheet(isPresented: $showStats) {
             statsSheet.preferredColorScheme(.dark)
         }
+        .sheet(isPresented: $showRanks) {
+            TacRankSheet(t: game.s.ex.tac ?? TacData(), username: $username).preferredColorScheme(.dark)
+        }
     }
 
     private func ensureBg() {
@@ -81,87 +90,162 @@ struct LobbyView: View {
         bg = b
     }
 
-    // MARK: top
+    // MARK: nav bar
 
-    private func pill(_ icon: String, _ text: String, _ col: Color) -> some View {
-        HStack(spacing: 7) {
-            SF(icon, "circle.fill").font(.system(size: 14, weight: .bold)).foregroundColor(col)
-            Text(text).font(.jk(15, .heavy)).foregroundColor(.white)
+    private func tab(_ icon: String, _ label: String, on: Bool = false, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            VStack(spacing: 2) {
+                SF(icon, "circle.fill").font(.system(size: 15, weight: .semibold))
+                Text(label).font(.jk(9, .heavy)).tracking(1)
+                Rectangle().fill(on ? lime : Color.clear).frame(height: 2).padding(.horizontal, 6)
+            }
+            .foregroundColor(on ? lime : .white.opacity(0.85))
+            .frame(width: 54, height: 42)
         }
-        .padding(.horizontal, 14).frame(height: 40).tuiGlass(20, fill: 0.5)
+        .buttonStyle(TuiPress())
     }
 
-    private func topBar(_ t: TacData) -> some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 8) {
-                SF("scope", "circle.fill").font(.system(size: 17, weight: .bold)).foregroundColor(lime)
-                Text("MAINSHOT").font(.jk(17, .heavy)).tracking(3).foregroundColor(.white)
+    private func navBar(_ t: TacData) -> some View {
+        let xp = TacRank.totalXP(t)
+        let ri = TacRank.index(xp)
+        return HStack(spacing: 10) {
+            Image("Splash").resizable().scaledToFit().frame(height: 42)
+                .onLongPressGesture(minimumDuration: 1.5) { showAdmin = true }
+            Button { showRanks = true } label: {
+                HStack(spacing: 8) {
+                    TacRankTile(idx: ri, size: 38, showName: false)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(username).font(.jk(14, .heavy)).foregroundColor(.white).lineLimit(1)
+                        Text(TacRank.ranks[ri].name.uppercased()).font(.jk(9, .heavy)).tracking(1).foregroundColor(lime).lineLimit(1)
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.white.opacity(0.15))
+                            Capsule().fill(TUI.gold).frame(width: 96 * CGFloat(TacRank.progress(xp)))
+                        }
+                        .frame(width: 96, height: 3)
+                    }
+                    SF("chevron.down").font(.system(size: 9, weight: .bold)).foregroundColor(.white.opacity(0.5))
+                }
+                .padding(.horizontal, 8).frame(height: 46).tuiGlass(10, fill: 0.5)
             }
-            .padding(.horizontal, 14).frame(height: 40).tuiGlass(20, fill: 0.5)
-            .onLongPressGesture(minimumDuration: 1.5) { showAdmin = true }
-            Spacer()
-            pill("diamond.fill", "\(game.s.ex.gems)", TUI.gold)
+            .buttonStyle(TuiPress())
+            Spacer(minLength: 4)
+            HStack(spacing: 0) {
+                tab("house.fill", "HOME", on: true) {}
+                tab("star.circle.fill", "SEASON") { seasonTab = 0; showSeason = true }
+                tab("tshirt.fill", "LOCKER") { seasonTab = 1; showSeason = true }
+                tab("gift.fill", "DRAW") { seasonTab = 2; showSeason = true }
+                tab("person.crop.square.fill", "AVATAR") { showAvatar = true }
+                tab("chart.bar.fill", "STATS") { showStats = true }
+            }
+            HStack(spacing: 6) {
+                SF("diamond.fill", "circle.fill").font(.system(size: 13, weight: .bold)).foregroundColor(TUI.gold)
+                Text("\(game.s.ex.gems)").font(.jk(14, .heavy)).foregroundColor(.white)
+            }
+            .padding(.horizontal, 10).frame(height: 34).tuiGlass(17, fill: 0.5)
         }
-        .padding(.top, 8)
+        .padding(.top, 6)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(LinearGradient(colors: [lime.opacity(0.7), lime.opacity(0.05)], startPoint: .leading, endPoint: .trailing)).frame(height: 1).offset(y: 3)
+        }
     }
 
     // MARK: left
 
-    private func statTile(_ icon: String, _ v: String, _ label: String, _ col: Color) -> some View {
-        VStack(spacing: 3) {
-            SF(icon, "circle.fill").font(.system(size: 14, weight: .bold)).foregroundColor(col)
-            Text(v).font(.system(size: 18, weight: .heavy, design: .rounded)).foregroundColor(.white)
-            Text(label).font(.jk(8, .heavy)).tracking(1).foregroundColor(.white.opacity(0.55))
+    private func statLine(_ icon: String, _ v: String, _ label: String, _ col: Color) -> some View {
+        HStack(spacing: 6) {
+            SF(icon, "circle.fill").font(.system(size: 11, weight: .bold)).foregroundColor(col).frame(width: 16)
+            Text(label).font(.jk(10, .heavy)).tracking(1).foregroundColor(.white.opacity(0.6))
+            Spacer(minLength: 0)
+            Text(v).font(.jk(13, .heavy)).foregroundColor(.white)
         }
-        .frame(width: 74, height: 64).tuiGlass(12, fill: 0.5)
     }
 
-    private func leftCards(_ t: TacData) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                SF("person.crop.circle.fill", "person.fill").font(.system(size: 40)).foregroundColor(.white.opacity(0.9))
-                VStack(alignment: .leading, spacing: 1) {
+    private func leftPanel(_ t: TacData) -> some View {
+        let xp = TacRank.totalXP(t)
+        let ri = TacRank.index(xp)
+        let next = min(TacRank.ranks.count - 1, ri + 1)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
+                TacRankTile(idx: ri, size: 84, progress: TacRank.progress(xp))
+                VStack(alignment: .leading, spacing: 5) {
                     Text(TacSeason.league(t.rating)).font(.jk(10, .heavy)).tracking(2).foregroundColor(lime)
-                    Text("\(t.rating)").font(.system(size: 26, weight: .heavy, design: .rounded)).foregroundColor(.white)
+                    statLine("scope", "\(t.kills)", "KILLS", TUI.gold)
+                    statLine("trophy.fill", "\(t.wins)", "WINS", TUI.green)
+                    statLine("xmark.circle.fill", "\(t.losses)", "LOSS", TUI.red)
+                    statLine("shield.lefthalf.filled", "\(t.rating)", "RATING", TUI.blue)
                 }
-                Spacer(minLength: 0)
+                .frame(width: 112)
             }
-            .padding(10).frame(width: 224).tuiGlass(16, fill: 0.55)
-            HStack(spacing: 8) {
-                statTile("scope", "\(t.kills)", "KILLS", TUI.gold)
-                statTile("trophy.fill", "\(t.wins)", "WINS", TUI.green)
-                statTile("xmark.circle.fill", "\(t.losses)", "LOSSES", TUI.red)
+            Text(TacRank.toNext(xp) > 0 ? "\(TacRank.toNext(xp)) XP to \(TacRank.ranks[next].name)" : "MAX RANK")
+                .font(.jk(10, .bold)).foregroundColor(.white.opacity(0.65)).lineLimit(1)
+            Button { showRanks = true } label: {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(0..<TacRank.ranks.count, id: \.self) { i in
+                            TacRankTile(idx: i, size: 48, locked: i > ri, showName: false)
+                                .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous).stroke(i == ri ? lime : Color.clear, lineWidth: 2))
+                        }
+                    }
+                }
+                .allowsHitTesting(false)
             }
+            .buttonStyle(TuiPress())
         }
+        .padding(10).frame(width: 232).tuiGlass(14, fill: 0.55)
     }
 
     // MARK: right
 
-    private let modeIcons = ["timer", "person.2.fill", "tag.fill", "arrow.up.forward.circle.fill", "person.3.fill", "flag.fill"]
-    private let modeInfo = ["Plant or defuse the bomb. Buy gear each round.", "Two teams, first to the kill target wins.", "Collect dog tags from fallen enemies.", "Every kill upgrades your weapon.", "Everyone for themselves.", "Hold zones A, B and C to score."]
+    private func matchTabBtn(_ label: String, _ i: Int) -> some View {
+        Button { matchTab = i } label: {
+            Text(label).font(.jk(11, .heavy)).tracking(1)
+                .foregroundColor(matchTab == i ? .black : .white.opacity(0.8))
+                .frame(maxWidth: .infinity).frame(height: 30)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(matchTab == i ? lime : Color.white.opacity(0.08)))
+        }
+        .buttonStyle(TuiPress())
+    }
 
-    private func rightColumn(_ t: TacData, _ w: CGFloat) -> some View {
+    private func rightPanel(_ w: CGFloat) -> some View {
         VStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
-                    SF(modeIcons[nav.tacMode], "circle.fill").font(.system(size: 13, weight: .bold)).foregroundColor(lime)
-                    Text(TWeapons.modeNames[nav.tacMode]).font(.jk(14, .heavy)).foregroundColor(.white)
-                    Spacer()
-                    Text("5V5").font(.jk(10, .heavy)).foregroundColor(.black).padding(.horizontal, 7).frame(height: 18).background(Capsule().fill(lime))
+                    matchTabBtn("PUBLIC MATCH", 0)
+                    matchTabBtn("CUSTOM MATCH", 1)
                 }
-                Text(modeInfo[nav.tacMode]).font(.jk(11, .semibold)).foregroundColor(.white.opacity(0.7)).lineLimit(2)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
+                if matchTab == 0 {
+                    HStack(spacing: 8) {
+                        SF(modeIcons[nav.tacMode], "circle.fill").font(.system(size: 16, weight: .bold)).foregroundColor(lime).frame(width: 22)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(TWeapons.modeNames[nav.tacMode]).font(.jk(13, .heavy)).foregroundColor(.white)
+                            Text(modeInfo[nav.tacMode]).font(.jk(10, .semibold)).foregroundColor(.white.opacity(0.65)).lineLimit(2)
+                        }
+                        Spacer(minLength: 0)
+                        Text("5V5").font(.jk(10, .heavy)).foregroundColor(.black).padding(.horizontal, 7).frame(height: 18).background(Capsule().fill(lime))
+                    }
+                    .padding(8).background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.white.opacity(0.07)))
+                    HStack(spacing: 8) {
+                        SF("house.fill", "circle.fill").font(.system(size: 14, weight: .bold)).foregroundColor(lime).frame(width: 22)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("THE HOUSE").font(.jk(12, .heavy)).tracking(1).foregroundColor(.white)
+                            Text("Attic · Ground · Basement — breakable walls").font(.jk(9, .semibold)).foregroundColor(.white.opacity(0.6)).lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                        Text("3 FLOORS").font(.jk(9, .heavy)).foregroundColor(.black).padding(.horizontal, 7).frame(height: 18).background(Capsule().fill(TUI.gold))
+                    }
+                    .padding(8).background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.white.opacity(0.07)))
+                } else {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
                         ForEach(0..<6, id: \.self) { i in
                             let on = nav.tacMode == i
                             Button { nav.tacMode = i } label: {
                                 VStack(spacing: 3) {
                                     SF(modeIcons[i], "circle.fill").font(.system(size: 15, weight: .bold))
-                                    Text(TWeapons.modeShort[i]).font(.jk(8, .heavy))
+                                    Text(TWeapons.modeShort[i]).font(.jk(9, .heavy))
                                 }
                                 .foregroundColor(on ? .black : .white.opacity(0.85))
-                                .frame(width: 58, height: 46)
-                                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(on ? lime : Color.white.opacity(0.1)))
+                                .frame(maxWidth: .infinity).frame(height: 44)
+                                .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(on ? lime : Color.white.opacity(0.1)))
                             }
                             .buttonStyle(TuiPress())
                         }
@@ -176,22 +260,22 @@ struct LobbyView: View {
                                 Text(diffNames[i]).font(.jk(10, .heavy))
                             }
                             .foregroundColor(on ? .black : .white.opacity(0.8))
-                            .frame(maxWidth: .infinity).frame(height: 30)
+                            .frame(maxWidth: .infinity).frame(height: 28)
                             .background(Capsule().fill(on ? Color.white : Color.white.opacity(0.1)))
                         }
                         .buttonStyle(TuiPress())
                     }
                 }
             }
-            .padding(12).frame(width: w).tuiGlass(18, fill: 0.55)
+            .padding(10).frame(width: w).tuiGlass(14, fill: 0.55)
             Button { nav.tacPlay = diff } label: {
                 HStack(spacing: 12) {
-                    SF("play.fill", "play.circle.fill").font(.system(size: 22, weight: .bold))
-                    Text("PLAY").font(.jk(32, .heavy)).tracking(3)
+                    SF("play.fill", "play.circle.fill").font(.system(size: 20, weight: .bold))
+                    Text("PLAY").font(.jk(28, .heavy)).tracking(3)
                 }
-                .foregroundColor(.black).frame(width: w, height: 64)
-                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(LinearGradient(colors: [lime, Color(red: 0.5, green: 0.9, blue: 0.3)], startPoint: .top, endPoint: .bottom)))
-                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.6), lineWidth: 1))
+                .foregroundColor(.black).frame(width: w, height: 56)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(LinearGradient(colors: [lime, Color(red: 0.5, green: 0.9, blue: 0.3)], startPoint: .top, endPoint: .bottom)))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.white.opacity(0.6), lineWidth: 1))
                 .shadow(color: lime.opacity(0.35), radius: 12, y: 3)
             }
             .buttonStyle(TuiPress())
@@ -200,26 +284,25 @@ struct LobbyView: View {
 
     // MARK: bottom
 
-    private func dockBtn(_ icon: String, _ label: String, _ act: @escaping () -> Void) -> some View {
-        Button(action: act) {
-            VStack(spacing: 3) {
-                SF(icon, "circle.fill").font(.system(size: 19, weight: .semibold))
-                Text(label).font(.jk(9, .heavy)).tracking(1)
+    private func bottomBar() -> some View {
+        HStack(spacing: 8) {
+            Text("GROUP 1/5").font(.jk(10, .heavy)).tracking(1).foregroundColor(.white.opacity(0.7))
+            ForEach(0..<5, id: \.self) { i in
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.white.opacity(i == 0 ? 0.12 : 0.05))
+                    RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(i == 0 ? lime : Color.white.opacity(0.18), lineWidth: 1)
+                    if i == 0 {
+                        PortraitAvatar(key: TacAvatar.myKey, size: 30, look: TacAvatar.look(for: TacAvatar.myKey).faceCopy)
+                    } else {
+                        SF("plus", "circle.fill").font(.system(size: 11, weight: .bold)).foregroundColor(.white.opacity(0.3))
+                    }
+                }
+                .frame(width: 36, height: 36)
             }
-            .foregroundColor(.white.opacity(0.92)).frame(width: 78, height: 52)
+            Spacer()
         }
-        .buttonStyle(TuiPress())
-    }
-
-    private func bottomBar(_ w: CGFloat) -> some View {
-        HStack(spacing: 2) {
-            dockBtn("star.circle.fill", "SEASON") { seasonTab = 0; showSeason = true }
-            dockBtn("person.crop.square.fill", "AVATAR") { showAvatar = true }
-            dockBtn("tshirt.fill", "LOCKER") { seasonTab = 1; showSeason = true }
-            dockBtn("gift.fill", "DRAW") { seasonTab = 2; showSeason = true }
-            dockBtn("chart.bar.fill", "STATS") { showStats = true }
-        }
-        .padding(.horizontal, 6).tuiGlass(16, fill: 0.55)
+        .padding(.horizontal, 10).padding(.vertical, 5).tuiGlass(12, fill: 0.55)
+        .frame(width: 340, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, 6)
     }
