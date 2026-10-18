@@ -19,7 +19,7 @@ targets:
         PRODUCT_NAME: MainChar
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_FILE: Info.plist
-        INFOPLIST_KEY_CFBundleDisplayName: MainChar
+        INFOPLIST_KEY_CFBundleDisplayName: MainShot
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"

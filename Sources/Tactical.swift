@@ -427,7 +427,8 @@ final class TacticalEngine {
     var pops: [Pop] = []
     var feed: [Feed] = []
     var sprites: [String: UIImage] = [:]
-    var me: TPlayer { players[0] }
+    private let dummyMe = TPlayer(id: 0, team: 0, name: "You", handle: "you", emoji: "🙂", isPlayer: true)
+    var me: TPlayer { players.first ?? dummyMe }
 
     var phase = 0              // 0 prep, 1 live, 2 planted, 3 round end, 4 match over
     var timer: CGFloat = 0

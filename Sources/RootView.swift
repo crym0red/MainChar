@@ -4,23 +4,13 @@ struct RootView: View {
     @StateObject private var game = Game()
     @StateObject private var nav = Nav()
     @Environment(\.scenePhase) private var phase
-    @State private var stage = 0
 
     var body: some View {
         ZStack {
-            T.bg.ignoresSafeArea()
-            Group {
-                if game.playing { GameShell() }
-                else if stage == 0 { SplashView() }
-                else if stage == 1 { WelcomeView(onBrowse: { withAnimation { stage = 2 } }) }
-                else { HubView() }
-            }.zoomed()
+            Color.black.ignoresSafeArea()
+            if game.playing { GameShell().zoomed() }
         }
-        .onAppear {
-            if let first = game.store.saves.first { game.resume(first.id); nav.tab = 0; return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { if stage == 0 { withAnimation(.easeInOut(duration: 0.4)) { stage = 1 } } }
-        }
-        .onChange(of: game.playing) { p in if p { stage = 2 } }
+        .onAppear { boot() }
         .environmentObject(game)
         .environmentObject(nav)
         .preferredColorScheme(.dark)
@@ -29,6 +19,19 @@ struct RootView: View {
         .onChange(of: phase) { p in
             if p == .active { game.tickEnergy() } else { game.flush() }
         }
+    }
+
+    private func boot() {
+        if let first = game.store.saves.first {
+            game.resume(first.id)
+        } else {
+            let p = Persona(name: "Player One", handle: "MainShot", bio: "", emoji: "😎", vibe: .menace)
+            game.start(world: Worlds.presets[0], persona: p)
+        }
+        var s2 = game.s
+        s2.intro?.done = true
+        game.s = s2
+        nav.tab = 0
     }
 }
 

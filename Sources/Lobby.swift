@@ -94,6 +94,8 @@ struct LobbyView: View {
             .padding(.horizontal, 14).frame(height: 44)
             .background(Color.black.opacity(0.6)).clipShape(RoundedRectangle(cornerRadius: 6))
             Spacer()
+            Text("MAINSHOT").font(.jk(18, .heavy)).tracking(3).foregroundColor(.white.opacity(0.85))
+            Spacer()
             HStack(spacing: 8) {
                 Image(systemName: "diamond.fill").font(.system(size: 16)).foregroundColor(Color(red: 1, green: 0.8, blue: 0.2))
                 Text("\(st.ex.gems)").font(.jk(16, .bold)).foregroundColor(.white)
