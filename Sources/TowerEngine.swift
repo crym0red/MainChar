@@ -99,6 +99,13 @@ final class TwActor {
     var scanT: CGFloat = 0
     var keys = 0
     var lastStep = 0
+    var dormant = false
+    var vis = false
+    var memT: CGFloat = 0
+    var noiseT: CGFloat = 0
+    var hide = false
+    var phaseT: CGFloat = 0
+    var cover: CGPoint? = nil
 
     init(id: Int, name: String, team: Int, isMe: Bool, p: CGPoint, f: Int) {
         self.id = id
@@ -209,6 +216,7 @@ final class TowerEngine {
                 let a = TwActor(id: id, name: me ? name : names[id % names.count], team: t, isMe: me, p: p, f: f)
                 a.skill = 0.35 + rng.f() * 0.4
                 a.ang = rng.f() * 6.28
+                a.dormant = t != 0
                 actors.append(a)
                 id += 1
             }
@@ -272,7 +280,7 @@ final class TowerEngine {
     }
 
     func snapshot() -> [TwView] {
-        actors.map { TwView(p: $0.p, f: $0.f, ang: $0.ang, alive: $0.alive, flash: $0.flash > 0.4, walk: $0.walk, gun: gunIdx($0), hurt: $0.hurtT > 0, team: $0.team) }
+        actors.map { TwView(p: $0.p, f: $0.f, ang: $0.ang, alive: $0.alive && !$0.dormant, flash: $0.flash > 0.4, walk: $0.walk, gun: gunIdx($0), hurt: $0.hurtT > 0, team: $0.team) }
     }
 
     func currentViews() -> [TwView] {
@@ -347,8 +355,11 @@ final class TowerEngine {
         updateZone(dt)
         updateDoors(dt)
         updateMech(dt)
+        wakeT -= dt
+        if wakeT <= 0 { wakeT = 0.25; streamActors() }
         var rep = 0
-        for a in actors where a.alive {
+        for a in actors where a.alive && !a.dormant {
+            a.noiseT = max(0, a.noiseT - dt)
             if a.isMe { updateMe(a, dt) } else { updateBot(a, dt, &rep) }
             if gasActive(a) {
                 let dmg = (3 + CGFloat(stage) * 1.5) * dt
@@ -370,6 +381,37 @@ final class TowerEngine {
         }
         pickups()
         checkEnd()
+    }
+
+    var wakeT: CGFloat = 0
+    var lastForceWake: CGFloat = 0
+
+    /// Bots stay dormant (no sim, no render) until the player gets close, their floor turns toxic, or the match needs pace.
+    func streamActors() {
+        let m = me
+        var woke = Set<Int>()
+        func wake(_ t: Int) { woke.insert(t) }
+        for a in actors where a.alive && a.dormant {
+            if gassed.contains(a.f) || warnFloor == a.f { wake(a.team); continue }
+            let d = hypot(a.p.x - m.p.x, a.p.y - m.p.y)
+            if a.f == m.f && d < 560 { wake(a.team) }
+            else if abs(a.f - m.f) == 1 && d < 240 { wake(a.team) }
+        }
+        if time - lastForceWake > 35 {
+            lastForceWake = time
+            var best: (Int, CGFloat)? = nil
+            for a in actors where a.alive && a.dormant {
+                let d = hypot(a.p.x - m.p.x, a.p.y - m.p.y) + CGFloat(abs(a.f - m.f)) * 400
+                if best == nil || d < best!.1 { best = (a.team, d) }
+            }
+            if let b = best { wake(b.0) }
+        }
+        if woke.isEmpty { return }
+        for a in actors where a.dormant && woke.contains(a.team) {
+            a.dormant = false
+            a.think = 0
+            a.goal = nil
+        }
     }
 
     func updateZone(_ dt: CGFloat) {
@@ -414,30 +456,86 @@ final class TowerEngine {
                     let ph = (time + d.phase).truncatingRemainder(dividingBy: P)
                     if ph < P * 0.4 { d.open = max(0, d.open - dt * 1.6) } else { d.open = min(1, d.open + dt * 1.6) }
                 } else {
-                    var near = false
+                    // doors swing: bots open them as they walk through, the player taps OPEN
+                    var botNear = false
+                    var meNear = false
                     var who: TwActor? = nil
-                    for a in actors where a.alive && a.f == f {
-                        if abs(a.p.x - c.x) < 62 && abs(a.p.y - c.y) < 62 { near = true; who = a; if a.keys > 0 { break } }
+                    for a in actors where a.alive && !a.dormant && a.f == f {
+                        if a.isMe {
+                            if abs(a.p.x - c.x) < 110 && abs(a.p.y - c.y) < 110 { meNear = true }
+                        } else if abs(a.p.x - c.x) < 58 && abs(a.p.y - c.y) < 58 {
+                            botNear = true
+                            if who == nil || a.keys > 0 { who = a }
+                        }
                     }
                     if d.kind == 2 && d.locked {
-                        if near, let w = who, w.keys > 0 {
+                        if botNear, let w = who, w.keys > 0 {
                             w.keys -= 1
                             d.locked = false
                             d.kind = 0
-                            if w.isMe { note("DOOR UNLOCKED"); BRAudio.shared.play("pickup", vol: 0.6) }
-                        } else { near = false }
+                        } else { botNear = false }
                     }
-                    if d.kind == 3 && !powerOn[f] { near = false }
-                    if near { d.open = min(1, d.open + dt * 5); d.hold = 0.5 } else {
-                        d.hold -= dt
-                        if d.hold <= 0 { d.open = max(0, d.open - dt * 3) }
+                    if d.kind == 3 && !powerOn[f] { botNear = false }
+                    if botNear { d.want = true; d.hold = 1.2 }
+                    if d.want && !botNear {
+                        if meNear { d.hold = max(d.hold, 2.5) } else {
+                            d.hold -= dt
+                            if d.hold <= 0 { d.want = false }
+                        }
                     }
+                    let goal: CGFloat = d.want ? 1 : 0
+                    if d.open < goal { d.open = min(goal, d.open + dt * 3.2) } else if d.open > goal { d.open = max(goal, d.open - dt * 2.4) }
                 }
                 map.doors[f][i] = d
                 if was != d.closed { changed = true }
             }
         }
         if changed { map.refreshBlockers() }
+    }
+
+    // MARK: manual doors
+
+    func doorDist(_ r: CGRect, _ p: CGPoint) -> CGFloat {
+        let dx = max(r.minX - p.x, 0, p.x - r.maxX)
+        let dy = max(r.minY - p.y, 0, p.y - r.maxY)
+        return hypot(dx, dy)
+    }
+
+    func nearestDoor(_ a: TwActor, _ range: CGFloat = 46) -> Int? {
+        var best: Int? = nil
+        var bd = range
+        for (i, d) in map.doors[a.f].enumerated() {
+            let dd = doorDist(d.r, a.p)
+            if dd < bd { bd = dd; best = i }
+        }
+        return best
+    }
+
+    func toggleDoor(_ a: TwActor) {
+        guard let i = nearestDoor(a) else { return }
+        var d = map.doors[a.f][i]
+        if d.kind == 1 { note("SHUTTER IS ON A TIMER"); return }
+        if d.want || d.open > 0.5 {
+            d.want = false
+            d.hold = 0
+        } else if d.kind == 2 && d.locked {
+            if a.keys > 0 {
+                a.keys -= 1
+                d.locked = false
+                d.kind = 0
+                d.want = true
+                d.hold = 3
+                note("DOOR UNLOCKED")
+            } else { note("NEEDS A KEYCARD"); return }
+        } else if d.kind == 3 && !powerOn[a.f] {
+            note("NO POWER  -  FIND THE SWITCH")
+            return
+        } else {
+            d.want = true
+            d.hold = 3
+        }
+        map.doors[a.f][i] = d
+        BRAudio.shared.play("pickup", vol: 0.35)
     }
 
     // MARK: mechanics
@@ -552,7 +650,7 @@ final class TowerEngine {
             if let g = a.gun, hypot(aim.x, aim.y) > 0.5 {
                 let r = BRGuns.def(g.id).range
                 var best: CGFloat = 0.12
-                for e in actors where e.alive && e.team != a.team && e.f == a.f {
+                for e in actors where e.alive && !e.dormant && e.team != a.team && e.f == a.f {
                     let d = hypot(e.p.x - a.p.x, e.p.y - a.p.y)
                     if d > r || d < 1 { continue }
                     let ang = atan2(e.p.y - a.p.y, e.p.x - a.p.x)
@@ -610,6 +708,7 @@ final class TowerEngine {
         a.slots[a.cur] = g
         a.fireT = d.rate
         a.flash = 1
+        a.noiseT = 2
         let rb: CGFloat = 1 + CGFloat(g.rar) * 0.08
         sfx("shot_" + g.id, at: a.p, f: a.f, vol: a.isMe ? 0.9 : 1)
         let spreadMul: CGFloat = a.isMe ? 1 : (1.8 - a.skill)
@@ -618,6 +717,23 @@ final class TowerEngine {
             let dx = cos(ang), dy = sin(ang)
             let origin = CGPoint(x: a.p.x + dx * 16, y: a.p.y + dy * 16)
             var dist = map.rayDist(a.f, origin, dx, dy, d.range)
+            // bots punch through thin walls (player bullets stop); each wall costs damage
+            var walls: [(CGFloat, CGFloat)] = []
+            var wallEnd = dist
+            if !a.isMe && dist < d.range {
+                for w in map.rayBlockers[a.f] {
+                    if let h = brRayThrough(origin, dx, dy, w), h.0 >= 0, h.0 < d.range, h.1 - h.0 < 34 { walls.append(h) }
+                }
+                walls.sort { $0.0 < $1.0 }
+                if walls.count > 2 { wallEnd = walls[2].0 } else { wallEnd = d.range }
+                var blocked = false
+                // a thick blocker (core, heavy wall) inside the first two hits stops the bullet
+                for w in map.rayBlockers[a.f] {
+                    if let h = brRayThrough(origin, dx, dy, w), h.0 >= 0, h.0 < wallEnd, h.1 - h.0 >= 34 { wallEnd = min(wallEnd, h.0); blocked = true }
+                }
+                if blocked { walls = walls.filter { $0.0 < wallEnd } }
+                dist = wallEnd
+            }
             if def.mech == 7 {
                 var broke = false
                 for gi in map.glass[a.f].indices where map.glassAlive[a.f][gi] {
@@ -630,10 +746,10 @@ final class TowerEngine {
                 if broke { map.refreshBlockers() }
             }
             var hit: TwActor? = nil
-            for e in actors where e.alive && e.team != a.team && e.f == a.f {
+            for e in actors where e.alive && !e.dormant && e.team != a.team && e.f == a.f {
                 let ox = e.p.x - origin.x, oy = e.p.y - origin.y
                 let t = ox * dx + oy * dy
-                if t < 0 || t > dist { continue }
+                if t < 0 || t > dist || e.dormant { continue }
                 let px = origin.x + dx * t - e.p.x, py = origin.y + dy * t - e.p.y
                 if px * px + py * py < 13 * 13 {
                     dist = t
@@ -645,7 +761,7 @@ final class TowerEngine {
             tracers.append(tr)
             pendingShots.append(tr)
             if let e = hit {
-                let fall = 1 - 0.4 * min(1, dist / d.range)
+                let fall = (1 - 0.4 * min(1, dist / d.range)) * pow(0.55, CGFloat(walls.filter { $0.0 < dist }.count))
                 let head = rng.f() < 0.1 + (a.isMe ? 0.04 : 0)
                 let dmg = d.dmg * rb * fall * (head ? 1.8 : 1)
                 hurt(e, dmg, by: a, head: head, silent: false)
@@ -738,7 +854,7 @@ final class TowerEngine {
     // MARK: pickups
 
     func pickups() {
-        for a in actors where a.alive {
+        for a in actors where a.alive && !a.dormant {
             for i in loot.indices where loot[i].alive && loot[i].f == a.f {
                 let l = loot[i]
                 if abs(l.p.x - a.p.x) > 26 || abs(l.p.y - a.p.y) > 26 { continue }
@@ -815,20 +931,34 @@ final class TowerEngine {
 
         // target (scanned a few times a second, not every frame)
         var tgt: TwActor? = a.target >= 0 && a.target < actors.count ? actors[a.target] : nil
-        if let t = tgt, !(t.alive && t.f == a.f && t.team != a.team) { tgt = nil; a.target = -1 }
+        if let t = tgt, !(t.alive && !t.dormant && t.f == a.f && t.team != a.team) { tgt = nil; a.target = -1 }
+        a.memT -= dt
         a.scanT -= dt
         if a.scanT <= 0 {
             a.scanT = 0.18 + rng.f() * 0.12
-            if let t = tgt, !map.los(a.f, a.p, t.p) { tgt = nil; a.target = -1 }
-            if tgt == nil {
+            if let t = tgt {
+                a.vis = map.los(a.f, a.p, t.p)
+                if a.vis { a.memT = 3 } else if a.memT <= 0 { tgt = nil; a.target = -1 }
+            }
+            if tgt == nil || !a.vis {
                 var bd: CGFloat = dark[a.f] != nil ? 260 : 520
-                for e in actors where e.alive && e.team != a.team && e.f == a.f {
+                var found: TwActor? = nil
+                for e in actors where e.alive && !e.dormant && e.team != a.team && e.f == a.f {
                     let dx = e.p.x - a.p.x, dy = e.p.y - a.p.y
                     if abs(dx) > bd || abs(dy) > bd { continue }
                     let d = hypot(dx, dy)
-                    if d < bd && map.los(a.f, a.p, e.p) { bd = d; tgt = e }
+                    if d < bd && map.los(a.f, a.p, e.p) { bd = d; found = e }
                 }
-                a.target = tgt?.id ?? -1
+                if let f = found { tgt = f; a.target = f.id; a.vis = true; a.memT = 3 }
+                else if tgt == nil {
+                    // hear gunfire through walls
+                    var hd: CGFloat = 320
+                    for e in actors where e.alive && !e.dormant && e.team != a.team && e.f == a.f && e.noiseT > 0 {
+                        let d = hypot(e.p.x - a.p.x, e.p.y - a.p.y)
+                        if d < hd { hd = d; tgt = e }
+                    }
+                    if let t = tgt { a.target = t.id; a.vis = false; a.memT = 2.5 }
+                }
             }
         }
 
@@ -849,16 +979,42 @@ final class TowerEngine {
             let want = atan2(t.p.y - a.p.y, t.p.x - a.p.x)
             let df = brWrap(want - a.ang)
             a.ang += max(-1, min(1, df)) * min(1, dt * (5 + a.skill * 6))
-            if abs(df) < 0.25 && !inGas { fire(a) }
             let gd = BRGuns.def(a.gun?.id ?? "pistol")
-            let ideal = gd.range * 0.4
-            if a.strafeT <= 0 { a.strafe = rng.f() > 0.5 ? 1 : -1; a.strafeT = 0.6 + rng.f() }
-            let fwd = CGPoint(x: cos(want), y: sin(want))
-            var v = CGPoint(x: -fwd.y * a.strafe * 0.7, y: fwd.x * a.strafe * 0.7)
-            if d > ideal { v.x += fwd.x * 0.6; v.y += fwd.y * 0.6 } else if d < ideal * 0.5 { v.x -= fwd.x * 0.5; v.y -= fwd.y * 0.5 }
-            if !inGas { moveActor(a, v, 110, dt) }
-            else { follow(a, dt, &rep) }
+            // peek / hide rhythm
+            a.phaseT -= dt
+            if a.phaseT <= 0 {
+                let lowHp = a.hp < 45
+                a.hide = a.hide ? false : (lowHp || rng.f() < 0.7)
+                a.phaseT = a.hide ? 0.9 + rng.f() * 1.1 : 1.3 + rng.f() * 1.3
+                a.cover = nil
+                if a.hide { a.cover = findCover(a, t.p) }
+            }
+            if a.hide && a.reloadT <= 0, let g = a.gun, g.mag < BRGuns.def(g.id).mag / 2, g.res > 0 { startReload(a) }
+            let canShoot = a.vis || (d < 360 && t.noiseT > 0) || (d < 220)
+            if abs(df) < 0.25 && !inGas && canShoot && (!a.hide || !a.vis || a.hp > 45) { fire(a) }
+            if inGas {
+                follow(a, dt, &rep)
+            } else if a.hide {
+                if let c = a.cover {
+                    let dc = hypot(c.x - a.p.x, c.y - a.p.y)
+                    if dc > 10 { moveActor(a, CGPoint(x: (c.x - a.p.x) / dc, y: (c.y - a.p.y) / dc), 125, dt) }
+                } else {
+                    moveActor(a, CGPoint(x: -cos(want) * 0.7, y: -sin(want) * 0.7), 110, dt)
+                }
+            } else if !a.vis {
+                // flank toward the last known spot using the nav grid
+                if a.repath <= 0 || a.goal == nil { a.goal = t.p; a.goalF = t.f; a.path = []; a.repath = 0 }
+                follow(a, dt, &rep)
+            } else {
+                let ideal = gd.range * 0.4
+                if a.strafeT <= 0 { a.strafe = rng.f() > 0.5 ? 1 : -1; a.strafeT = 0.6 + rng.f() }
+                let fwd = CGPoint(x: cos(want), y: sin(want))
+                var v = CGPoint(x: -fwd.y * a.strafe * 0.7, y: fwd.x * a.strafe * 0.7)
+                if d > ideal { v.x += fwd.x * 0.6; v.y += fwd.y * 0.6 } else if d < ideal * 0.5 { v.x -= fwd.x * 0.5; v.y -= fwd.y * 0.5 }
+                moveActor(a, v, 110, dt)
+            }
         } else {
+            a.hide = false
             follow(a, dt, &rep)
         }
         // stuck detection
@@ -878,6 +1034,29 @@ final class TowerEngine {
             a.lastP = a.p
             a.stuck = 0
         }
+    }
+
+    /// nearest open spot that the threat cannot see (a wall or prop between us)
+    func findCover(_ a: TwActor, _ threat: CGPoint) -> CGPoint? {
+        var best: CGPoint? = nil
+        var bd: CGFloat = 1e9
+        let base = atan2(threat.y - a.p.y, threat.x - a.p.x)
+        for r in [40, 75, 120] as [CGFloat] {
+            for k in 0..<12 {
+                let ang = base + CGFloat.pi + (CGFloat(k) / 12) * 6.283 - CGFloat.pi + (rng.f() - 0.5) * 0.2
+                let c = CGPoint(x: a.p.x + cos(ang) * r, y: a.p.y + sin(ang) * r)
+                let q = map.push(c, 12, a.f)
+                if abs(q.x - c.x) > 2 || abs(q.y - c.y) > 2 { continue }
+                if map.los(a.f, c, threat) { continue }
+                if !map.los(a.f, a.p, c) { continue }
+                let dth = hypot(threat.x - c.x, threat.y - c.y)
+                if dth < 70 { continue }
+                let score = r + (dth > 360 ? 40 : 0)
+                if score < bd { bd = score; best = c }
+            }
+            if best != nil { break }
+        }
+        return best
     }
 
     func safeGoalValid(_ a: TwActor) -> Bool {

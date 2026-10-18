@@ -410,6 +410,7 @@ struct TowerPlay: View {
                 btn("RELOAD", .white) { e.startReload(m) }
                 btn("SWAP", .white) { e.swap(m) }
                 btn("MED \(m.meds)", .red) { e.useMed(m) }
+                btn("CAM", .white) { e.zoom = (e.zoom + 1) % 3 }
                 btn(lookOn ? "FOLLOW" : "LOOK", lookOn ? .yellow : .cyan) {
                     lookOn.toggle()
                     e.look = lookOn
@@ -420,6 +421,11 @@ struct TowerPlay: View {
             .position(x: size.width - 48, y: size.height - 150)
 
             if m.alive {
+                if let di = e.nearestDoor(m) {
+                    let dd = e.map.doors[m.f][di]
+                    btn(dd.want || dd.open > 0.5 ? "CLOSE DOOR" : dd.kind == 2 && dd.locked ? "UNLOCK DOOR" : "OPEN DOOR", .yellow, 120) { e.toggleDoor(m) }
+                        .position(x: size.width / 2, y: size.height - 162)
+                }
                 if e.nearStairUp(m) {
                     btn("STAIRS UP", .green, 110) { e.go(m, to: m.f + 1) }
                         .position(x: size.width / 2, y: size.height - 110)

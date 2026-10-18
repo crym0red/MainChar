@@ -1732,8 +1732,8 @@ final class TacticalEngine {
     func drawMinimapPublic(_ ctx: inout GraphicsContext) { drawMinimap(&ctx) }
 
     private func drawMinimap(_ ctx: inout GraphicsContext) {
-        let s: CGFloat = 0.15
-        let ox: CGFloat = 16, oy: CGFloat = 104
+        let s: CGFloat = 0.1
+        let ox: CGFloat = 10, oy: CGFloat = 26
         let focus: TPlayer = me.alive ? me : (players.first { $0.team == me.team && $0.alive } ?? me)
         let fl = TMap.floorOf(focus.pos)
         let fo: CGFloat = fl == 1 ? TMap.off : 0
@@ -1867,6 +1867,10 @@ struct TacticalPlay: View {
     @State private var bridge: TacScene? = nil
     private var fp: Bool { mode == 1 }
     @State private var lastLook: CGFloat = 0
+    @State private var lookOn = false
+    @State private var lastDrag = CGSize.zero
+    @State private var baseDist: CGFloat = 430
+    @State private var camP = 1
 
     var body: some View {
         ZStack {
@@ -1926,7 +1930,12 @@ struct TacticalPlay: View {
                                 let dx = v.location.x - v.startLocation.x, dy = v.location.y - v.startLocation.y
                                 let d = hypot(dx, dy)
                                 let k = min(1, d / 50)
-                                engine.move = d > 4 ? CGVector(dx: dx / d * k, dy: dy / d * k) : .zero
+                                var mv = d > 4 ? CGVector(dx: dx / d * k, dy: dy / d * k) : .zero
+                                if let b = bridge, b.lookOn {
+                                    let c = cos(b.yaw), sn = sin(b.yaw)
+                                    mv = CGVector(dx: c * mv.dx + sn * mv.dy, dy: -sn * mv.dx + c * mv.dy)
+                                }
+                                engine.move = mv
                             }
                             .onEnded { _ in lStart = nil; engine.move = .zero })
                     Color.clear.contentShape(Rectangle())
@@ -1944,6 +1953,23 @@ struct TacticalPlay: View {
                                 engine.firing = true
                             }
                             .onEnded { _ in rStart = nil; lastLook = 0; engine.aimIn = nil; engine.firing = false })
+                }
+                if lookOn {
+                    Color.clear.contentShape(Rectangle())
+                        .frame(width: g.size.width * 0.55, height: g.size.height)
+                        .position(x: g.size.width * 0.725, y: g.size.height / 2)
+                        .gesture(DragGesture(minimumDistance: 0)
+                            .onChanged { v in
+                                let dx = v.translation.width - lastDrag.width
+                                let dy = v.translation.height - lastDrag.height
+                                lastDrag = v.translation
+                                bridge?.yaw -= dx * 0.008
+                                if let b = bridge { b.pitch = max(0.45, min(1.45, b.pitch + dy * 0.005)) }
+                            }
+                            .onEnded { _ in lastDrag = .zero })
+                        .simultaneousGesture(MagnificationGesture()
+                            .onChanged { m in bridge?.dist = max(220, min(900, baseDist / m)) }
+                            .onEnded { _ in baseDist = bridge?.dist ?? 430 })
                 }
                 if let s = lStart { stick(s, lKnob, Color.white) }
                 if let s = rStart { stick(s, rKnob, Color.red) }
@@ -2010,8 +2036,9 @@ struct TacticalPlay: View {
             let matchPoint = e.scores.contains(e.target - 1)
             VStack(spacing: 0) {
                 HStack(alignment: .top, spacing: 0) {
+                    Spacer(minLength: 0)
                     HStack(spacing: 3) { ForEach(allies, id: \.id) { chip($0, ally: true) } }
-                    Spacer(minLength: 4)
+                    Spacer().frame(width: 8)
                     VStack(spacing: 2) {
                         HStack(spacing: 6) {
                             Text("\(e.scores[0])").font(.jk(16, .heavy)).foregroundColor(.white)
@@ -2022,8 +2049,9 @@ struct TacticalPlay: View {
                         }
                         Text(matchPoint ? "Match Point" : "Round \(e.round)").font(.jk(11, .semibold)).foregroundColor(.white.opacity(0.85))
                     }
-                    Spacer(minLength: 4)
+                    Spacer().frame(width: 8)
                     HStack(spacing: 3) { ForEach(foes, id: \.id) { chip($0, ally: false) } }
+                    Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 8).padding(.top, 8)
                 Text(e.objectiveText).font(.jk(12, .semibold)).foregroundColor(.white.opacity(0.85)).padding(.top, 6)
@@ -2081,6 +2109,19 @@ struct TacticalPlay: View {
                     Button { e.autoAim.toggle(); autoOn = e.autoAim } label: {
                         Text(autoOn ? "AUTO" : "MAN").font(.jk(12, .heavy)).foregroundColor(autoOn ? .black : .white)
                             .padding(.horizontal, 12).frame(height: 38).background(autoOn ? Color(red: 0.85, green: 0.93, blue: 0.2) : Color.black.opacity(0.55)).clipShape(Capsule())
+                    }
+                    Button { camP = (camP + 1) % 4; bridge?.preset = camP } label: {
+                        Text(["CLOSE", "TACT", "TOP", "WIDE"][camP]).font(.jk(12, .heavy)).foregroundColor(.white)
+                            .padding(.horizontal, 10).frame(height: 38).background(Color.black.opacity(0.55)).clipShape(Capsule())
+                    }
+                    Button {
+                        lookOn.toggle()
+                        bridge?.lookOn = lookOn
+                        e.firing = false
+                        if lookOn { bridge?.yaw = 0; bridge?.pitch = 1.0; bridge?.dist = 430; baseDist = 430 }
+                    } label: {
+                        Text(lookOn ? "FOLLOW" : "LOOK").font(.jk(12, .heavy)).foregroundColor(lookOn ? .black : .white)
+                            .padding(.horizontal, 10).frame(height: 38).background(lookOn ? Color.yellow : Color.black.opacity(0.55)).clipShape(Capsule())
                     }
                     Button { e.paused = true } label: {
                         Image(systemName: "pause.fill").font(.system(size: 13, weight: .bold)).foregroundColor(.white)

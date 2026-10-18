@@ -10,6 +10,8 @@ struct TwSoldier {
     var variants: [SCNNode]
     var flash: SCNNode
     var shirt: SCNMaterial
+    var face: SCNNode
+    var faceMat: SCNMaterial
 }
 
 enum TwRig {
@@ -156,8 +158,21 @@ enum TwRig {
         fl.isHidden = true
         holder.addChildNode(fl)
         root.addChildNode(holder)
+        // avatar badge on top of the helmet (readable from the top-down camera)
+        let faceMat = SCNMaterial()
+        faceMat.lightingModel = .constant
+        faceMat.isDoubleSided = true
+        faceMat.diffuse.contents = UIColor.gray
+        let fp = SCNPlane(width: 14, height: 14)
+        fp.materials = [faceMat]
+        let pn = SCNNode(geometry: fp)
+        pn.eulerAngles = SCNVector3(-Float.pi / 2, 0, 0)
+        let face = SCNNode()
+        face.position = SCNVector3(0.2, 42.6, 0)
+        face.addChildNode(pn)
+        root.addChildNode(face)
         root.scale = SCNVector3(1.25, 1.25, 1.25)
-        return TwSoldier(root: root, legL: legs[0], legR: legs[1], holder: holder, variants: variants, flash: fl, shirt: sm)
+        return TwSoldier(root: root, legL: legs[0], legR: legs[1], holder: holder, variants: variants, flash: fl, shirt: sm, face: face, faceMat: faceMat)
     }
 }
 

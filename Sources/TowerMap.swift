@@ -18,6 +18,7 @@ struct TwDoor {
     var horiz: Bool
     var open: CGFloat = 0
     var hold: CGFloat = 0
+    var want = false
     var kind = 0          // 0 auto, 1 shutter (timed), 2 keycard, 3 blast (power)
     var locked = false
     var phase: CGFloat = 0

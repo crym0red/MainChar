@@ -38,6 +38,7 @@ final class TowerScene {
     var lastKC = false
     var floorRoots: [SCNNode] = []
     var doorNodes: [[SCNNode]] = []
+    var doorAngShown: [[Float]] = []
 
     // actors
     var actorRoots: [SCNNode] = []
@@ -70,6 +71,7 @@ final class TowerScene {
     var doorKindShown: [[Int]] = []
     var poolRoots: [SCNNode] = []
     var quality = 2
+    var sunNode: SCNNode? = nil
     var fpsEMA: CGFloat = 60
     var lowTime: CGFloat = 0
     private var rng = TwLCG(s: 4242)
@@ -214,26 +216,60 @@ final class TowerScene {
         }
     }
 
-    private func texMat(_ img: UIImage, _ su: CGFloat, _ sv: CGFloat, _ tint: UIColor) -> SCNMaterial {
+    private var matCache: [String: SCNMaterial] = [:]
+
+    private func texMat(_ img: UIImage, _ su: CGFloat, _ sv: CGFloat, _ tint: UIColor, shared: Bool = true, gloss: CGFloat = 0.25, bump: CGFloat = 0.5) -> SCNMaterial {
+        var key = ""
+        if shared {
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            tint.getRed(&r, green: &g, blue: &b, alpha: &a)
+            key = "t\(ObjectIdentifier(img).hashValue)_\(Int(su * 20))_\(Int(sv * 20))_\(Int(r * 100))_\(Int(g * 100))_\(Int(b * 100))_\(Int(gloss * 100))"
+            if let m = matCache[key] { return m }
+        }
         let m = SCNMaterial()
         m.diffuse.contents = img
+        if bump > 0 {
+            m.normal.contents = img
+            m.normal.intensity = bump
+            m.normal.wrapS = .repeat
+            m.normal.wrapT = .repeat
+            m.normal.contentsTransform = SCNMatrix4MakeScale(Float(su), Float(sv), 1)
+        }
+        m.lightingModel = .blinn
+        m.specular.contents = UIColor(white: gloss, alpha: 1)
+        m.shininess = 0.35
         m.diffuse.wrapS = .repeat
         m.diffuse.wrapT = .repeat
         m.diffuse.contentsTransform = SCNMatrix4MakeScale(Float(su), Float(sv), 1)
         m.multiply.contents = tint
+        if shared { matCache[key] = m }
         return m
     }
 
-    private func plain(_ c: UIColor, glow: Bool = false) -> SCNMaterial {
+    private func plain(_ c: UIColor, glow: Bool = false, shared: Bool = true) -> SCNMaterial {
+        var key = ""
+        if shared {
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            c.getRed(&r, green: &g, blue: &b, alpha: &a)
+            key = "p\(Int(r * 255))_\(Int(g * 255))_\(Int(b * 255))_\(Int(a * 100))_\(glow)"
+            if let m = matCache[key] { return m }
+        }
         let m = SCNMaterial()
         m.diffuse.contents = c
-        if glow { m.emission.contents = c; m.lightingModel = .constant }
+        if glow { m.emission.contents = c; m.lightingModel = .constant } else {
+            m.lightingModel = .blinn
+            m.specular.contents = UIColor(white: 0.18, alpha: 1)
+            m.shininess = 0.3
+        }
+        if shared { matCache[key] = m }
         return m
     }
 
-    private func box(_ w: CGFloat, _ h: CGFloat, _ l: CGFloat, _ c: UIColor, glow: Bool = false) -> SCNNode {
-        let g = SCNBox(width: w, height: h, length: l, chamferRadius: 0)
-        g.materials = [plain(c, glow: glow)]
+    private func box(_ w: CGFloat, _ h: CGFloat, _ l: CGFloat, _ c: UIColor, glow: Bool = false, shared: Bool = true) -> SCNNode {
+        let ch = glow ? 0 : min(1.0, min(w, h, l) * 0.28)
+        let g = SCNBox(width: w, height: h, length: l, chamferRadius: ch)
+        g.chamferSegmentCount = 1
+        g.materials = [plain(c, glow: glow, shared: shared)]
         return SCNNode(geometry: g)
     }
 
@@ -328,13 +364,38 @@ final class TowerScene {
         sun.light?.type = .directional
         sun.light?.intensity = 1000
         sun.light?.color = twCol(1.0, 0.95, 0.88)
-        sun.eulerAngles = SCNVector3(-1.15, 0.6, 0)
+        sun.position = SCNVector3(300, 900, 1000)
         scene.rootNode.addChildNode(sun)
+        let aim = SCNNode()
+        aim.position = SCNVector3(800, 0, 480)
+        scene.rootNode.addChildNode(aim)
+        let lk = SCNLookAtConstraint(target: aim)
+        sun.constraints = [lk]
+        sun.light?.castsShadow = true
+        sun.light?.shadowMode = .forward
+        sun.light?.shadowSampleCount = 3
+        sun.light?.shadowRadius = 2.5
+        sun.light?.shadowColor = UIColor(white: 0, alpha: 0.55)
+        sun.light?.shadowMapSize = CGSize(width: 2048, height: 2048)
+        sun.light?.orthographicScale = 950
+        sun.light?.zNear = 200
+        sun.light?.zFar = 2600
+        sunNode = sun
 
         let cam = SCNCamera()
         cam.fieldOfView = 52
         cam.zNear = 10
         cam.zFar = 3000
+        cam.wantsHDR = true
+        cam.bloomIntensity = 0.45
+        cam.bloomThreshold = 0.85
+        cam.bloomBlurRadius = 6
+        cam.vignettingIntensity = 0.5
+        cam.vignettingPower = 1.2
+        cam.screenSpaceAmbientOcclusionIntensity = 0.7
+        cam.screenSpaceAmbientOcclusionRadius = 8
+        cam.saturation = 1.08
+        cam.contrast = 0.1
         camNode.camera = cam
         scene.rootNode.addChildNode(camNode)
 
@@ -367,7 +428,8 @@ final class TowerScene {
     private func floorBox(_ w: CGFloat, _ l: CGFloat, _ y: CGFloat, _ kind: String, _ tint: UIColor, _ tile: CGFloat) -> SCNNode {
         let g = SCNBox(width: w, height: 1, length: l, chamferRadius: 0)
         let side = plain(twCol(0.15, 0.15, 0.17))
-        g.materials = [side, side, side, side, texMat(floorTex(kind), w / tile, l / tile, tint), side]
+        let glossy: CGFloat = (kind == "marble" || kind == "tile") ? 0.55 : kind == "metal" ? 0.45 : 0.18
+        g.materials = [side, side, side, side, texMat(floorTex(kind), w / tile, l / tile, tint, gloss: glossy, bump: kind == "carpet" ? 0.9 : 0.6), side]
         return SCNNode(geometry: g)
     }
 
@@ -395,8 +457,14 @@ final class TowerScene {
             st.addChildNode(at(n, r.r.midX, 0, r.r.midY))
         }
         // wall base shadow + walls
+        let trimDark = twCol(0.16, 0.14, 0.13)
+        let trimLight = twCol(0.88, 0.87, 0.84)
         for w in map.walls[f] {
             st.addChildNode(at(wallBox(w.width, TowerMap.wallH, w.height, tintC), w.midX, TowerMap.wallH / 2, w.midY))
+            if min(w.width, w.height) < 40 {
+                st.addChildNode(at(box(w.width + 1.6, 4, w.height + 1.6, trimDark), w.midX, 2, w.midY))
+                st.addChildNode(at(box(w.width + 1.2, 2.5, w.height + 1.2, trimLight), w.midX, TowerMap.wallH - 1.5, w.midY))
+            }
         }
         // windows on the exterior skin
         for k in 0..<(def.windows ? 10 : 0) {
@@ -496,14 +564,44 @@ final class TowerScene {
         poolRoots.append(pflat)
         var dn: [SCNNode] = []
         var dk: [Int] = []
-        for d in map.doors[f] {
-            let n = box(d.r.width, 66, d.r.height, doorColor(d.kind))
-            n.addChildNode(at(box(d.horiz ? 6 : d.r.width + 1, 3, d.horiz ? d.r.height + 1 : 6, twCol(0.85, 0.8, 0.3)), 0, 0, 0))
-            n.position = SCNVector3(Float(d.r.midX), 33, Float(d.r.midY))
+        for (di, d) in map.doors[f].enumerated() {
+            let len = d.horiz ? d.r.width : d.r.height
+            let thick: CGFloat = 4.5
+            let panel = SCNNode()
+            let body = box(d.horiz ? len : thick, 68, d.horiz ? thick : len, doorColor(d.kind), shared: false)
+            panel.addChildNode(body)
+            let sh = SCNNode()
+            // inset panels on both faces
+            let insetC = twCol(0.0, 0.0, 0.0, 0.18)
+            for side in [-1.0, 1.0] as [CGFloat] {
+                for k in 0..<2 {
+                    let iy: CGFloat = k == 0 ? 17 : -17
+                    let ih: CGFloat = 26
+                    let n2 = d.horiz ? box(len - 10, ih, 0.6, insetC) : box(0.6, ih, len - 10, insetC)
+                    n2.position = d.horiz ? SCNVector3(0, Float(iy), Float(side * (thick / 2 + 0.2))) : SCNVector3(Float(side * (thick / 2 + 0.2)), Float(iy), 0)
+                    sh.addChildNode(n2)
+                }
+                let hx: CGFloat = len * 0.42
+                let knob = ball(1.6, twCol(0.85, 0.7, 0.3))
+                knob.position = d.horiz ? SCNVector3(Float(hx), -2, Float(side * (thick / 2 + 1.8))) : SCNVector3(Float(side * (thick / 2 + 1.8)), -2, Float(hx))
+                sh.addChildNode(knob)
+            }
+            if d.kind == 2 || d.kind == 3 {
+                let lamp = box(d.horiz ? 6 : 1.2, 3, d.horiz ? 1.2 : 6, d.kind == 2 ? twCol(0.2, 0.6, 1.0) : twCol(1.0, 0.3, 0.2), glow: true)
+                lamp.position = d.horiz ? SCNVector3(Float(len * 0.3), 18, Float(thick / 2 + 0.7)) : SCNVector3(Float(thick / 2 + 0.7), 18, Float(len * 0.3))
+                sh.addChildNode(lamp)
+            }
+            panel.addChildNode(sh)
+            panel.position = d.horiz ? SCNVector3(Float(len / 2), 34, 0) : SCNVector3(0, 34, Float(len / 2))
+            let n = SCNNode()
+            n.addChildNode(panel)
+            n.position = d.horiz ? SCNVector3(Float(d.r.minX), 0, Float(d.r.midY)) : SCNVector3(Float(d.r.midX), 0, Float(d.r.minY))
             root.addChildNode(n)
             dn.append(n)
             dk.append(d.kind)
+            _ = di
         }
+        doorAngShown.append([Float](repeating: -9, count: map.doors[f].count))
         doorKindShown.append(dk)
         // glass walls
         var gn: [SCNNode] = []
@@ -525,7 +623,7 @@ final class TowerScene {
             let len = horizontal ? r.width : r.height
             let wid = horizontal ? r.height : r.width
             let g = SCNBox(width: len, height: 2.5, length: wid, chamferRadius: 0)
-            let top = texMat(beltTex, len / 64, 1, twCol(1, 1, 1))
+            let top = texMat(beltTex, len / 64, 1, twCol(1, 1, 1), shared: false, gloss: 0.1, bump: 0)
             let side = plain(twCol(0.12, 0.12, 0.14))
             g.materials = [side, side, side, side, top, side]
             let n = SCNNode(geometry: g)
@@ -898,7 +996,15 @@ final class TowerScene {
     }
 
     private func applyQuality() {
-        if quality <= 1 { view.antialiasingMode = .none }
+        if quality <= 1 {
+            view.antialiasingMode = .none
+            sunNode?.light?.castsShadow = false
+            camNode.camera?.screenSpaceAmbientOcclusionIntensity = 0
+        }
+        if quality <= 0 {
+            camNode.camera?.wantsHDR = false
+            camNode.camera?.bloomIntensity = 0
+        }
         for n in poolRoots { n.isHidden = quality <= 0 }
         if quality <= 0 { view.contentScaleFactor = min(view.contentScaleFactor, 1.5) }
     }
@@ -954,14 +1060,10 @@ final class TowerScene {
 
         for f in 0..<map.nF { floorRoots[f].isHidden = f != focus }
         for (i, d) in map.doors[focus].enumerated() where i < doorNodes[focus].count {
-            let n = doorNodes[focus][i]
-            let sc = max(0.04, 1 - d.open * 0.96)
-            if d.horiz {
-                n.scale = SCNVector3(Float(sc), 1, 1)
-                n.position = SCNVector3(Float(d.r.minX + d.r.width * sc / 2), 33, Float(d.r.midY))
-            } else {
-                n.scale = SCNVector3(1, 1, Float(sc))
-                n.position = SCNVector3(Float(d.r.midX), 33, Float(d.r.minY + d.r.height * sc / 2))
+            let ang = Float(d.open) * 1.65 * (i % 2 == 0 ? 1 : -1)
+            if abs(doorAngShown[focus][i] - ang) > 0.004 {
+                doorAngShown[focus][i] = ang
+                doorNodes[focus][i].eulerAngles = SCNVector3(0, d.horiz ? -ang : ang, 0)
             }
         }
         // actors
@@ -1035,7 +1137,7 @@ final class TowerScene {
         for (i, d) in map.doors[focus].enumerated() where i < doorKindShown[focus].count {
             if doorKindShown[focus][i] != d.kind {
                 doorKindShown[focus][i] = d.kind
-                doorNodes[focus][i].geometry?.firstMaterial?.diffuse.contents = doorColor(d.kind)
+                doorNodes[focus][i].childNodes.first?.childNodes.first?.geometry?.firstMaterial?.diffuse.contents = doorColor(d.kind)
             }
         }
         for (i, n) in beltNodes[focus].enumerated() {
