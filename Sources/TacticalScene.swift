@@ -28,6 +28,7 @@ final class TacScene {
     let scene = SCNScene()
     let view = SCNView(frame: .zero)
     let camNode = SCNNode()
+    let vm = TwViewModel()
     var camX: CGFloat = 0
     var camZ: CGFloat = 0
     var started = false
@@ -395,6 +396,7 @@ final class TacScene {
         cam.contrast = 0.15
         camNode.camera = cam
         root.addChildNode(camNode)
+        camNode.addChildNode(vm.root)
 
         // ceilings (only shown in first person)
         for i in 0..<2 {
@@ -859,14 +861,24 @@ final class TacScene {
         if fpMode {
             let ex = fx, ez = focus.pos.y
             let dxv = cos(focus.aim), dzv = sin(focus.aim)
-            let eh = CGFloat(TMap.eyeH) + (sh > 0 ? CGFloat.random(in: -sh...sh) * 0.25 : 0)
+            let eh = CGFloat(TMap.eyeH) + CGFloat(sin(Double(min(1, e.jumpT / 0.55)) * Double.pi)) * 22 + (sh > 0 ? CGFloat.random(in: -sh...sh) * 0.25 : 0)
             fpFwd = CGPoint(x: dxv, y: dzv)
             fpEye = CGPoint(x: ex, y: ez)
-            camNode.camera?.zNear = 2
+            camNode.camera?.zNear = 0.6
+            vm.show(TWeapons.rig(focus.gun))
+            vm.root.isHidden = !(focus.alive && !e.scoped)
+            let mvg = Float(min(1, hypot(e.move.dx, e.move.dy)))
+            let tt = Float(e.time)
+            let rl = Float(min(1, focus.reloadT * 2.5))
+            let kk = Float(e.kick)
+            vm.root.position = SCNVector3(sin(tt * 8) * 0.22 * mvg, -abs(cos(tt * 8)) * 0.18 * mvg - rl * 3.5, kk * 0.02)
+            vm.root.eulerAngles = SCNVector3(kk * 0.004 - rl * 0.6, 0, 0)
+            vm.flash(focus.flash > 0)
             camNode.camera?.fieldOfView += ((e.scoped ? 26 : 62) - (camNode.camera?.fieldOfView ?? 62)) * 0.3
             camNode.position = SCNVector3(Float(ex + jx * 0.3), Float(eh), Float(ez + jz * 0.3))
             camNode.look(at: SCNVector3(Float(ex + dxv * 100), Float(eh + e.kick + tan(e.pitch) * 100), Float(ez + dzv * 100)))
         } else {
+            vm.root.isHidden = true
             camNode.camera?.zNear = 10
             camNode.camera?.fieldOfView = 52
             let pr: [(CGFloat, CGFloat, CGFloat, CGFloat)] = [(300, 170, 60, 30), (400, 250, 70, 40), (520, 70, 70, 50), (640, 400, 90, 60)]
@@ -1081,7 +1093,6 @@ extension TacticalEngine {
                 hm.move(to: CGPoint(x: cx + 9, y: hz - 9)); hm.addLine(to: CGPoint(x: cx - 9, y: hz + 9))
                 ctx.stroke(hm, with: .color(.red), lineWidth: 3)
             }
-            if me.alive && !scoped { drawViewGun(&ctx, size) }
             if scoped && me.alive {
                 let r = min(size.width, size.height) * 0.46
                 var sc = Path(CGRect(origin: .zero, size: size))

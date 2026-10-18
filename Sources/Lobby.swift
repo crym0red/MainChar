@@ -73,7 +73,7 @@ struct LobbyView: View {
             }
         }
         .fullScreenCover(isPresented: Binding(get: { nav.tacPlay != nil }, set: { if !$0 { nav.tacPlay = nil } })) {
-            TacticalPlay(diff: nav.tacPlay ?? 1, fpMode: nav.tacFP).environmentObject(game).environmentObject(nav).preferredColorScheme(.dark)
+            TacticalPlay(diff: nav.tacPlay ?? 1, fpMode: nav.tacFP, modeId: nav.tacMode).environmentObject(game).environmentObject(nav).preferredColorScheme(.dark)
         }
         .sheet(isPresented: Binding(get: { sheet != nil }, set: { if !$0 { sheet = nil } })) {
             sheetBody.environmentObject(game).preferredColorScheme(.dark)
@@ -182,7 +182,7 @@ struct LobbyView: View {
             Button { nav.lobbyMode = 0; diff = (diff + 1) % 3 } label: {
                 HStack {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(nav.lobbyMode == 1 ? "BATTLE ROYALE" : "5V5 BOMB DEFUSAL").font(.jk(16, .heavy)).foregroundColor(.white)
+                        Text(nav.lobbyMode == 1 ? "BATTLE ROYALE" : "5V5 \(TWeapons.modeNames[nav.tacMode])").font(.jk(16, .heavy)).foregroundColor(.white)
                         Text(nav.lobbyMode == 1 ? "\(TowerMaps.all[nav.brMap].name)  |  \(TowerMaps.all[nav.brMap].players) players  |  \(TowerMaps.all[nav.brMap].nF) floors" : "Safehouse  |  \(diffNames[diff])  |  \(nav.tacFP ? "FIRST PERSON" : "TOP-DOWN")").font(.jk(12, .semibold)).foregroundColor(.white.opacity(0.8))
                     }
                     Spacer()
@@ -191,6 +191,20 @@ struct LobbyView: View {
                 .padding(.horizontal, 12).frame(width: w, height: 52).background(Color.black.opacity(0.7))
             }
             .buttonStyle(.plain)
+            HStack(spacing: 0) {
+                ForEach(0..<4, id: \.self) { i in
+                    let on = nav.tacMode == i && nav.lobbyMode == 0
+                    Button {
+                        nav.lobbyMode = 0
+                        nav.tacMode = i
+                    } label: {
+                        Text(TWeapons.modeShort[i]).font(.jk(10, .heavy)).foregroundColor(on ? .black : .white.opacity(0.8))
+                            .frame(maxWidth: .infinity).frame(height: 28).background(on ? lime : Color.black.opacity(0.7))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .frame(width: w)
             HStack(spacing: 0) {
                 ForEach(Array(["FIRST PERSON", "TOP-DOWN"].enumerated()), id: \.offset) { i, n in
                     let on = (nav.tacFP ? 0 : 1) == i
