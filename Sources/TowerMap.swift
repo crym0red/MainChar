@@ -4,11 +4,13 @@ struct TwRoom {
     var r: CGRect
     var name: String
     var mat: Int
+    var secure = false
+    var hazard = false
 }
 
 struct TwProp {
     var r: CGRect
-    var kind: Int      // 0 crate 1 desk 2 couch 3 plant 4 shelf 5 table 6 server 7 barrel 8 kiosk 9 pillar
+    var kind: Int      // 0 crate 1 desk 2 couch 3 plant 4 shelf 5 table 6 server 7 barrel 8 kiosk 9 pillar 10 bed 11 hospital bed 12 display case 13 machine 14 rack 15 bench 17 lockers
 }
 
 struct TwDoor {
@@ -16,6 +18,9 @@ struct TwDoor {
     var horiz: Bool
     var open: CGFloat = 0
     var hold: CGFloat = 0
+    var kind = 0          // 0 auto, 1 shutter (timed), 2 keycard, 3 blast (power)
+    var locked = false
+    var phase: CGFloat = 0
     var closed: Bool { open < 0.85 }
 }
 
@@ -25,47 +30,56 @@ struct TwNode: Hashable {
     var j: Int
 }
 
-/// The Spire: a six floor skyscraper. Every floor shares one footprint (core, stairs, elevators)
-/// and differs in rooms' contents, materials and loot.
+/// One footprint (core, stairs, elevators) shared by every building; each MapDef lays out rooms differently.
 final class TowerMap {
-    static let shared = TowerMap()
-    static let nF = 6
     static let W: CGFloat = 1600
     static let H: CGFloat = 1000
     static let wallH: CGFloat = 80
     static let T: CGFloat = 16
-    static let names = ["LOBBY", "OFFICES", "LABS", "LOUNGE", "EXECUTIVE", "PENTHOUSE"]
     static let stairW = CGRect(x: 30, y: 430, width: 100, height: 140)
     static let stairE = CGRect(x: 1470, y: 430, width: 100, height: 140)
     static let elevs = [CGRect(x: 700, y: 320, width: 90, height: 60), CGRect(x: 810, y: 630, width: 90, height: 60)]
-    static let elevArrive = [CGPoint(x: 745, y: 290), CGPoint(x: 855, y: 722)]
     static let core = CGRect(x: 690, y: 390, width: 220, height: 240)
-    static let station = CGPoint(x: 500, y: 500)
-    static let gx = 20, gy = 12          // nav grid
+    static let switchPos = CGPoint(x: 560, y: 560)
+    static let gx = 20, gy = 12
     static let step: CGFloat = 80
 
+    let def: MapDef
+    var nF: Int { def.floors.count }
     var walls: [[CGRect]] = []
     var props: [[TwProp]] = []
     var rooms: [[TwRoom]] = []
     var doors: [[TwDoor]] = []
-    var solids: [[CGRect]] = []          // walls + props (not doors)
+    var solids: [[CGRect]] = []
+    var navSolids: [[CGRect]] = []
     var loot: [[CGPoint]] = []
+    var lootBoost: [[Int]] = []
     var spawns: [[CGPoint]] = []
-    var ok: [[Bool]] = []                // nav node clear
-    var adj: [[[Int]]] = []              // nav edges per floor, node id = j * gx + i
-    var blockers: [[CGRect]] = []        // solids + closed doors, refreshed each frame
+    var hazards: [[CGRect]] = []
+    var glass: [[CGRect]] = []
+    var glassAlive: [[Bool]] = []
+    var belts: [[(CGRect, CGPoint)]] = []
+    var lanes: [[CGRect]] = []
+    var trainRects: [[CGRect]] = []
+    var ok: [[Bool]] = []
+    var adj: [[[Int]]] = []
+    var blockers: [[CGRect]] = []
+    var rayBlockers: [[CGRect]] = []
 
-    private var rng = BRRand(s: 777331)
+    private var rng: BRRand
 
-    init() {
-        for f in 0..<TowerMap.nF { generate(f) }
-        for f in 0..<TowerMap.nF { buildNav(f) }
+    init(def: MapDef) {
+        self.def = def
+        rng = BRRand(s: UInt64(777331 + def.id * 1013))
+        for f in 0..<def.floors.count { generate(f) }
+        trainRects = [[CGRect]](repeating: [], count: def.floors.count)
+        for f in 0..<def.floors.count { buildNav(f) }
         refreshBlockers()
     }
 
     // MARK: generation
 
-    private func addRoom(_ r: CGRect, side: Int, name: String, mat: Int, f: Int, w: inout [CGRect], d: inout [TwDoor]) {
+    private func addRoom(_ r: CGRect, side: Int, w: inout [CGRect], d: inout [TwDoor]) {
         let T = TowerMap.T
         let gap: CGFloat = 92
         func snap(_ v: CGFloat) -> CGFloat { 40 + 80 * CGFloat(Int((v - 40) / 80 + 0.5)) }
@@ -74,25 +88,21 @@ final class TowerMap {
         var gyv = snap(r.midY + jitter)
         gxv = max(r.minX + 70, min(r.maxX - 70, gxv))
         gyv = max(r.minY + 70, min(r.maxY - 70, gyv))
-        // top
         if side == 0 {
             w.append(CGRect(x: r.minX, y: r.minY, width: gxv - gap / 2 - r.minX, height: T))
             w.append(CGRect(x: gxv + gap / 2, y: r.minY, width: r.maxX - gxv - gap / 2, height: T))
             d.append(TwDoor(r: CGRect(x: gxv - gap / 2, y: r.minY, width: gap, height: T), horiz: true))
         } else { w.append(CGRect(x: r.minX, y: r.minY, width: r.width, height: T)) }
-        // bottom
         if side == 1 {
             w.append(CGRect(x: r.minX, y: r.maxY - T, width: gxv - gap / 2 - r.minX, height: T))
             w.append(CGRect(x: gxv + gap / 2, y: r.maxY - T, width: r.maxX - gxv - gap / 2, height: T))
             d.append(TwDoor(r: CGRect(x: gxv - gap / 2, y: r.maxY - T, width: gap, height: T), horiz: true))
         } else { w.append(CGRect(x: r.minX, y: r.maxY - T, width: r.width, height: T)) }
-        // left
         if side == 2 {
             w.append(CGRect(x: r.minX, y: r.minY, width: T, height: gyv - gap / 2 - r.minY))
             w.append(CGRect(x: r.minX, y: gyv + gap / 2, width: T, height: r.maxY - gyv - gap / 2))
             d.append(TwDoor(r: CGRect(x: r.minX, y: gyv - gap / 2, width: T, height: gap), horiz: false))
         } else { w.append(CGRect(x: r.minX, y: r.minY, width: T, height: r.height)) }
-        // right
         if side == 3 {
             w.append(CGRect(x: r.maxX - T, y: r.minY, width: T, height: gyv - gap / 2 - r.minY))
             w.append(CGRect(x: r.maxX - T, y: gyv + gap / 2, width: T, height: r.maxY - gyv - gap / 2))
@@ -102,6 +112,8 @@ final class TowerMap {
 
     private func generate(_ f: Int) {
         let W = TowerMap.W, H = TowerMap.H, T = TowerMap.T
+        let mirror = f % 2 == 1
+        func mr(_ r: CGRect) -> CGRect { mirror ? CGRect(x: r.minX, y: H - r.maxY, width: r.width, height: r.height) : r }
         var w: [CGRect] = []
         var d: [TwDoor] = []
         var rm: [TwRoom] = []
@@ -110,33 +122,65 @@ final class TowerMap {
         w.append(CGRect(x: 0, y: 0, width: T, height: H))
         w.append(CGRect(x: W - T, y: 0, width: T, height: H))
         w.append(TowerMap.core)
-        let xs: [(CGFloat, CGFloat)] = [(150, 300), (510, 260), (830, 260), (1150, 300)]
-        let roomNames = [["RECEPTION", "SECURITY", "CAFE", "MAIL ROOM"], ["OPEN PLAN", "HR", "FINANCE", "LEGAL"], ["LAB A", "LAB B", "CLEAN ROOM", "SERVERS"], ["BAR", "CINEMA", "GAME ROOM", "SPA"], ["BOARDROOM", "CEO OFFICE", "CFO OFFICE", "ARCHIVE"], ["SUITE", "BALLROOM", "LIBRARY", "VAULT"]]
-        let mats = [3, 0, 5, 2, 4, 2]
-        var k = 0
-        for (x, wd) in xs {
-            let nm = roomNames[f][k]
-            addRoom(CGRect(x: x, y: 16, width: wd, height: 180), side: 1, name: nm, mat: mats[f], f: f, w: &w, d: &d)
-            rm.append(TwRoom(r: CGRect(x: x, y: 16, width: wd, height: 180), name: nm, mat: mats[f]))
-            addRoom(CGRect(x: x, y: 804, width: wd, height: 180), side: 0, name: nm + " 2", mat: mats[(f + 1) % 6], f: f, w: &w, d: &d)
-            rm.append(TwRoom(r: CGRect(x: x, y: 804, width: wd, height: 180), name: nm + " 2", mat: mats[(f + 1) % 6]))
-            k += 1
+        var specs: [(CGRect, Int, Bool)] = []
+        for (x, wd) in def.top { specs.append((CGRect(x: x, y: 16, width: wd, height: 180), 1, false)) }
+        for (x, wd) in def.bot { specs.append((CGRect(x: x, y: 804, width: wd, height: 180), 0, false)) }
+        for m in def.mids { specs.append((m.0, m.1, true)) }
+        var hz: [CGRect] = []
+        for (i, sp) in specs.enumerated() {
+            var side = sp.1
+            if mirror && side < 2 { side = 1 - side }
+            let rect = mr(sp.0)
+            let nm = def.names[(i + f * 3) % def.names.count]
+            var secure = false, hazard = false
+            var dk = 0
+            var lock = false
+            switch def.special {
+            case 1: if sp.2 { secure = true; dk = 2; lock = true }
+            case 2: if i % 4 == 2 { hazard = true }
+            case 3: if i % 4 == 1 { secure = true; dk = 3 }
+            default: break
+            }
+            if def.mech == 1 && i % 3 == 0 { dk = 1 }
+            let before = d.count
+            addRoom(rect, side: side, w: &w, d: &d)
+            for k in before..<d.count {
+                d[k].kind = dk
+                d[k].locked = lock
+                d[k].phase = CGFloat(i) * 7.3
+            }
+            if hazard { hz.append(rect.insetBy(dx: T, dy: T)) }
+            rm.append(TwRoom(r: rect, name: nm, mat: (i + f) % def.room.count, secure: secure, hazard: hazard))
         }
-        let mids: [(CGRect, Int)] = [(CGRect(x: 170, y: 260, width: 300, height: 150), 1), (CGRect(x: 170, y: 590, width: 300, height: 150), 0), (CGRect(x: 1130, y: 260, width: 300, height: 150), 1), (CGRect(x: 1130, y: 590, width: 300, height: 150), 0)]
-        for (i, m) in mids.enumerated() {
-            addRoom(m.0, side: m.1, name: "ROOM \(i + 1)", mat: mats[(f + i) % 6], f: f, w: &w, d: &d)
-            rm.append(TwRoom(r: m.0, name: "ROOM \(i + 1)", mat: mats[(f + i) % 6]))
+        // gates (shutters / security / blast doors across the hall)
+        var gk = 0
+        switch def.mech {
+        case 1, 3: gk = 1
+        case 5: gk = 2
+        case 6: gk = 3
+        default: break
         }
-        // pillars + kiosk
+        for (gi, g) in def.gates.enumerated() {
+            d.append(TwDoor(r: g, horiz: false, kind: gk, locked: gk == 2, phase: CGFloat(gi) * 13 + CGFloat(f) * 5))
+        }
+        for p in def.parts { w.append(mr(p)) }
+        let gl = def.glass.map { mr($0) }
+        let bl: [(CGRect, CGPoint)] = def.belts.map { (mr($0.0), mirror ? CGPoint(x: $0.1.x, y: -$0.1.y) : $0.1) }
+        let ln = def.lanes.map { mr($0) }
+        var keep: [CGRect] = gl.map { $0.insetBy(dx: -30, dy: -30) } + ln + bl.map { $0.0 } + def.gates.map { $0.insetBy(dx: -40, dy: -10) }
+        keep.append(CGRect(x: TowerMap.switchPos.x - 40, y: TowerMap.switchPos.y - 40, width: 80, height: 80))
+
         var pr: [TwProp] = []
-        for p in [(600, 300), (1000, 300), (600, 680), (1000, 680), (1010, 470)] {
-            pr.append(TwProp(r: CGRect(x: CGFloat(p.0), y: CGFloat(p.1), width: 36, height: 36), kind: 9))
+        if ln.isEmpty && bl.isEmpty {
+            for p in [(600, 300), (1000, 300), (600, 680), (1000, 680), (1010, 470)] {
+                pr.append(TwProp(r: CGRect(x: CGFloat(p.0), y: CGFloat(p.1), width: 36, height: 36), kind: 9))
+            }
         }
         pr.append(TwProp(r: CGRect(x: 480, y: 480, width: 40, height: 40), kind: 8))
-        // room props
-        let themes: [[Int]] = [[2, 3, 1, 5], [1, 4, 3, 0], [6, 5, 0, 7], [2, 5, 3, 7], [1, 2, 4, 3], [2, 5, 3, 4]]
-        let sizes: [Int: CGSize] = [0: CGSize(width: 34, height: 34), 1: CGSize(width: 72, height: 34), 2: CGSize(width: 84, height: 36), 3: CGSize(width: 24, height: 24), 4: CGSize(width: 90, height: 22), 5: CGSize(width: 60, height: 60), 6: CGSize(width: 30, height: 60), 7: CGSize(width: 24, height: 24)]
+        let themes = def.props[f % def.props.count]
+        let sizes: [Int: CGSize] = [0: CGSize(width: 34, height: 34), 1: CGSize(width: 72, height: 34), 2: CGSize(width: 84, height: 36), 3: CGSize(width: 24, height: 24), 4: CGSize(width: 90, height: 22), 5: CGSize(width: 60, height: 60), 6: CGSize(width: 30, height: 60), 7: CGSize(width: 24, height: 24), 10: CGSize(width: 80, height: 46), 11: CGSize(width: 76, height: 34), 12: CGSize(width: 56, height: 30), 13: CGSize(width: 60, height: 42), 14: CGSize(width: 72, height: 24), 15: CGSize(width: 62, height: 16), 17: CGSize(width: 70, height: 18)]
         var lootPts: [CGPoint] = []
+        var boosts: [Int] = []
         for r in rm {
             let inner = r.r.insetBy(dx: T + 24, dy: T + 24)
             var doorC = CGPoint(x: r.r.midX, y: r.r.midY)
@@ -146,7 +190,7 @@ final class TowerMap {
             var tries = 0
             while placed.count < n && tries < 40 {
                 tries += 1
-                let kind = themes[f][Int(rng.f() * 4) % 4]
+                let kind = themes[Int(rng.f() * CGFloat(themes.count)) % themes.count]
                 guard let sz = sizes[kind] else { continue }
                 let horiz = rng.f() > 0.5
                 let ww = horiz ? sz.width : sz.height, hh = horiz ? sz.height : sz.width
@@ -164,11 +208,18 @@ final class TowerMap {
                 let p = CGPoint(x: rng.r(inner.minX, inner.maxX), y: rng.r(inner.minY, inner.maxY))
                 if placed.contains(where: { $0.insetBy(dx: -20, dy: -20).contains(p) }) { continue }
                 lootPts.append(p)
+                boosts.append(r.secure ? 2 : (r.hazard ? 1 : 0))
                 got += 1
+            }
+            if r.secure || r.hazard {
+                for _ in 0..<2 {
+                    let p = CGPoint(x: rng.r(inner.minX, inner.maxX), y: rng.r(inner.minY, inner.maxY))
+                    lootPts.append(p)
+                    boosts.append(r.secure ? 2 : 1)
+                }
             }
         }
         var spawnPts = lootPts
-        // hall loot
         var hall = 0
         var tries = 0
         let solidAll = w + pr.map { $0.r }
@@ -179,27 +230,45 @@ final class TowerMap {
             if rm.contains(where: { $0.r.insetBy(dx: -6, dy: -6).contains(p) }) { continue }
             if TowerMap.stairW.contains(p) || TowerMap.stairE.contains(p) { continue }
             if TowerMap.elevs.contains(where: { $0.insetBy(dx: -10, dy: -10).contains(p) }) { continue }
+            if keep.contains(where: { $0.contains(p) }) { continue }
             lootPts.append(p)
+            boosts.append(0)
             hall += 1
         }
+        spawnPts = spawnPts.filter { sp in !keep.contains(where: { $0.contains(sp) }) }
         spawnPts.shuffle()
         walls.append(w)
         props.append(pr)
         rooms.append(rm)
         doors.append(d)
         solids.append(w + pr.map { $0.r })
+        navSolids.append(w + pr.map { $0.r } + gl)
         loot.append(lootPts)
+        lootBoost.append(boosts)
         spawns.append(spawnPts)
+        hazards.append(hz)
+        glass.append(gl)
+        glassAlive.append([Bool](repeating: true, count: gl.count))
+        belts.append(bl)
+        lanes.append(ln)
     }
 
     // MARK: collision
 
     func refreshBlockers() {
         blockers = []
-        for f in 0..<TowerMap.nF {
+        rayBlockers = []
+        for f in 0..<nF {
             var b = solids[f]
             for d in doors[f] where d.closed { b.append(d.r) }
+            var rb = b
+            for (i, g) in glass[f].enumerated() where glassAlive[f][i] { b.append(g) }
+            if f < trainRects.count {
+                b += trainRects[f]
+                rb += trainRects[f]
+            }
             blockers.append(b)
+            rayBlockers.append(rb)
         }
     }
 
@@ -231,7 +300,7 @@ final class TowerMap {
 
     func rayDist(_ f: Int, _ o: CGPoint, _ dx: CGFloat, _ dy: CGFloat, _ maxD: CGFloat) -> CGFloat {
         var best = maxD
-        for w in blockers[f] {
+        for w in rayBlockers[f] {
             if let h = brRay(o, dx, dy, w), h.0 < best { best = h.0 }
         }
         return best
@@ -252,7 +321,7 @@ final class TowerMap {
     func pos(_ n: TwNode) -> CGPoint { nodePos(n.i, n.j) }
 
     private func clear(_ f: Int, _ p: CGPoint, _ r: CGFloat) -> Bool {
-        for w in solids[f] where w.insetBy(dx: -r, dy: -r).contains(p) { return false }
+        for w in navSolids[f] where w.insetBy(dx: -r, dy: -r).contains(p) { return false }
         return true
     }
 

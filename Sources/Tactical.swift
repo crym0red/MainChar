@@ -623,7 +623,7 @@ final class TacticalEngine {
             p.pos = spot
             p.aim = atan2(TMap.H / 2 - spot.y, TMap.floorW / 2 - spot.x)
             p.gun = p.isPlayer ? myGun : gunPick()
-            p.mag = Guns.get(p.gun).mag
+            p.mag = TGuns.get(p.gun).mag
             p.spare = p.gun == "pistol" ? 99 : 2
             p.role = 0
             if !atk && !p.isPlayer { p.site = defBots % 2; defBots += 1 }
@@ -828,7 +828,7 @@ final class TacticalEngine {
     }
 
     private func pickTarget(_ p: TPlayer) -> TPlayer? {
-        let range = Guns.get(p.gun).range
+        let range = TGuns.get(p.gun).range
         var best: TPlayer? = nil
         var bd: CGFloat = .greatestFiniteMagnitude
         for e in players where e.alive && e.team != p.team {
@@ -839,18 +839,18 @@ final class TacticalEngine {
     }
 
     func startReload(_ p: TPlayer) {
-        let g = Guns.get(p.gun)
+        let g = TGuns.get(p.gun)
         guard p.reloadT <= 0, p.mag < g.mag, p.spare > 0 else { return }
         p.reloadT = g.reload
     }
 
     private func finishReload(_ p: TPlayer) {
-        p.mag = Guns.get(p.gun).mag
+        p.mag = TGuns.get(p.gun).mag
         if p.gun != "pistol" { p.spare -= 1 }
     }
 
     private func shoot(_ p: TPlayer, _ err: CGFloat) {
-        let g = Guns.get(p.gun)
+        let g = TGuns.get(p.gun)
         let spd: CGFloat = 1100
         for _ in 0..<g.pellets {
             let a = p.aim + CGFloat.random(in: -(g.spread + err)...(g.spread + err))
@@ -2066,7 +2066,7 @@ struct TacticalPlay: View {
                             Text("Smoke \(e.me.smokes)").font(.jk(12, .bold)).foregroundColor(e.me.smokes > 0 ? .white : .white.opacity(0.4))
                                 .padding(.horizontal, 12).frame(height: 38).background(Color.black.opacity(0.55)).clipShape(Capsule())
                         }
-                        Text(e.me.reloadT > 0 ? "RELOADING" : "\(e.me.mag) / \(e.me.gun == "pistol" ? "∞" : "\(e.me.spare * Guns.get(e.me.gun).mag)")")
+                        Text(e.me.reloadT > 0 ? "RELOADING" : "\(e.me.mag) / \(e.me.gun == "pistol" ? "∞" : "\(e.me.spare * TGuns.get(e.me.gun).mag)")")
                             .font(.jk(17, .heavy)).foregroundColor(e.me.mag == 0 ? .red : .white)
                         Button { e.wantReload = true } label: {
                             Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 14, weight: .bold)).foregroundColor(.white)

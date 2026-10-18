@@ -1,9 +1,10 @@
 import SwiftUI
 
 struct TowerPlay: View {
+    var mapId: Int = 0
     @EnvironmentObject var game: Game
     @Environment(\.dismiss) private var dismiss
-    @State private var engine = TowerEngine()
+    @State private var engine = TowerEngine(def: TowerMaps.all[0])
     @State private var scene: TowerScene? = nil
     @State private var ready = false
     @State private var collected = false
@@ -12,6 +13,9 @@ struct TowerPlay: View {
     @State private var rStart: CGPoint? = nil
     @State private var rKnob = CGPoint.zero
     @State private var lastT = Date()
+    @State private var lookOn = false
+    @State private var lastDrag = CGSize.zero
+    @State private var baseDist: CGFloat = 430
 
     private let lime = Color(red: 0.85, green: 0.93, blue: 0.2)
 
@@ -42,10 +46,10 @@ struct TowerPlay: View {
         .statusBarHidden(true)
         .onAppear {
             OrientationLock.set(landscape: true)
-            let e = TowerEngine()
+            let e = TowerEngine(def: TowerMaps.all[max(0, min(TowerMaps.all.count - 1, mapId))])
             e.setup(name: game.s.persona.handle)
             engine = e
-            let sc = TowerScene()
+            let sc = TowerScene(map: e.map)
             sc.configure(e)
             scene = sc
             ready = true
@@ -79,7 +83,7 @@ struct TowerPlay: View {
             ctx.stroke(path, with: .color(Color(red: 0.4, green: 1, blue: 0.3).opacity(0.9)), lineWidth: 3)
         }
         // labels on stairs / elevators
-        if f < TowerMap.nF - 1, let s = sc.project(CGPoint(x: TowerMap.stairW.midX, y: TowerMap.stairW.midY), 40) {
+        if f < e.map.nF - 1, let s = sc.project(CGPoint(x: TowerMap.stairW.midX, y: TowerMap.stairW.midY), 40) {
             ctx.draw(Text("STAIRS UP").font(.jk(10, .heavy)).foregroundColor(.green), at: s)
         }
         if f > 0, let s = sc.project(CGPoint(x: TowerMap.stairE.midX, y: TowerMap.stairE.midY), 40) {
@@ -145,6 +149,27 @@ struct TowerPlay: View {
             let vp = sc.vs[a.id].p
             ctx.fill(Path(ellipseIn: CGRect(x: mo.x + vp.x * k - 2.5, y: mo.y + vp.y * k - 2.5, width: 5, height: 5)), with: .color(c))
         }
+        for hz in e.map.hazards[f] {
+            ctx.fill(Path(CGRect(x: mo.x + hz.minX * k, y: mo.y + hz.minY * k, width: hz.width * k, height: hz.height * k)), with: .color(.green.opacity(0.35)))
+        }
+        for (gi, g) in e.map.glass[f].enumerated() where e.map.glassAlive[f][gi] {
+            ctx.fill(Path(CGRect(x: mo.x + g.minX * k, y: mo.y + g.minY * k, width: max(1.5, g.width * k), height: max(1.5, g.height * k))), with: .color(.cyan.opacity(0.9)))
+        }
+        // power panel label + noise alerts
+        if e.def.mech == 6, f < e.powerOn.count, let s = sc.project(TowerMap.switchPos, 48) {
+            let txt = e.powerOn[f] ? "POWER ONLINE" : (e.hack[f] > 0 ? "HACKING \(Int(min(1, e.hack[f] / 1.2) * 100))%" : "POWER OFFLINE  -  STAND HERE")
+            ctx.draw(Text(txt).font(.jk(10, .heavy)).foregroundColor(e.powerOn[f] ? .green : .red), at: s)
+        }
+        for al in e.alerts where al.f == f {
+            if let c = sc.project(al.p, 10), let edge = sc.project(CGPoint(x: al.p.x + (2.5 - al.t) * 320, y: al.p.y), 10) {
+                let r = abs(edge.x - c.x)
+                ctx.stroke(Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r * 0.6, width: r * 2, height: r * 1.2)), with: .color(.red.opacity(Double(al.t / 2.5))), lineWidth: 3)
+            }
+        }
+        // blackout
+        if e.dark[f] != nil, let s = sc.project(sc.vs[0].p, 20) {
+            ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .radialGradient(Gradient(colors: [.clear, .black.opacity(0.94)]), center: s, startRadius: 60, endRadius: 240))
+        }
         // hurt vignette
         if e.hurtFlash > 0 {
             ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.red.opacity(0.28 * e.hurtFlash)))
@@ -204,6 +229,23 @@ struct TowerPlay: View {
                             rKnob = .zero
                             engine.firing = false
                         })
+                if lookOn {
+                    Color.clear.contentShape(Rectangle())
+                        .frame(width: W * 0.55, height: H)
+                        .position(x: W * 0.725, y: H / 2)
+                        .gesture(DragGesture(minimumDistance: 0)
+                            .onChanged { v in
+                                let dx = v.translation.width - lastDrag.width
+                                let dy = v.translation.height - lastDrag.height
+                                lastDrag = v.translation
+                                engine.camYaw -= dx * 0.008
+                                engine.camPitch = max(0.45, min(1.45, engine.camPitch + dy * 0.005))
+                            }
+                            .onEnded { _ in lastDrag = .zero })
+                        .simultaneousGesture(MagnificationGesture()
+                            .onChanged { m in engine.camDist = max(220, min(900, baseDist / m)) }
+                            .onEnded { _ in baseDist = engine.camDist })
+                }
                 if let s = lStart {
                     stickView(s, lKnob)
                 }
@@ -234,11 +276,14 @@ struct TowerPlay: View {
             ZStack {
                 // top left status
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("FLOOR \(tgt.f + 1)  \(TowerMap.names[tgt.f])").font(.jk(13, .heavy)).foregroundColor(.white)
+                    Text("\(e.def.name)  -  \(tgt.f + 1). \(e.def.floors[tgt.f])").font(.jk(13, .heavy)).foregroundColor(.white)
                     HStack(spacing: 10) {
                         Text("\(e.aliveCount) ALIVE").font(.jk(11, .bold)).foregroundColor(lime)
                         Text("\(e.teamsLeft) SQUADS").font(.jk(11, .bold)).foregroundColor(.white.opacity(0.8))
                         Text("\(e.kills) K").font(.jk(11, .bold)).foregroundColor(.white.opacity(0.8))
+                        if e.def.mech == 4 || e.def.mech == 5 {
+                            Text("KEYS \(tgt.keys)").font(.jk(11, .bold)).foregroundColor(.yellow)
+                        }
                     }
                 }
                 .padding(8)
@@ -361,7 +406,12 @@ struct TowerPlay: View {
                 btn("RELOAD", .white) { e.startReload(m) }
                 btn("SWAP", .white) { e.swap(m) }
                 btn("MED \(m.meds)", .red) { e.useMed(m) }
-                btn("VIEW", .cyan) { e.zoom = (e.zoom + 1) % 3 }
+                btn(lookOn ? "FOLLOW" : "LOOK", lookOn ? .yellow : .cyan) {
+                    lookOn.toggle()
+                    e.look = lookOn
+                    e.firing = false
+                    if lookOn { e.camYaw = 0; e.camPitch = 1.0; e.camDist = 430; baseDist = 430 }
+                }
             }
             .position(x: size.width - 48, y: size.height - 150)
 
@@ -376,7 +426,7 @@ struct TowerPlay: View {
                 }
                 if e.nearElev(m) {
                     HStack(spacing: 5) {
-                        ForEach(0..<TowerMap.nF, id: \.self) { f in
+                        ForEach(0..<e.map.nF, id: \.self) { f in
                             Button { e.go(m, to: f) } label: {
                                 Text("\(f + 1)").font(.jk(14, .heavy)).foregroundColor(.black)
                                     .frame(width: 38, height: 38)
@@ -419,12 +469,12 @@ struct TowerPlay: View {
     private var overView: some View {
         let e = engine
         let place = e.won ? 1 : max(1, e.place)
-        let gems = (e.won ? 80 : 0) + max(0, TowerEngine.teams - place) * 8 + e.kills * 5 + e.contractGems
+        let gems = (e.won ? 80 : 0) + max(0, e.teams - place) * 8 + e.kills * 5 + e.contractGems
         return ZStack {
             Color.black.opacity(0.82).ignoresSafeArea()
             VStack(spacing: 12) {
                 Text(e.won ? "SPIRE CLEARED" : "ELIMINATED").font(.jk(38, .heavy)).foregroundColor(e.won ? lime : .red)
-                Text("SQUAD PLACED #\(place) OF \(TowerEngine.teams)").font(.jk(22, .heavy)).foregroundColor(.white)
+                Text("SQUAD PLACED #\(place) OF \(e.teams)").font(.jk(22, .heavy)).foregroundColor(.white)
                 Text("\(e.kills) kills   \(e.heads) headshots   \(gems) gems").font(.jk(16, .semibold)).foregroundColor(.white)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("DAILY CONTRACTS").font(.jk(10, .heavy)).foregroundColor(.white.opacity(0.6))
