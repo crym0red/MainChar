@@ -85,7 +85,7 @@ struct LobbyView: View {
             statsSheet.preferredColorScheme(.dark)
         }
         .sheet(isPresented: $showRanks) {
-            TacRankSheet(t: game.s.ex.tac ?? TacData(), username: $username).preferredColorScheme(.dark)
+            TacRankSheet(t: game.s.ex.tac ?? TacData(), username: $username, onPrestige: { game.tacPrestige() }).preferredColorScheme(.dark)
         }
     }
 
@@ -144,9 +144,9 @@ struct LobbyView: View {
                     Button { showRanks = true } label: {
                         VStack(spacing: 2) {
                             HStack(spacing: 12) {
-                                TacRankTile(idx: ri, size: 26, showName: false)
+                                TacRankTile(idx: ri, size: 34, progress: TacRank.progress(xp), showName: false)
                                 Text(username).font(.jk(15, .heavy)).foregroundColor(.white).lineLimit(1).fixedSize(horizontal: true, vertical: false)
-                                Text("LEVEL \(ri + 1)").font(.jk(14, .heavy)).foregroundColor(.white)
+                                Text("LEVEL \(ri + 1)" + ((t.prestige ?? 0) > 0 ? "  P\(t.prestige ?? 0)" : "")).font(.jk(14, .heavy)).foregroundColor(.white)
                             }
                             ZStack {
                                 Rectangle().fill(Color.white.opacity(0.18))
@@ -167,7 +167,7 @@ struct LobbyView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Button { screen = 5 } label: {
                     HStack(spacing: 10) {
-                        TacRankTile(idx: ri, size: 46, showName: false)
+                        TacRankTile(idx: ri, size: 58, progress: TacRank.progress(xp), showName: false)
                         VStack(alignment: .leading, spacing: 4) {
                             HStack(spacing: 4) {
                                 SF("trophy.fill").font(.system(size: 13)).foregroundColor(CS.gold)

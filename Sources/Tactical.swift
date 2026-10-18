@@ -9,6 +9,9 @@ struct TacData: Codable, Hashable {
     var kills = 0
     var rating = 1000
     var sx: TacSeasonData? = nil
+    var prestige: Int? = nil
+    var xpExtra: Int? = nil
+    var xpBase: Int? = nil
 }
 
 // MARK: - Geometry
@@ -2443,7 +2446,7 @@ struct TacticalPlay: View {
 
     private var overView: some View {
         let e = engine
-        let gems = (e.won ? 25 : 8) + e.kills * 2 + e.scores[0] * 3 + (e.gameMode == 6 ? max(0, 20 - e.brPlace) : 0)
+        let gems = ((e.won ? 25 : 8) + e.kills * 2 + e.scores[0] * 3 + (e.gameMode == 6 ? max(0, 20 - e.brPlace) : 0)) * TacRank.mult(game.s.ex.tac?.prestige ?? 0)
         let xp = 40 + e.kills * 10 + (e.won ? 60 : 0)
         let col = e.won ? TUI.green : TUI.red
         return ZStack {
@@ -2487,11 +2490,25 @@ struct TacticalPlay: View {
 }
 
 extension Game {
+    func tacPrestige() {
+        var st = s
+        var d = st.ex.tac ?? TacData()
+        let xp = TacRank.totalXP(d)
+        guard TacRank.index(xp) >= TacRank.ranks.count - 1, (d.prestige ?? 0) < TacRank.maxPrestige else { return }
+        d.prestige = (d.prestige ?? 0) + 1
+        d.xpBase = (d.xpBase ?? 0) + xp
+        st.ex.tac = d
+        s = st
+        _ = TacRank.totalXP(d)
+    }
+
     func tacticalFinish(won: Bool, kills: Int, gems: Int) {
         var st = s
         var d = st.ex.tac ?? TacData()
         if won { d.wins += 1; d.rating += 25 } else { d.losses += 1; d.rating = max(0, d.rating - 18) }
         d.kills += kills
+        let baseXP = 40 + kills * 10 + (won ? 60 : 0)
+        d.xpExtra = (d.xpExtra ?? 0) + baseXP * (TacRank.mult(d.prestige ?? 0) - 1)
         var x = d.sx ?? TacSeasonData()
         x.xp += 40 + kills * 10 + (won ? 60 : 0)
         d.sx = x

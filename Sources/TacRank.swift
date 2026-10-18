@@ -21,28 +21,61 @@ enum TacRank {
     static let ranks: [Def] = [
         Def(name: "Trainee", xp: 0, kind: .smile),
         Def(name: "Private", xp: 100, kind: .chev(1, 0)),
-        Def(name: "Private First Class", xp: 250, kind: .chev(1, 1)),
-        Def(name: "Corporal", xp: 450, kind: .chev(2, 0)),
-        Def(name: "Sergeant", xp: 700, kind: .chev(3, 0)),
-        Def(name: "Staff Sergeant", xp: 1000, kind: .chev(3, 1)),
-        Def(name: "Sergeant First Class", xp: 1400, kind: .chev(3, 2)),
-        Def(name: "Master Sergeant", xp: 1900, kind: .chev(3, 3)),
-        Def(name: "Second Lieutenant", xp: 2500, kind: .bars(true, 1)),
-        Def(name: "First Lieutenant", xp: 3200, kind: .bars(false, 1)),
-        Def(name: "Captain", xp: 4000, kind: .bars(false, 2)),
-        Def(name: "Major", xp: 5000, kind: .leaves(true, 1)),
-        Def(name: "Lieutenant Colonel", xp: 6200, kind: .leaves(false, 1)),
-        Def(name: "Colonel", xp: 7600, kind: .leaves(false, 2)),
-        Def(name: "Brigadier General", xp: 9200, kind: .stars(1)),
-        Def(name: "Major General", xp: 11000, kind: .stars(2)),
-        Def(name: "Lieutenant General", xp: 13000, kind: .stars(3)),
-        Def(name: "General", xp: 16000, kind: .stars(4)),
-        Def(name: "Commander", xp: 20000, kind: .stars(5))
+        Def(name: "Private First Class", xp: 300, kind: .chev(1, 1)),
+        Def(name: "Corporal", xp: 650, kind: .chev(2, 0)),
+        Def(name: "Sergeant", xp: 1250, kind: .chev(3, 0)),
+        Def(name: "Staff Sergeant", xp: 3750, kind: .chev(3, 1)),
+        Def(name: "Sergeant First Class", xp: 8250, kind: .chev(3, 2)),
+        Def(name: "Master Sergeant", xp: 15750, kind: .chev(3, 3)),
+        Def(name: "Second Lieutenant", xp: 26750, kind: .bars(true, 1)),
+        Def(name: "First Lieutenant", xp: 42750, kind: .bars(false, 1)),
+        Def(name: "Captain", xp: 64750, kind: .bars(false, 2)),
+        Def(name: "Major", xp: 94750, kind: .leaves(true, 1)),
+        Def(name: "Lieutenant Colonel", xp: 134750, kind: .leaves(false, 1)),
+        Def(name: "Colonel", xp: 186750, kind: .leaves(false, 2)),
+        Def(name: "Brigadier General", xp: 252750, kind: .stars(1)),
+        Def(name: "Major General", xp: 334750, kind: .stars(2)),
+        Def(name: "Lieutenant General", xp: 434750, kind: .stars(3)),
+        Def(name: "General", xp: 559750, kind: .stars(4)),
+        Def(name: "Commander", xp: 714750, kind: .stars(5))
     ]
 
+    /// bars under the insignia: each filled bar is a slice of the rank, so a Staff Sergeant with 4 bars has put in a lot of play
+    static func pips(_ idx: Int) -> Int { idx == 0 ? 2 : 5 }
+
+    static func pipsFilled(_ xp: Int) -> Int {
+        let i = index(xp)
+        if i >= ranks.count - 1 { return pips(i) }
+        return min(pips(i), Int(progress(xp) * Double(pips(i))))
+    }
+
     /// lifetime XP derived from saved stats (same formula as match rewards)
+    static var prestigeCache = 0
+
+    static let maxPrestige = 12
+
+    /// P1 = 3x ... P12 = 14x
+    static func mult(_ p: Int) -> Int { p <= 0 ? 1 : 2 + min(p, maxPrestige) }
+
+    static let prestigeCols: [(Color, Color)] = [
+        (Color(red: 0.42, green: 0.62, blue: 0.84), Color(red: 0.22, green: 0.38, blue: 0.62)),
+        (Color(red: 0.4, green: 0.8, blue: 0.4), Color(red: 0.14, green: 0.45, blue: 0.2)),
+        (Color(red: 0.9, green: 0.4, blue: 0.4), Color(red: 0.5, green: 0.12, blue: 0.14)),
+        (Color(red: 0.7, green: 0.5, blue: 0.9), Color(red: 0.32, green: 0.16, blue: 0.5)),
+        (Color(red: 0.95, green: 0.7, blue: 0.3), Color(red: 0.6, green: 0.35, blue: 0.08)),
+        (Color(red: 0.4, green: 0.85, blue: 0.85), Color(red: 0.1, green: 0.4, blue: 0.45)),
+        (Color(red: 0.95, green: 0.5, blue: 0.75), Color(red: 0.5, green: 0.15, blue: 0.38)),
+        (Color(red: 0.85, green: 0.85, blue: 0.9), Color(red: 0.4, green: 0.42, blue: 0.5)),
+        (Color(red: 0.7, green: 0.9, blue: 0.25), Color(red: 0.3, green: 0.5, blue: 0.05)),
+        (Color(red: 0.75, green: 0.5, blue: 0.3), Color(red: 0.38, green: 0.2, blue: 0.08)),
+        (Color(red: 0.35, green: 0.45, blue: 0.95), Color(red: 0.08, green: 0.12, blue: 0.45)),
+        (Color(red: 0.9, green: 0.25, blue: 0.7), Color(red: 0.4, green: 0.05, blue: 0.3)),
+        (Color(red: 0.3, green: 0.3, blue: 0.34), Color(red: 0.06, green: 0.06, blue: 0.08))
+    ]
+
     static func totalXP(_ t: TacData) -> Int {
-        (t.wins + t.losses) * 40 + t.kills * 10 + t.wins * 60
+        prestigeCache = t.prestige ?? 0
+        return max(0, (t.wins + t.losses) * 40 + t.kills * 10 + t.wins * 60 + (t.xpExtra ?? 0) - (t.xpBase ?? 0))
     }
 
     static func index(_ xp: Int) -> Int {
@@ -300,7 +333,8 @@ struct TacRankTile: View {
         let d = TacRank.ranks[max(0, min(TacRank.ranks.count - 1, idx))]
         ZStack {
             RoundedRectangle(cornerRadius: size * 0.05, style: .continuous)
-                .fill(LinearGradient(colors: [Color(red: 0.42, green: 0.62, blue: 0.84), Color(red: 0.22, green: 0.38, blue: 0.62)], startPoint: .top, endPoint: .bottom))
+                
+                .fill(LinearGradient(colors: [TacRank.prestigeCols[TacRank.prestigeCache % TacRank.prestigeCols.count].0, TacRank.prestigeCols[TacRank.prestigeCache % TacRank.prestigeCols.count].1], startPoint: .top, endPoint: .bottom))
             Canvas { ctx, sz in
                 let step = sz.width / 5
                 for i in 0..<5 {
@@ -324,18 +358,31 @@ struct TacRankTile: View {
                 TacInsignia(idx: idx, size: size * (showName ? 0.62 : 0.82))
                     .frame(maxHeight: .infinity)
                 if let p = progress {
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color.black.opacity(0.55))
-                        Capsule().fill(LinearGradient(colors: [Color(red: 1, green: 0.85, blue: 0.3), Color(red: 0.9, green: 0.6, blue: 0.1)], startPoint: .leading, endPoint: .trailing))
-                            .frame(width: (size * 0.84) * CGFloat(p))
+                    let n = TacRank.pips(idx)
+                    HStack(spacing: max(1, size * 0.02)) {
+                        ForEach(0..<n, id: \.self) { k in
+                            let f = max(0, min(1, p * Double(n) - Double(k)))
+                            ZStack(alignment: .leading) {
+                                Rectangle().fill(Color.black.opacity(0.6))
+                                GeometryReader { gg in
+                                    Rectangle().fill(LinearGradient(colors: [Color(red: 1, green: 0.85, blue: 0.3), Color(red: 0.9, green: 0.6, blue: 0.1)], startPoint: .top, endPoint: .bottom))
+                                        .frame(width: gg.size.width * CGFloat(f))
+                                }
+                            }
+                        }
                     }
-                    .frame(width: size * 0.84, height: max(3, size * 0.045)).padding(.bottom, size * 0.05)
+                    .frame(width: size * 0.84, height: max(3, size * 0.055)).padding(.bottom, size * 0.05)
                 } else {
                     Spacer().frame(height: size * 0.06)
                 }
             }
             RoundedRectangle(cornerRadius: size * 0.05, style: .continuous).stroke(Color.black.opacity(0.7), lineWidth: 1.5)
             RoundedRectangle(cornerRadius: size * 0.05, style: .continuous).inset(by: 1.5).stroke(Color.white.opacity(0.18), lineWidth: 1)
+            if TacRank.prestigeCache > 0 && size >= 40 {
+                Text("P\(TacRank.prestigeCache)").font(.system(size: max(7, size * 0.14), weight: .black)).foregroundColor(.white)
+                    .padding(.horizontal, 3).background(Capsule().fill(Color.black.opacity(0.65)))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(2)
+            }
             if locked {
                 RoundedRectangle(cornerRadius: size * 0.05, style: .continuous).fill(Color.black.opacity(0.55))
                 SF("lock.fill").font(.system(size: size * 0.2, weight: .bold)).foregroundColor(.white.opacity(0.55))
@@ -350,6 +397,7 @@ struct TacRankTile: View {
 struct TacRankSheet: View {
     let t: TacData
     @Binding var username: String
+    var onPrestige: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var draft = ""
 
@@ -382,11 +430,19 @@ struct TacRankSheet: View {
                         }
                     }
                 }
-                Text("XP: 40 per match + 10 per kill + 60 per win.").font(.jk(11, .semibold)).foregroundColor(.white.opacity(0.55))
+                if cur >= TacRank.ranks.count - 1, (t.prestige ?? 0) < TacRank.maxPrestige, let go = onPrestige {
+                    let np = (t.prestige ?? 0) + 1
+                    Button { go(); dismiss() } label: {
+                        Text("PRESTIGE  →  P\(np)  ·  \(TacRank.mult(np))x CASH & RANK XP").font(.jk(14, .heavy)).foregroundColor(.black)
+                            .frame(maxWidth: .infinity).frame(height: 46).background(Capsule().fill(TUI.gold))
+                    }
+                    .buttonStyle(TuiPress())
+                }
+                Text("XP: 40 per match + 10 per kill + 60 per win" + ((t.prestige ?? 0) > 0 ? "  ·  \(TacRank.mult(t.prestige ?? 0))x prestige bonus." : ".")).font(.jk(11, .semibold)).foregroundColor(.white.opacity(0.55))
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 5), spacing: 10) {
                     ForEach(0..<TacRank.ranks.count, id: \.self) { i in
                         VStack(spacing: 3) {
-                            TacRankTile(idx: i, size: 82, progress: i == cur ? TacRank.progress(xp) : nil, locked: i > cur)
+                            TacRankTile(idx: i, size: 82, progress: i < cur ? 1 : (i == cur ? TacRank.progress(xp) : 0), locked: i > cur)
                             Text("\(TacRank.ranks[i].xp) XP").font(.jk(9, .heavy)).foregroundColor(i == cur ? TUI.accent : .white.opacity(0.5))
                         }
                     }
