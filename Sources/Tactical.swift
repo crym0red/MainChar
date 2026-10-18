@@ -74,8 +74,8 @@ enum WallMat { case brick, concrete, wood, glass }
 
 enum TNav {
     static let cell: CGFloat = 40
-    static let cols = Int(TMap.totalW / cell) + 1
-    static let rows = Int(TMap.H / cell) + 1
+    static var cols = Int(TMap.totalW / cell) + 1
+    static var rows = Int(TMap.H / cell) + 1
     static var floorSolids: [[Int]] = TNav.makeFloorSolids()
 
     static func makeFloorSolids() -> [[Int]] {
@@ -87,6 +87,9 @@ enum TNav {
     /// the active map changed: rebuild the solid index and the whole blocked grid
     static func reload() {
         floorSolids = makeFloorSolids()
+        rows = Int(TMap.H / cell) + 1
+        cols = Int(TMap.totalW / cell) + 1
+        blocked = [Bool](repeating: false, count: cols * rows)
         rebuild()
     }
 
@@ -99,9 +102,7 @@ enum TNav {
     }
 
     static var blocked: [Bool] = {
-        var b = [Bool](repeating: false, count: cols * rows)
-        for c in 0..<cols { for r in 0..<rows { b[r * cols + c] = cellBlocked(c, r) } }
-        return b
+        [Bool](repeating: false, count: cols * rows)
     }()
 
     /// re-evaluates the cells around a rect (after something was destroyed)
@@ -114,7 +115,29 @@ enum TNav {
     }
 
     static func rebuild() {
-        for c in 0..<cols { for r in 0..<rows { blocked[r * cols + c] = cellBlocked(c, r) } }
+        var b = [Bool](repeating: false, count: cols * rows)
+        for c in 0..<cols {
+            let px = CGFloat(c) * cell + cell / 2
+            let fl = TMap.floorOf(CGPoint(x: px, y: 0))
+            let lx = px - TMap.origin(fl)
+            for r in 0..<rows where lx > TMap.W - 20 || CGFloat(r) * cell + cell / 2 > TMap.H - 20 { b[r * cols + c] = true }
+        }
+        for fl in 0..<floorSolids.count {
+            for k in floorSolids[fl] {
+                let q = TMap.baseSolid[k].insetBy(dx: -18, dy: -18)
+                let c0 = max(0, Int((q.minX - cell / 2) / cell)), c1 = min(cols - 1, Int((q.maxX - cell / 2) / cell) + 1)
+                let r0 = max(0, Int((q.minY - cell / 2) / cell)), r1 = min(rows - 1, Int((q.maxY - cell / 2) / cell) + 1)
+                if c0 > c1 || r0 > r1 { continue }
+                for c in c0...c1 {
+                    let cx = CGFloat(c) * cell + cell / 2
+                    for r in r0...r1 where q.contains(CGPoint(x: cx, y: CGFloat(r) * cell + cell / 2)) { b[r * cols + c] = true }
+                }
+            }
+        }
+        blocked = b
+        for i in TMap.stairs.indices where !TMap.stairIntact(i) {
+            refresh(TMap.stairRect(i, floor: TMap.stairLo[i])); refresh(TMap.stairRect(i, floor: TMap.stairLo[i] + 1))
+        }
     }
 
     static func idx(_ p: CGPoint) -> Int {
@@ -161,7 +184,7 @@ enum TNav {
         }
         var found = false
         var guardN = 0
-        while !open.isEmpty && guardN < 4000 {
+        while !open.isEmpty && guardN < 9000 {
             guardN += 1
             var bi = 0
             var bf = Int.max
@@ -218,7 +241,7 @@ enum TNav {
 final class TPlayer {
     let id: Int
     var team: Int
-    let name: String
+    var name: String
     let handle: String
     let emoji: String
     let isPlayer: Bool
@@ -266,6 +289,8 @@ final class TPlayer {
     var faction = 0
     var home = CGPoint.zero
     var ambush = -1
+    var watchDoor = false
+    var holding: Bool { ambush >= 0 || watchDoor }
     var ambushPos = CGPoint.zero
     var ambushAim: CGFloat = 0
     var respawn: CGFloat = 0
@@ -514,10 +539,10 @@ final class TacticalEngine {
     func setup(gun: String, diff: Int, mode: Int = 0) {
         self.diff = diff
         gameMode = mode
-        TMap.load(mode == 6 ? 2 : mapPick)
+        TMap.load(mode == 6 ? 4 : mapPick)
         tags = []
         myGun = gun
-        let nb = mode == 6 ? 11 : 9
+        let nb = mode == 6 ? 36 : 9
         var names: [(String, String, String)] = TacRoster.pick(nb)
         while names.count < nb { let k = names.count + 1; names.append(("Recruit \(k)", "recruit\(k)", "")) }
         players = [TPlayer(id: 0, team: 0, name: TacProfile.name, handle: "you", emoji: "", isPlayer: true)]
@@ -569,6 +594,10 @@ final class TacticalEngine {
         var ai = 0, di = 0
         var defBots = 0
         let brSpawns = TMap.spawns.shuffled()
+        let spreadPts = gameMode != 0 && gameMode != 6 ? TMap.spreadPoints(players.count, sep: 700) : []
+        var spreadI = 0
+        let raidPts = gameMode == 6 ? TMap.spreadPoints(players.count, sep: 650, avoid: [TMap.atkSpawn[2]], avoidDist: 1500) : []
+        var raidI = 0
         cpProg = [0, 0, 0]
         cpT = 1.5
         for p in players {
@@ -597,9 +626,16 @@ final class TacticalEngine {
             let atk = p.team == atkTeam
             var spot = atk ? TMap.atkSpawn[ai % 5] : TMap.defSpawn[di % 5]
             if atk { ai += 1 } else { di += 1 }
+            if gameMode != 0 && gameMode != 6 && !spreadPts.isEmpty {
+                spot = spreadPts[spreadI % spreadPts.count]
+                spreadI += 1
+            }
             if gameMode == 6 {
                 let home = TMap.atkSpawn[2]
-                if p.isPlayer { spot = home } else {
+                if p.isPlayer { spot = home } else if !raidPts.isEmpty {
+                    spot = raidPts[raidI % raidPts.count]
+                    raidI += 1
+                } else {
                     let far = brSpawns.filter { tDist($0, home) > 700 }
                     spot = far.isEmpty ? brSpawns[p.id % brSpawns.count] : far[p.id % far.count]
                 }
@@ -672,7 +708,7 @@ final class TacticalEngine {
             if rAcc >= 1.0 / 30 {
                 rAcc = 0
                 rbuf.append(rCapture())
-                if rbuf.count > 90 { rbuf.removeFirst() }
+                if rbuf.count > (gameMode == 6 ? 300 : 90) { rbuf.removeFirst() }
             }
         } else if replayOn {
             replayT = min(replayT + dt, CGFloat(replay.count) / 30 + 0.5)
@@ -860,12 +896,13 @@ final class TacticalEngine {
 
     private func respawnPlayer(_ p: TPlayer) {
         if p.isPlayer { rbuf.removeAll(); replayOn = false }
-        let list = p.id % 2 == 0 ? TMap.atkSpawn : TMap.defSpawn
+        var list = p.id % 2 == 0 ? TMap.atkSpawn : TMap.defSpawn
+        if gameMode != 0 && gameMode != 6 { list = TMap.spreadPoints(14, sep: 500) + list }
         var best = list[0], bd: CGFloat = -1
         for c in list {
             var near = CGFloat.greatestFiniteMagnitude
-            for e in players where e.alive && e.team != p.team { near = min(near, tDist(c, e.pos)) }
-            near += CGFloat.random(in: 0...120)
+            for e in players where e.alive && e.id != p.id { near = min(near, tDist(c, e.pos) * (e.team != p.team ? 1 : 0.6)) }
+            near += CGFloat.random(in: 0...250)
             if near > bd { bd = near; best = c }
         }
         p.pos = CGPoint(x: best.x + CGFloat.random(in: -18...18), y: best.y + CGFloat.random(in: -18...18))
@@ -1238,7 +1275,7 @@ final class TacticalEngine {
             let killer = players.first { $0.id == owner }
             if victim.isPlayer {
                 lastKiller = owner
-                if gameMode != 6, owner != 0, owner != victim.id, rbuf.count > 8 { replay = rbuf; replayOn = true; replayT = 0; replayKiller = owner }
+                if (gameMode != 6 || owner > 0), owner != 0, owner != victim.id, rbuf.count > 8 { replay = rbuf; replayOn = true; replayT = 0; replayKiller = owner }
             }
             if let k = killer, k.team != victim.team {
                 k.kills += 1
@@ -1519,7 +1556,7 @@ final class TacticalEngine {
         }
         var speed: CGFloat = 150
         if p.ambush >= 0 && !TMap.stairIntact(p.ambush) { p.ambush = -1; p.crouch = false }
-        var dest = p.ambush >= 0 ? p.ambushPos : objective(p)
+        var dest = p.holding ? p.ambushPos : objective(p)
         let atk = gameMode != 0 || p.team == atkTeam
         if p.targetID >= 0, let e = players.first(where: { $0.id == p.targetID }), e.alive {
             let d = TMap.pdist(p.pos, e.pos)
@@ -1534,7 +1571,7 @@ final class TacticalEngine {
             if p.nades > 0 && d > 220 && TMap.floorOf(e.pos) == TMap.floorOf(p.pos) && Double.random(in: 0...1) < Double(dt) * 0.12 {
                 throwNade(p, ang, min(d / 1.4, 470))
             }
-            if p.ambush >= 0 && tDist(p.pos, p.ambushPos) < 60 { p.crouch = true; return }
+            if p.holding && tDist(p.pos, p.ambushPos) < 60 { p.crouch = true; return }
             let pc = TWeapons.cls(p.gun)
             let pref: CGFloat = pc == "shotgun" ? 200 : (pc == "smg" ? 320 : (pc == "rifle" ? 460 : (pc == "sniper" ? 700 : 380)))
             p.strafeT -= dt
@@ -1596,7 +1633,7 @@ final class TacticalEngine {
         let atDest = tDist(p.pos, dest) < 26
         if atDest {
             if p.targetID < 0 {
-                if p.ambush >= 0 {
+                if p.holding {
                     p.crouch = true
                     p.aim += max(-3 * dt, min(3 * dt, tAngDiff(p.ambushAim, p.aim)))
                 } else {
@@ -1807,7 +1844,7 @@ extension TacticalEngine {
         stormHitT = 0
         brPlace = 0
         brEndT = 3
-        let c0 = CGPoint(x: 1500, y: 900)
+        let c0 = CGPoint(x: 1500, y: TMap.H / 2)
         let cf = CGPoint(x: 1500 + CGFloat.random(in: -250...250), y: 760 + CGFloat.random(in: -200...200))
         let n = stormR.count - 1
         stormCs = (0...n).map { i in
@@ -2553,10 +2590,10 @@ struct TacticalPlay: View {
             ZStack {
                 if engine.paused && !engine.over { pauseView }
                 if engine.over { overView }
-                if !engine.me.alive && !engine.over && !engine.paused && engine.gameMode != 6 && engine.gameMode != 0 && engine.me.respawn > 0 {
+                if !engine.me.alive && !engine.over && !engine.paused && ((engine.gameMode != 6 && engine.gameMode != 0 && engine.me.respawn > 0) || (engine.gameMode == 6 && engine.replayOn)) {
                     CSKillcam(e: engine) { showLoadout = true; engine.paused = true }.ignoresSafeArea()
                 }
-                if engine.gameMode == 6 && !engine.over { RaidFX(e: engine) }
+                if engine.gameMode == 6 && !engine.over && engine.me.alive { RaidFX(e: engine) }
                 if engine.raidBagOpen && engine.gameMode == 6 && engine.me.alive && !engine.over { RaidBagPanel(e: engine) }
                 if showLoadout {
                     CSLoadout(gun: $nav.tacGun, ok: { engine.myGun = nav.tacGun; showLoadout = false; engine.paused = false; engine.last = nil }, battle: {}).background(Color.black.opacity(0.4)).ignoresSafeArea()

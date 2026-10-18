@@ -4,12 +4,13 @@ import UIKit
 /// Shared map API. Two data sets can be loaded: kind 0 = "The House" (3 floors), kind 1 = "The Woods" (0 bunker, 1 forest, 2 watchtower).
 /// Every floor is its own 3000x1800 plane, laid out side by side in world space at x = floor * `off`.
 enum TMap {
-    static let floorW: CGFloat = 3000
-    static let off: CGFloat = 3200
+    static var floorW: CGFloat = 3000
+    static var off: CGFloat = 3200
     static let nFloors = 3
-    static let W: CGFloat = 3000
-    static let H: CGFloat = 1800
-    static let totalW: CGFloat = 3200 * 3
+    static var W: CGFloat = 3000
+    static var H: CGFloat = 1800
+    static var look: Int { kind == 4 ? 2 : kind }
+    static var totalW: CGFloat { off * 3 }
     static let th: CGFloat = 14
     static let wallH: CGFloat = 80
     static let eyeH: CGFloat = 54
@@ -185,7 +186,16 @@ enum TMap {
         if k == kind && !needsApply { return }
         needsApply = false
         kind = k
-        cur = [THouse.shared, TWoods.shared, TWarehouse.shared, TDesert.shared][max(0, min(3, k))]
+        W = 3000; floorW = 3000; off = 3200; H = 1800
+        _ = THouse.shared
+        if k == 4 { W = THarbor.W; floorW = THarbor.W; off = THarbor.W + 200; H = THarbor.W }
+        switch k {
+        case 1: cur = TWoods.shared
+        case 2: cur = TWarehouse.shared
+        case 3: cur = TDesert.shared
+        case 4: cur = THarbor.shared
+        default: cur = THouse.shared
+        }
         let d = cur
         origBase = d.layout.walls + d.props.map { $0.r }
         baseSolid = origBase

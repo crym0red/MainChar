@@ -469,7 +469,7 @@ struct CSKillcam: View {
 
     private var statusText: String {
         if e.replayOn { return e.replayDone ? "REPLAY ENDED" : "WATCHING REPLAY" }
-        return "RESPAWN IN: \(max(1, Int(ceil(e.me.respawn))))s"
+        return e.gameMode == 6 ? "K.I.A." : "RESPAWN IN: \(max(1, Int(ceil(e.me.respawn))))s"
     }
 
     private func killedBy(_ k: TPlayer?, _ kri: Int) -> some View {
@@ -512,8 +512,13 @@ struct CSKillcam: View {
 
     private func buttons(_ W: CGFloat, _ H: CGFloat) -> some View {
         ZStack {
-            CSButton(title: "CHANGE LOADOUT", w: 150, h: 30, size: 11) { changeLoadout() }.position(x: W - 100, y: 70)
-            if e.replayOn {
+            if e.gameMode == 6 {
+                CSButton(title: "REPLAY", w: 120, h: 36, size: 14) { e.replayAgain() }.position(x: W / 2 - 75, y: H - 128)
+                CSButton(title: "CONTINUE", col: CS.orange, dark: CS.orangeDark, w: 130, h: 36, size: 14) { e.raidContinue() }.position(x: W / 2 + 70, y: H - 128)
+            } else {
+                CSButton(title: "CHANGE LOADOUT", w: 150, h: 30, size: 11) { changeLoadout() }.position(x: W - 100, y: 70)
+            }
+            if e.replayOn && e.gameMode != 6 {
                 CSButton(title: "REPLAY", w: 120, h: 36, size: 14) { e.replayAgain() }.position(x: W / 2 - 75, y: H - 128)
                 CSButton(title: "RESPAWN", col: CS.orange, dark: CS.orangeDark, w: 130, h: 36, size: 14) { e.respawnNow() }.position(x: W / 2 + 70, y: H - 128)
             }

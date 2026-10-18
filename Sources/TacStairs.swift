@@ -182,6 +182,7 @@ extension TacticalEngine {
         guard !TMap.stairs.isEmpty else { return }
         var used = Set<Int>()
         for b in players.filter({ !$0.isPlayer }).shuffled() {
+            if b.watchDoor { continue }
             let chance: Int = gameMode == 6 ? (b.faction == 1 ? 90 : 0) : 22
             guard Int.random(in: 0..<100) < chance else { continue }
             var order = Array(TMap.stairs.indices).filter { !used.contains($0) && TMap.stairIntact($0) }
@@ -199,5 +200,63 @@ extension TacticalEngine {
                 }
             }
         }
+    }
+}
+
+// MARK: - spread-out spawns
+
+extension TMap {
+    private static var reachCache: (Int, [Bool])? = nil
+
+    private static func reachable() -> [Bool] {
+        if let c = reachCache, c.0 == kind { return c.1 }
+        var seen = [Bool](repeating: false, count: TNav.cols * TNav.rows)
+        var q: [Int] = []
+        var seeds: [CGPoint] = atkSpawn + defSpawn + spawns
+        for i in stairs.indices {
+            for f in [stairLo[i], stairLo[i] + 1] {
+                let r = stairRect(i, floor: f)
+                seeds.append(CGPoint(x: r.midX, y: r.midY))
+            }
+        }
+        for s in seeds {
+            let i = TNav.nearestFree(TNav.idx(s))
+            if !TNav.blocked[i] && !seen[i] { seen[i] = true; q.append(i) }
+        }
+        var h = 0
+        while h < q.count {
+            let i = q[h]; h += 1
+            let c = i % TNav.cols, r = i / TNav.cols
+            for (dc, dr) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                let nc = c + dc, nr = r + dr
+                if nc < 0 || nr < 0 || nc >= TNav.cols || nr >= TNav.rows { continue }
+                let j = nr * TNav.cols + nc
+                if !seen[j] && !TNav.blocked[j] { seen[j] = true; q.append(j) }
+            }
+        }
+        reachCache = (kind, seen)
+        return seen
+    }
+
+    /// n walkable points scattered over the whole map (and all floors), each at least `sep` from the others
+    static func spreadPoints(_ n: Int, sep: CGFloat, avoid: [CGPoint] = [], avoidDist: CGFloat = 0) -> [CGPoint] {
+        let ok = reachable()
+        var cells: [Int] = []
+        for i in 0..<ok.count where ok[i] && !TNav.blocked[i] { cells.append(i) }
+        cells.shuffle()
+        var out: [CGPoint] = []
+        var s = sep
+        while out.count < n && s > 60 {
+            for i in cells {
+                let c = TNav.center(i)
+                if stairAt(c) != nil { continue }
+                if out.contains(where: { hypot($0.x - c.x, $0.y - c.y) < s }) { continue }
+                if avoid.contains(where: { hypot($0.x - c.x, $0.y - c.y) < avoidDist }) { continue }
+                out.append(c)
+                if out.count >= n { break }
+            }
+            s *= 0.7
+        }
+        return out
     }
 }

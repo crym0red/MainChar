@@ -142,6 +142,14 @@ enum TAtt {
         }
     }
 
+    /// puts the shared (bot / world) gun materials back to their stock colours
+    static func resetCamo() {
+        for k in ["poly", "tan", "olive", "bake", "steel", "blued"] {
+            guard let m = TwGunLib.sets[0][k], let df = TwGunLib.defs[k]?["c"] as? [Double], df.count == 3 else { continue }
+            m.diffuse.contents = UIColor(red: CGFloat(df[0]), green: CGFloat(df[1]), blue: CGFloat(df[2]), alpha: 1)
+        }
+    }
+
     static func viewSig(_ gun: String) -> String { [eq(gun, .camo) ?? "-", mods(gun).silenced ? "s" : "n", eq(gun, .optic) ?? "-", eq(gun, .grip) ?? "-", eq(gun, .mag) ?? "-"].joined(separator: "|") }
 }
 

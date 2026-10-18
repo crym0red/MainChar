@@ -211,6 +211,7 @@ enum TacRoster {
 struct AvatarSoldierPreview: UIViewRepresentable {
     let style: TwStyle
     var rank = 0
+    var gun = ""
 
     final class Coord {
         var last = ""
@@ -262,15 +263,17 @@ struct AvatarSoldierPreview: UIViewRepresentable {
 
     func updateUIView(_ v: MXView, context: Context) {
         let sig = (try? JSONEncoder().encode(style.look)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
-        let sig2 = sig + "#\(rank)"
+        let gid = gun.isEmpty ? "rifle" : gun
+        let sig2 = sig + "#\(rank)#" + gid + "#" + TAtt.viewSig(gid)
         guard context.coordinator.last != sig2 else { return }
         context.coordinator.last = sig2
         let h = context.coordinator.holder
         h.childNodes.forEach { $0.removeFromParentNode() }
         let sol = TwRig.soldier(team: UIColor(red: 0.3, green: 0.9, blue: 0.45, alpha: 1), style: style, rank: rank)
         for g in sol.variants { g.isHidden = true }
-        let rifle = TwRig.gunIdx("rifle")
+        let rifle = TwRig.gunIdx(gid)
         if rifle < sol.variants.count { sol.variants[rifle].isHidden = false }
+        TAtt.applyCamo(gid, set: 0)
         sol.root.position = MXVector3(0, -4, 0)
         h.addChildNode(sol.root)
     }

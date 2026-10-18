@@ -4,7 +4,7 @@ import UIKit
 // MARK: - rarity
 
 enum TacRarity {
-    static let names = ["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"]
+    static let names = ["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY", "MYTHIC"]
 
     static func color(_ t: Int) -> Color {
         switch t {
@@ -12,12 +12,13 @@ enum TacRarity {
         case 2: return Color(red: 0.3, green: 0.62, blue: 1)
         case 3: return Color(red: 0.75, green: 0.4, blue: 1)
         case 4: return Color(red: 1, green: 0.78, blue: 0.2)
+        case 5: return Color(red: 1, green: 0.2, blue: 0.55)
         default: return Color.white.opacity(0.85)
         }
     }
 
-    static func name(_ t: Int) -> String { names[max(0, min(4, t))] }
-    static func mult(_ t: Int) -> Double { 1 + Double(max(0, min(4, t))) * 0.6 }
+    static func name(_ t: Int) -> String { names[max(0, min(5, t))] }
+    static func mult(_ t: Int) -> Double { 1 + Double(max(0, min(5, t))) * 0.6 }
 
     static func roll() -> Int {
         let r = Int.random(in: 0..<100)
@@ -294,34 +295,65 @@ extension TacticalEngine {
 
     func raidSetupFactions() {
         let bots = players.filter { !$0.isPlayer }
-        let vaults = TMap.lootSpots.filter { $0.1.hasPrefix("vault") }.map { $0.0 }.shuffled()
+        let harbor = TMap.kind == 4
+        let vaults = TMap.lootSpots.filter { $0.1.hasPrefix("vault") && !$0.1.hasPrefix("vault:B") }.map { $0.0 }.shuffled()
         let rich = TMap.lootSpots.filter { $0.1.hasPrefix("val:") || $0.1.hasPrefix("g:") }.map { $0.0 }.shuffled()
+        var posts = harbor ? THarbor.posts.shuffled() : []
+        var roofs = harbor ? THarbor.roofSpots.shuffled() : []
+        let bossSpots = harbor ? THarbor.bossSpots : []
+        let nB = bossSpots.count
+        let nG = max(2, bots.count / 4), nS = max(2, bots.count / 10), nC = max(2, bots.count / 8)
+        var bi = 0, ci = 0
         for (i, b) in bots.enumerated() {
             b.home = b.pos
             b.faction = 0
             b.team = 1
-            switch i {
-            case 5, 6:
+            b.watchDoor = false
+            b.ambush = -1
+            let role = i < nB ? 4 : (i < nB + nG ? 1 : (i < nB + nG + nS ? 2 : (i < nB + nG + nS + nC ? 3 : 0)))
+            switch role {
+            case 4:
+                b.faction = 4
+                b.team = 2
+                b.hp = 450
+                b.armorKind = 3
+                b.armor = 200
+                b.name = "WARDEN \(bi + 1)"
+                setGun(b, ["ak", "m4"].randomElement() ?? "ak")
+                b.home = bossSpots[bi]
+                b.pos = b.home
+                bi += 1
+            case 1:
                 b.faction = 1
                 b.team = 2
                 b.armorKind = 2
                 b.armor = 100
                 setGun(b, ["rifle", "ak", "shotgun"].randomElement() ?? "rifle")
-                if i - 5 < rich.count { b.home = rich[i - 5]; b.pos = b.home }
-            case 7, 8:
+                if let pt = posts.popLast() {
+                    b.home = pt.0
+                    b.pos = pt.0
+                    b.ambushPos = pt.0
+                    b.ambushAim = pt.1
+                    b.aim = pt.1
+                    b.watchDoor = true
+                    b.crouch = true
+                } else if i < rich.count { b.home = rich[i]; b.pos = b.home }
+            case 2:
                 b.faction = 2
                 b.team = 1
                 b.armorKind = 1
                 b.armor = 60
                 setGun(b, "awp")
-            case 9, 10:
+                if let rp = roofs.popLast() { b.home = rp; b.pos = rp }
+            case 3:
                 b.faction = 3
                 b.team = 2
                 b.hp = 150
                 b.armorKind = 3
                 b.armor = 150
                 setGun(b, ["ak", "m4"].randomElement() ?? "ak")
-                if i - 9 < vaults.count { b.home = vaults[i - 9]; b.pos = b.home }
+                if ci < vaults.count { b.home = vaults[ci]; b.pos = b.home }
+                ci += 1
             default:
                 break
             }
@@ -373,6 +405,12 @@ extension TacticalEngine {
         case 2:
             drops.append("ammo")
             if r < 60 { drops.append("g:awp") }
+        case 4:
+            drops.append("plate")
+            drops.append("plate")
+            drops.append("val:Warden Core:2500")
+            drops.append("g:\(v.gun):5")
+            if !raidHasKey { drops.append("key") }
         case 3:
             drops.append("plate")
             drops.append("val:Commander Badge:300")

@@ -102,7 +102,7 @@ struct LobbyView: View {
     }
 
     private func startLoading() {
-        TMap.load(nav.tacMode == 6 ? 2 : nav.tacMap)
+        TMap.load(nav.tacMode == 6 ? 4 : nav.tacMap)
         mapImg = TacRadar.image(1)
         loadP = 0
         screen = 3
@@ -136,7 +136,7 @@ struct LobbyView: View {
         let W = size.width, H = size.height
         let rcw: CGFloat = 250
         return ZStack {
-            AvatarSoldierPreview(style: TacAvatar.style(TacAvatar.myKey), rank: ri)
+            AvatarSoldierPreview(style: TacAvatar.style(TacAvatar.myKey), rank: ri, gun: nav.tacGun)
                 .frame(width: W * 0.36, height: H * 0.9)
                 .position(x: W * 0.5, y: H * 0.5)
                 .allowsHitTesting(false)
@@ -226,7 +226,7 @@ struct LobbyView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text("NEW MODE").font(.jk(9, .heavy)).foregroundColor(.white).padding(.horizontal, 6).padding(.vertical, 2).background(Rectangle().fill(Color.red))
                             Text("EXTRACTION").font(.jk(17, .heavy)).foregroundColor(CS.orange).lineLimit(1).minimumScaleFactor(0.7)
-                            Text("Warehouse Yard · loot · extract alive").font(.jk(9, .bold)).foregroundColor(.white.opacity(0.8)).lineLimit(1)
+                            Text("Harbor Complex · huge map · extract alive").font(.jk(9, .bold)).foregroundColor(.white.opacity(0.8)).lineLimit(1)
                         }
                         Spacer(minLength: 0)
                         SF("scope", "circle.fill").font(.system(size: 40, weight: .bold)).foregroundColor(Color(red: 0.55, green: 0.9, blue: 0.2).opacity(0.9))
@@ -381,7 +381,7 @@ struct LobbyView: View {
         let W = size.width, H = size.height
         let ri = TacRank.index(TacRank.totalXP(t))
         return ZStack {
-            AvatarSoldierPreview(style: TacAvatar.style(TacAvatar.myKey), rank: ri)
+            AvatarSoldierPreview(style: TacAvatar.style(TacAvatar.myKey), rank: ri, gun: nav.tacGun)
                 .frame(width: W * 0.4, height: H * 0.92).position(x: W * 0.5, y: H * 0.58).allowsHitTesting(false)
             HStack(spacing: 14) {
                 Circle().fill(CS.modeCols[nav.tacMode].opacity(0.3)).frame(width: 54, height: 54)

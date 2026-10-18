@@ -12,9 +12,14 @@ private struct Rng2 {
 /// Compact helper that turns "areas + buildings" into the walkable masks that TMap.buildLayout understands.
 final class MapBuilder {
     static let cell: CGFloat = 25
-    static let cols = 120
-    static let rows = 72
-    var mask = [[Bool]](repeating: [Bool](repeating: false, count: 120 * 72), count: 3)
+    let rows: Int
+    let cols: Int
+    var mask: [[Bool]]
+    init(cols: Int = 120, rows: Int = 72) {
+        self.rows = rows
+        self.cols = cols
+        mask = [[Bool]](repeating: [Bool](repeating: false, count: cols * rows), count: 3)
+    }
     var rooms: [TRoom] = []
     var tiles: [TRoom] = []
     var doors: [CGRect] = []
@@ -22,15 +27,15 @@ final class MapBuilder {
     var props: [TProp] = []
     var outers: [CGRect] = []
 
-    static func R(_ fl: Int, _ r: CGRect) -> CGRect { CGRect(x: r.minX + CGFloat(fl) * 3200, y: r.minY, width: r.width, height: r.height) }
+    static func R(_ fl: Int, _ r: CGRect) -> CGRect { CGRect(x: r.minX + CGFloat(fl) * TMap.off, y: r.minY, width: r.width, height: r.height) }
     func rc(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> CGRect { CGRect(x: x, y: y, width: w, height: h) }
 
     func setR(_ fl: Int, _ r: CGRect, _ v: Bool) {
         let c = MapBuilder.cell
-        let c0 = max(0, Int(floor(r.minX / c))), c1 = min(MapBuilder.cols - 1, Int(ceil(r.maxX / c)) - 1)
-        let r0 = max(0, Int(floor(r.minY / c))), r1 = min(MapBuilder.rows - 1, Int(ceil(r.maxY / c)) - 1)
+        let c0 = max(0, Int(floor(r.minX / c))), c1 = min(cols - 1, Int(ceil(r.maxX / c)) - 1)
+        let r0 = max(0, Int(floor(r.minY / c))), r1 = min(rows - 1, Int(ceil(r.maxY / c)) - 1)
         if c0 > c1 || r0 > r1 { return }
-        for cc in c0...c1 { for rw in r0...r1 { mask[fl][rw * MapBuilder.cols + cc] = v } }
+        for cc in c0...c1 { for rw in r0...r1 { mask[fl][rw * cols + cc] = v } }
     }
 
     /// walkable named area with its own floor tile
@@ -83,7 +88,7 @@ final class MapBuilder {
     }
 
     private func maskRects(_ fl: Int) -> [(CGRect, Int)] {
-        let cols = MapBuilder.cols, rows = MapBuilder.rows, cell = MapBuilder.cell
+        let cell = MapBuilder.cell
         var out: [(CGRect, Int)] = []
         var active: [Int: (c1: Int, r0: Int)] = [:]
         for rw in 0...rows {
