@@ -9,6 +9,7 @@ struct RaidItem: Codable, Identifiable, Hashable {
     var name: String
     var value: Int
     var ref = ""
+    var issued = false
 }
 
 enum TacStash {
@@ -27,6 +28,24 @@ enum TacStash {
 
     static var totalValue: Int { items.reduce(0) { $0 + $1.value } }
 
+    // backpack
+    static let packNames = ["SMALL PACK", "FIELD PACK", "ASSAULT PACK", "TACTICAL PACK"]
+    static let packCaps = [6, 10, 14, 20]
+    static let packCosts = [0, 80, 220, 500]
+    private static let packKey = "ms.pack.tier"
+    static var packTier: Int {
+        get { max(0, min(3, UserDefaults.standard.integer(forKey: packKey))) }
+        set { UserDefaults.standard.set(max(0, min(3, newValue)), forKey: packKey) }
+    }
+    static var packCap: Int { packCaps[packTier] }
+
+    // raid weapon (a stash gun risked in the next raid)
+    private static let kitKey = "ms.kit.id"
+    static var kitId: String? {
+        get { UserDefaults.standard.string(forKey: kitKey) }
+        set { if let v = newValue { UserDefaults.standard.set(v, forKey: kitKey) } else { UserDefaults.standard.removeObject(forKey: kitKey) } }
+    }
+
     /// moves an extracted bag into the stash. Parts unlock instantly, overflow is sold. Returns the gems the overflow was worth.
     @discardableResult
     static func commit(_ bag: [RaidItem]) -> Int {
@@ -35,6 +54,8 @@ enum TacStash {
         for it in bag {
             if it.kind == "part" { if !it.ref.isEmpty { TAtt.own(it.ref) }; continue }
             if it.kind == "intel" { sold += it.value; continue }
+            if it.kind == "ammo" || it.kind == "med" { continue }
+            if it.kind == "gun" && it.issued { continue }
             if cur.count < cap { cur.append(it) } else { sold += it.value }
         }
         items = cur
@@ -64,6 +85,12 @@ extension TacticalEngine {
     ]
 
     var bagValue: Int { raidBag.reduce(0) { $0 + $1.value } }
+    var raidBagFull: Bool { raidBag.count >= TacStash.packCap }
+
+    static func isBagKind(_ id: String) -> Bool {
+        let k = id.split(separator: ":").first.map(String.init) ?? ""
+        return ["val", "part", "intel", "g", "med", "ammo"].contains(k)
+    }
 
     var contractText: String {
         switch contractKind {
@@ -77,7 +104,15 @@ extension TacticalEngine {
 
     func raidStart() {
         loot = TMap.lootSpots.map { Loot(pos: $0.0, id: $0.1, taken: false) }
-        raidBag = []
+        raidBag = [RaidItem(kind: "ammo", name: "Ammo Box", value: 20), RaidItem(kind: "ammo", name: "Ammo Box", value: 20)]
+        raidEquipped = nil
+        raidBagOpen = false
+        if let kid = TacStash.kitId, let it = TacStash.items.first(where: { $0.id == kid }), it.kind == "gun" {
+            raidEquipped = it
+            TacStash.remove(kid)
+            setGun(me, it.ref)
+        }
+        TacStash.kitId = nil
         raidHasKey = false
         raidZoneT = 0
         raidZoneIdx = -1
@@ -114,9 +149,54 @@ extension TacticalEngine {
             raidNote("ACCESS CARD  ·  SOUTH DOCK UNLOCKED")
         case "g":
             raidBag.append(RaidItem(kind: "gun", name: TGuns.get(arg).name, value: max(40, Int(TWeapons.w(arg).price) / 5), ref: arg))
+            raidNote("+ \(TGuns.get(arg).name.uppercased())  ·  EQUIP FROM BAG")
+        case "med":
+            raidBag.append(RaidItem(kind: "med", name: "Medkit", value: 25))
+            raidNote("+ MEDKIT")
+        case "ammo":
+            raidBag.append(RaidItem(kind: "ammo", name: "Ammo Box", value: 20))
+            raidNote("+ AMMO BOX")
         default:
             break
         }
+    }
+
+    func raidFeedAmmo() {
+        guard let i = raidBag.firstIndex(where: { $0.kind == "ammo" }) else { return }
+        raidBag.remove(at: i)
+        me.spare = min(8, me.spare + 2)
+        raidNote("+2 MAGS FROM BACKPACK")
+    }
+
+    func raidUse(_ id: String) {
+        guard let i = raidBag.firstIndex(where: { $0.id == id }) else { return }
+        let it = raidBag[i]
+        switch it.kind {
+        case "med":
+            guard me.hp < 100 else { raidNote("ALREADY AT FULL HEALTH"); return }
+            raidBag.remove(at: i)
+            me.hp = min(100, me.hp + 45)
+            pop(me.pos, "+45", .green)
+        case "ammo":
+            guard !TWeapons.isPistol(me.gun), me.spare < 6 else { raidNote("AMMO FULL"); return }
+            raidBag.remove(at: i)
+            me.spare = min(8, me.spare + 2)
+            pop(me.pos, "AMMO", .yellow)
+        case "gun":
+            raidBag.remove(at: i)
+            let cur = me.gun
+            let prev = raidEquipped ?? RaidItem(kind: "gun", name: TGuns.get(cur).name + " (issued)", value: 0, ref: cur, issued: true)
+            raidBag.append(prev)
+            raidEquipped = it
+            setGun(me, it.ref)
+            raidNote("EQUIPPED \(TGuns.get(it.ref).name.uppercased())")
+        default:
+            break
+        }
+    }
+
+    func raidDrop(_ id: String) {
+        raidBag.removeAll { $0.id == id }
     }
 
     func raidAlertBots() {
@@ -132,6 +212,8 @@ extension TacticalEngine {
                     loot[i].taken = true
                     if p.isPlayer { raidCollect(loot[i].id) }
                     break
+                } else if p.isPlayer && raidBagFull && TacticalEngine.isBagKind(loot[i].id) && raidMsgT <= 0 {
+                    raidNote("BACKPACK FULL  ·  OPEN BAG TO DROP ITEMS")
                 }
             }
         }
@@ -268,12 +350,51 @@ struct CSStash: View {
         tick += 1
     }
 
+    private var packPanel: some View {
+        let t = TacStash.packTier
+        let next = t + 1 < TacStash.packNames.count ? t + 1 : nil
+        return HStack(spacing: 10) {
+            SF("bag.fill", "circle.fill").font(.system(size: 16, weight: .bold)).foregroundColor(TUI.accent)
+            Text("\(TacStash.packNames[t])  ·  \(TacStash.packCap) SLOTS").font(.jk(12, .heavy)).foregroundColor(.white)
+            if let n = next {
+                Button {
+                    let cost = TacStash.packCosts[n]
+                    guard game.s.ex.gems >= cost else { return }
+                    var st = game.s
+                    st.ex.gems -= cost
+                    game.s = st
+                    TacStash.packTier = n
+                    tick += 1
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("UPGRADE  \(TacStash.packNames[n])").font(.jk(10, .heavy))
+                        SF("diamond.fill").font(.system(size: 9))
+                        Text("\(TacStash.packCosts[n])").font(.jk(10, .heavy))
+                    }
+                    .foregroundColor(game.s.ex.gems >= TacStash.packCosts[n] ? .black : .white.opacity(0.6)).padding(.horizontal, 8).frame(height: 24)
+                    .background(Rectangle().fill(game.s.ex.gems >= TacStash.packCosts[n] ? CS.gold : Color.white.opacity(0.15)))
+                }
+                .buttonStyle(TuiPress())
+            } else {
+                Text("MAX").font(.jk(10, .heavy)).foregroundColor(TUI.green)
+            }
+            Spacer()
+            if let k = TacStash.kitId, let it = TacStash.items.first(where: { $0.id == k }) {
+                Text("RAID WEAPON: \(it.name.uppercased())").font(.jk(10, .heavy)).foregroundColor(Color(red: 0.4, green: 0.95, blue: 0.4))
+            } else {
+                Text("RAID WEAPON: ISSUED").font(.jk(10, .heavy)).foregroundColor(.white.opacity(0.55))
+            }
+        }
+        .padding(.horizontal, 28).padding(.top, 6)
+    }
+
     private func sellAll() {
         let total = TacStash.totalValue
         var st = game.s
         st.ex.gems += total
         game.s = st
         TacStash.items = []
+        TacStash.kitId = nil
         tick += 1
     }
 
@@ -285,6 +406,7 @@ struct CSStash: View {
             ZStack {
                 VStack(spacing: 0) {
                     CSHeader(title: "STASH", cash: game.s.ex.gems, coins: (game.s.ex.tac ?? TacData()).wins, back: back).padding(.top, 8)
+                    packPanel
                     HStack(spacing: 14) {
                         Text("\(items.count)/\(TacStash.cap) SLOTS").font(.jk(12, .heavy)).foregroundColor(.white.opacity(0.8))
                         Text("VALUE $\(TacStash.totalValue)").font(.jk(12, .heavy)).foregroundColor(TUI.green)
@@ -312,6 +434,13 @@ struct CSStash: View {
                                             Text(it.kind == "gun" ? "WEAPON" : "VALUABLE").font(.jk(8, .heavy)).foregroundColor(.white.opacity(0.5))
                                         }
                                         Spacer(minLength: 0)
+                                        if it.kind == "gun" {
+                                            let on = TacStash.kitId == it.id
+                                            Button { TacStash.kitId = on ? nil : it.id; tick += 1 } label: {
+                                                Text(on ? "KIT ✓" : "EQUIP").font(.jk(10, .heavy)).foregroundColor(on ? .black : .white).padding(.horizontal, 7).frame(height: 24).background(Rectangle().fill(on ? Color(red: 0.4, green: 0.95, blue: 0.4) : CS.blue))
+                                            }
+                                            .buttonStyle(TuiPress())
+                                        }
                                         Button { sell(it) } label: {
                                             Text("$\(it.value)").font(.jk(11, .heavy)).foregroundColor(.black).padding(.horizontal, 8).frame(height: 24).background(Rectangle().fill(CS.gold))
                                         }
@@ -326,6 +455,70 @@ struct CSStash: View {
                 }
             }
             .frame(width: W, height: H)
+        }
+    }
+}
+
+
+// MARK: - in-raid backpack
+
+struct RaidBagPanel: View {
+    let e: TacticalEngine
+
+    private func icon(_ k: String) -> String {
+        switch k { case "gun": return "scope"; case "med": return "cross.case.fill"; case "ammo": return "shippingbox.fill"; case "part": return "wrench.and.screwdriver.fill"; case "intel": return "doc.text.fill"; default: return "diamond.fill" }
+    }
+
+    private func label(_ it: RaidItem) -> String {
+        switch it.kind { case "gun": return "EQUIP"; case "med": return "USE"; case "ammo": return "LOAD"; default: return "" }
+    }
+
+    var body: some View {
+        let cap = TacStash.packCap
+        return ZStack {
+            Color.black.opacity(0.55).ignoresSafeArea().onTapGesture { e.raidBagOpen = false }
+            VStack(spacing: 8) {
+                HStack {
+                    SF("bag.fill", "circle.fill").font(.system(size: 16, weight: .bold)).foregroundColor(TUI.accent)
+                    Text(TacStash.packNames[TacStash.packTier]).font(.jk(14, .heavy)).foregroundColor(.white)
+                    Text("\(e.raidBag.count)/\(cap)").font(.jk(13, .heavy)).foregroundColor(e.raidBagFull ? TUI.red : TUI.green)
+                    Spacer()
+                    Text("EQUIPPED: \(TGuns.get(e.me.gun).name.uppercased())").font(.jk(10, .heavy)).foregroundColor(.white.opacity(0.7))
+                    Button { e.raidBagOpen = false } label: {
+                        SF("xmark").font(.system(size: 13, weight: .bold)).foregroundColor(.white).frame(width: 30, height: 30).background(Circle().fill(Color.white.opacity(0.15)))
+                    }
+                    .buttonStyle(TuiPress())
+                }
+                if e.raidBag.isEmpty {
+                    Text("Backpack is empty").font(.jk(12, .semibold)).foregroundColor(.white.opacity(0.6)).frame(maxWidth: .infinity, minHeight: 80)
+                } else {
+                    ScrollView(showsIndicators: false) {
+                        VStack(spacing: 5) {
+                            ForEach(e.raidBag) { it in
+                                HStack(spacing: 8) {
+                                    SF(icon(it.kind), "circle.fill").font(.system(size: 15, weight: .bold)).foregroundColor(it.kind == "gun" ? TUI.blue : TUI.gold).frame(width: 24)
+                                    Text(it.name).font(.jk(12, .heavy)).foregroundColor(.white).lineLimit(1)
+                                    Spacer(minLength: 0)
+                                    if it.value > 0 { Text("$\(it.value)").font(.jk(10, .heavy)).foregroundColor(TUI.green) }
+                                    if !label(it).isEmpty {
+                                        Button { e.raidUse(it.id) } label: {
+                                            Text(label(it)).font(.jk(10, .heavy)).foregroundColor(.black).padding(.horizontal, 8).frame(height: 22).background(Rectangle().fill(CS.gold))
+                                        }
+                                        .buttonStyle(TuiPress())
+                                    }
+                                    Button { e.raidDrop(it.id) } label: {
+                                        Text("DROP").font(.jk(10, .heavy)).foregroundColor(.white).padding(.horizontal, 8).frame(height: 22).background(Rectangle().fill(Color.white.opacity(0.18)))
+                                    }
+                                    .buttonStyle(TuiPress())
+                                }
+                                .padding(8).background(Color.black.opacity(0.6)).overlay(Rectangle().stroke(Color.white.opacity(0.2), lineWidth: 1))
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 190)
+                }
+            }
+            .padding(14).frame(width: 440).background(Color(red: 0.06, green: 0.08, blue: 0.12).opacity(0.96)).overlay(Rectangle().stroke(Color.white.opacity(0.3), lineWidth: 1))
         }
     }
 }

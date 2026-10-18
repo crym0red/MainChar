@@ -420,6 +420,8 @@ final class TacticalEngine {
     var raidMsg = ""
     var raidMsgT: CGFloat = 0
     var contractKind = 0
+    var raidEquipped: RaidItem? = nil
+    var raidBagOpen = false
     var contractDone = false
     var contractReward = 50
     var brEndT: CGFloat = 3
@@ -820,7 +822,7 @@ final class TacticalEngine {
         return p.isPlayer ? max(1, Int(CGFloat(b) * TAtt.mods(id).magMul)) : b
     }
 
-    private func setGun(_ p: TPlayer, _ id: String) {
+    func setGun(_ p: TPlayer, _ id: String) {
         p.gun = id
         p.mag = magSize(p, id)
         p.spare = TWeapons.isPistol(id) ? 99 : 2
@@ -1090,6 +1092,7 @@ final class TacticalEngine {
 
     func startReload(_ p: TPlayer) {
         let g = TGuns.get(p.gun)
+        if p.isPlayer && gameMode == 6 && p.spare <= 0 && !TWeapons.isPistol(p.gun) && p.mag < magSize(p, p.gun) { raidFeedAmmo() }
         guard !p.knife, p.reloadT <= 0, p.mag < magSize(p, p.gun), p.spare > 0 else { return }
         p.reloadT = g.reload * (p.isPlayer ? TAtt.mods(p.gun).reloadMul : 1)
     }
@@ -1808,10 +1811,12 @@ extension TacticalEngine {
         let arg = parts.count > 1 ? parts[1] : ""
         switch kind {
         case "med":
+            if p.isPlayer && gameMode == 6 { return !raidBagFull }
             guard p.hp < 90 else { return false }
             if apply { p.hp = min(100, p.hp + 45); if p.isPlayer { pop(p.pos, "+45", .green) } }
             return true
         case "ammo":
+            if p.isPlayer && gameMode == 6 { return !raidBagFull }
             guard !TWeapons.isPistol(p.gun), p.spare < 4 else { return false }
             if apply { p.spare = min(6, p.spare + 2); if p.isPlayer { pop(p.pos, "AMMO", .yellow) } }
             return true
@@ -1824,9 +1829,12 @@ extension TacticalEngine {
             guard p.armorKind < k || p.armor < 30 else { return false }
             if apply { p.armorKind = k; p.armor = k >= 3 ? 150 : (k == 2 ? 100 : 60); if p.isPlayer { pop(p.pos, "ARMOR", .blue) } }
             return true
-        case "val", "part", "intel", "key":
+        case "val", "part", "intel":
+            return p.isPlayer && !raidBagFull
+        case "key":
             return p.isPlayer
         case "g":
+            if p.isPlayer && gameMode == 6 { return !raidBagFull }
             let np = TWeapons.w(arg).price
             if TWeapons.isPistol(arg) {
                 guard TWeapons.isPistol(p.gun), np > TWeapons.w(p.gun).price else { return false }
@@ -2388,6 +2396,16 @@ struct TacticalPlay: View {
                     if e.me.alive { HudCSWeapon(e: e).padding(.trailing, 18).padding(.top, 6).frame(width: W, alignment: .trailing) }
                     HudCSVitals(e: e).padding(.leading, 14).padding(.top, 8)
 
+                    if e.gameMode == 6 && e.me.alive {
+                        Button { e.raidBagOpen.toggle() } label: {
+                            VStack(spacing: 0) {
+                                SF("bag.fill", "circle.fill").font(.system(size: 18, weight: .bold))
+                                Text("\(e.raidBag.count)/\(TacStash.packCap)").font(.jk(9, .heavy))
+                            }
+                            .foregroundColor(e.raidBagFull ? TUI.red : .white).frame(width: 46, height: 46).tuiGlass(23, fill: 0.5)
+                        }
+                        .buttonStyle(TuiPress()).position(x: W - 36, y: 236)
+                    }
                     if e.me.alive {
                         Button { e.scoped.toggle() } label: { vbtn("scope", 44, on: e.scoped) }
                             .buttonStyle(TuiPress()).position(x: W - 96, y: 288)
@@ -2463,6 +2481,7 @@ struct TacticalPlay: View {
                 if !engine.me.alive && !engine.over && !engine.paused && engine.gameMode != 6 && engine.gameMode != 0 && engine.me.respawn > 0 {
                     CSKillcam(e: engine) { showLoadout = true; engine.paused = true }.ignoresSafeArea()
                 }
+                if engine.raidBagOpen && engine.gameMode == 6 && engine.me.alive && !engine.over { RaidBagPanel(e: engine) }
                 if showLoadout {
                     CSLoadout(gun: $nav.tacGun, ok: { engine.myGun = nav.tacGun; showLoadout = false; engine.paused = false; engine.last = nil }, battle: {}).background(Color.black.opacity(0.4)).ignoresSafeArea()
                 }
@@ -2567,7 +2586,7 @@ struct TacticalPlay: View {
                     guard !collected else { return }
                     collected = true
                     var extra = 0
-                    if e.gameMode == 6 && e.won { extra = TacStash.commit(e.raidBag) }
+                    if e.gameMode == 6 && e.won { extra = TacStash.commit(e.raidBag + (e.raidEquipped.map { [$0] } ?? [])) }
                     game.tacticalFinish(won: e.won, kills: e.kills, gems: gems + extra)
                     dismiss()
                 } label: {
