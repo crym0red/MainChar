@@ -66,7 +66,7 @@ enum TacAvatar {
         pick(&l.hair, r.int(13))
         pick(&l.hairStyle, hairStyleList[r.int(hairStyleList.count)])
         pick(&l.top, r.int(12))
-        pick(&l.outfit, r.int(16))
+        pick(&l.outfit, r.chance(50) ? 14 + r.int(2) : r.int(14))
         pick(&l.eyes, r.int(3))
         pick(&l.eyeColor, r.int(9))
         pick(&l.brow, r.int(5))
@@ -146,36 +146,12 @@ enum TacAvatar {
 
     @MainActor private static var faceCache: [String: UIImage] = [:]
 
-    /// The cropped face-only portrait for a style (cached).
-    @MainActor static func faceImage(_ s: TwStyle) -> UIImage? {
-        let look = s.look
-        let key = s.key
-        let ck = key + "|" + ((try? JSONEncoder().encode(look)).flatMap { String(data: $0, encoding: .utf8) } ?? "")
-        if let c = faceCache[ck] { return c }
-        var l = look
-        l.anim = 0
-        l.frame = 0
-        let r = ImageRenderer(content: PortraitAvatar(key: key, size: 256, look: l, faceOnly: true))
-        r.scale = 1
-        r.isOpaque = false
-        guard var img = r.uiImage else { return nil }
-        // crop to the head so it fills the flat front of the 3D head
-        if let cg = img.cgImage {
-            let W = CGFloat(cg.width), H = CGFloat(cg.height)
-            if let cr = cg.cropping(to: CGRect(x: 0.24 * W, y: 0.19 * H, width: 0.52 * W, height: 0.52 * H)) {
-                img = UIImage(cgImage: cr)
-            }
-        }
-        if faceCache.count > 160 { faceCache.removeAll() }
-        faceCache[ck] = img
-        return img
-    }
+    /// The face texture for a style (drawn with Core Graphics, cached).
+    static func faceImage(_ s: TwStyle) -> UIImage? { TacFace.cached(s) }
 
-    /// Renders the face-only portrait asynchronously and drops it on the material when ready.
+    /// Puts the face texture on the material.
     static func applyFace(_ mat: MXMaterial, style s: TwStyle) {
-        Task { @MainActor in
-            if let img = faceImage(s) { mat.diffuse.contents = img }
-        }
+        mat.diffuse.contents = TacFace.cached(s)
     }
 }
 

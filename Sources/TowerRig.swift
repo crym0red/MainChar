@@ -284,7 +284,7 @@ enum TwRig {
         root.addChildNode(bodyGrp)
         let headGrp = MXNode()
         let hsc: CGFloat = 0.8
-        headGrp.position = MXVector3(Float(0.4 - hsc * 0.4), Float(35.5 + dy - hsc * 35.5), 0)
+        headGrp.position = MXVector3(Float(0.4 - hsc * 0.4), Float(35.5 + dy + 2.2 - hsc * 35.5), 0)
         headGrp.scale = MXVector3(Float(hsc), Float(hsc), Float(hsc))
         root.addChildNode(headGrp)
 
@@ -323,19 +323,30 @@ enum TwRig {
             sm.diffuse.wrapS = .repeat; sm.diffuse.wrapT = .repeat
             sm.diffuse.contentsTransform = MXMatrix4MakeScale(3, 2, 1)
         }
-        let tg = MXSphere(radius: 1)
-        tg.segmentCount = 24
-        tg.materials = [sm]
-        let torso = MXNode(geometry: tg)
-        torso.scale = MXVector3(4.6, 8.4, Float(7.4 * bw))
-        bodyGrp.addChildNode(at(torso, 0, 23.8, 0))
-        for z in [-7.6, 7.6] as [CGFloat] {
-            bodyGrp.addChildNode(at(ball(3, tank ? skin : top), 0, 29.4, z * bw))
-            bodyGrp.addChildNode(at(box(2.4, 1.0, 3.4, team, glow: true), 0, 32.3, z * bw))   // team marker
+        func body(_ rx: Float, _ ry: Float, _ rz: Float, _ y: CGFloat, _ x: CGFloat = 0) {
+            let g = MXSphere(radius: 1)
+            g.segmentCount = 24
+            g.materials = [sm]
+            let n = MXNode(geometry: g)
+            n.scale = MXVector3(rx, ry, rz * Float(bw))
+            bodyGrp.addChildNode(at(n, x, y, 0))
         }
-        bodyGrp.addChildNode(at(box(8, 2, 14.5 * bw, admin ? col(0.04, 0.04, 0.05) : col(0.1, 0.1, 0.08)), 0, 17.6, 0))   // belt
+        // V-shaped torso: broad chest, narrower waist, hips
+        body(4.5, 5.0, 6.7, 26.4, 0.1)
+        body(4.3, 3.8, 5.5, 21.4)
+        body(4.4, 3.2, 5.9, 17.8)
+        let shoulderM = tank ? skin : top
+        for z in [-6.9, 6.9] as [CGFloat] {
+            let sh = ball(3.1, shoulderM)
+            if combat { sh.geometry?.materials = [sleeveM] }
+            bodyGrp.addChildNode(at(sh, 0, 30.6, z * bw))
+            bodyGrp.addChildNode(at(box(1.0, 0.5, 2.6, team), 0, 33.6, z * bw))   // team patch on the shoulder
+        }
+        // trapezius + neck
+        body(2.6, 1.4, 4.4, 30.8, -0.2)
+        bodyGrp.addChildNode(at(box(5.2, 1.0, 12.6 * bw, admin ? col(0.04, 0.04, 0.05) : col(0.12, 0.11, 0.09)), 0, 18.6, 0))   // belt
         let turtle = !admin && !staff && st.outfit == 3
-        bodyGrp.addChildNode(at(cyl(turtle ? 3.1 : 2.6, 3, turtle ? top : skin), 0.2, 31.6, 0))
+        bodyGrp.addChildNode(at(cyl(turtle ? 3.0 : 2.3, 4.5, turtle ? top : skin), 0.3, 33.4, 0))
 
         // ---- clothing details (scaled with the build)
         let roleN = MXNode()
@@ -446,7 +457,7 @@ enum TwRig {
 
         let faceMat = MXMaterial()
         faceMat.isDoubleSided = true
-        faceMat.diffuse.contents = UIColor.clear
+        faceMat.diffuse.contents = skin
         let fpN = MXNode(geometry: facePatch(rx: 4.6 * 0.95 * 1.012, ry: 4.6 * 1.12 * 1.012, rz: 4.6 * 0.92 * 1.012, span: 10.5))
         fpN.geometry?.materials = [faceMat]
         fpN.castsShadow = false
@@ -478,13 +489,13 @@ enum TwRig {
 
         // ---- arms + hands: shoulder -> elbow -> hand, both on the weapon
         let az = CGFloat(min(bw, 1.12))
-        let zs: CGFloat = 6.5 * az
+        let zs: CGFloat = 6.2 * az
         let gy: CGFloat = 26.5 + dy + 0.5
         let sleeves = sleeveM
         let handR: (CGFloat, CGFloat, CGFloat) = (12.2, gy - 0.5, 4.8)
         let handL: (CGFloat, CGFloat, CGFloat) = (15.5, gy - 0.5, -1.4)
-        let shR: (CGFloat, CGFloat, CGFloat) = (0, 35.6, zs), elR: (CGFloat, CGFloat, CGFloat) = (4.2, 30.4, zs + 0.4)
-        let shL: (CGFloat, CGFloat, CGFloat) = (0, 35.6, -zs), elL: (CGFloat, CGFloat, CGFloat) = (7.2, 31.0, -zs + 1.6)
+        let shR: (CGFloat, CGFloat, CGFloat) = (0, 37.0, zs), elR: (CGFloat, CGFloat, CGFloat) = (4.2, 31.2, zs + 0.5)
+        let shL: (CGFloat, CGFloat, CGFloat) = (0, 37.0, -zs), elL: (CGFloat, CGFloat, CGFloat) = (7.2, 31.8, -zs + 1.6)
         for (sh, el, hd) in [(shR, elR, handR), (shL, elL, handL)] {
             root.addChildNode(limb(sh, el, 2.7, 2.2, sleeves))
             root.addChildNode(at(ball(2.25, tank ? skin : top), el.0, el.1, el.2))

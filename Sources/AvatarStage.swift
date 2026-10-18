@@ -9,12 +9,12 @@ enum AvatarShot: String {
     /// camera target, distance, yaw (0 = facing the soldier's face), elevation
     var frame: (target: (Float, Float, Float), dist: Float, yaw: Float, el: Float) {
         switch self {
-        case .full:  return ((0, 26, 0), 150, 0.5, 0.16)
-        case .head:  return ((0.6, 46.5, 0), 52, 0.32, 0.05)
-        case .hair:  return ((-0.5, 47, 0), 58, 0.95, 0.1)
-        case .upper: return ((3, 34, 0), 94, 0.45, 0.1)
+        case .full:  return ((0, 28, 0), 156, 0.5, 0.16)
+        case .head:  return ((0.6, 48.8, 0), 52, 0.32, 0.05)
+        case .hair:  return ((-0.5, 49.4, 0), 58, 0.95, 0.1)
+        case .upper: return ((3, 36, 0), 98, 0.45, 0.1)
         case .legs:  return ((1, 12, 0), 84, 0.5, 0.08)
-        case .back:  return ((-2, 32, 0), 104, 2.75, 0.1)
+        case .back:  return ((-2, 34, 0), 108, 2.75, 0.1)
         }
     }
 }
@@ -154,7 +154,7 @@ final class AvatarStage {
     var lastTouch: Double = 0
     var lastSig = ""
 
-    private var cur: [Float] = [0, 26, 0, 150, 0.5, 0.16]
+    private var cur: [Float] = [0, 28, 0, 156, 0.5, 0.16]
     private var lastT: Double = 0
     private var idle: Float = 1
 
@@ -259,7 +259,7 @@ final class AvatarThumbs {
         let wantGun = shot == .full || shot == .upper
         let sol = TwRig.soldier(team: UIColor(red: 0.3, green: 0.9, blue: 0.45, alpha: 1), style: style, rank: 0,
                                 onlyGun: wantGun ? "rifle" : "", asyncFace: false)
-        if let img = TacAvatar.faceImage(style) { sol.faceMat.diffuse.contents = img }
+        sol.faceMat.diffuse.contents = TacFace.cached(style)
         let rifle = TwRig.gunIdx("rifle")
         for (i, g) in sol.variants.enumerated() { g.isHidden = !(wantGun && i == rifle) }
 

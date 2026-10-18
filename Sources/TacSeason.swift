@@ -316,13 +316,13 @@ struct TacSeasonView: View {
         return VStack(spacing: 6) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous).fill(r.1.opacity(0.16))
-                CosIcon(c: c, size: 34)
+                CosIcon(c: c, size: 28)
             }
-            .frame(width: w - 14, height: 66)
+            .frame(width: w - 14, height: 50)
             Text(c.label).font(.jk(11, .heavy)).foregroundColor(.white).lineLimit(1).minimumScaleFactor(0.7)
             Text(owned ? "OWNED" : r.0).font(.jk(9, .heavy)).foregroundColor(owned ? .white.opacity(0.35) : r.1)
         }
-        .frame(width: w, height: 112)
+        .frame(width: w, height: 94)
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.06)))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(r.1.opacity(0.45), lineWidth: 1))
         .opacity(owned ? 0.55 : 1)
@@ -356,13 +356,9 @@ struct TacSeasonView: View {
     private func drawTab() -> some View {
         let items = drawItems
         let n = max(1, items.count)
-        let cw: CGFloat = 104, gap: CGFloat = 8
+        let cw: CGFloat = 92, gap: CGFloat = 8
         let step = cw + gap
-        return VStack(spacing: 12) {
-            HStack(spacing: 8) {
-                SF("gift.fill").font(.system(size: 18)).foregroundColor(TUI.gold)
-                Text("LUCKY DRAW").font(.jk(20, .heavy)).foregroundColor(.white)
-            }
+        return VStack(spacing: 8) {
             GeometryReader { geo in
                 let W = geo.size.width
                 ZStack {
@@ -372,11 +368,11 @@ struct TacSeasonView: View {
                     .offset(x: W / 2 - cw / 2 - CGFloat(carouselPos) * step + dragX)
                     .frame(width: W, alignment: .leading)
                     RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(TUI.accent, lineWidth: 3)
-                        .frame(width: cw + 8, height: 120).allowsHitTesting(false)
+                        .frame(width: cw + 8, height: 104).allowsHitTesting(false)
                     Image(systemName: "arrowtriangle.down.fill").font(.system(size: 14)).foregroundColor(TUI.accent)
-                        .offset(y: -70).allowsHitTesting(false)
+                        .offset(y: -58).allowsHitTesting(false)
                 }
-                .frame(width: W, height: 130)
+                .frame(width: W, height: 112)
                 .clipped()
                 .contentShape(Rectangle())
                 .gesture(DragGesture()
@@ -388,7 +384,7 @@ struct TacSeasonView: View {
                         withAnimation(.easeOut(duration: 0.35)) { carouselPos = t; dragX = 0 }
                     })
             }
-            .frame(height: 130)
+            .frame(height: 112)
             Text("Spend 40 gems for a random cosmetic you don't own yet.").font(.jk(12, .semibold)).foregroundColor(.white.opacity(0.7))
             Button { spinDraw() } label: {
                 HStack(spacing: 8) {
@@ -396,13 +392,13 @@ struct TacSeasonView: View {
                     SF("diamond.fill").font(.system(size: 13))
                     Text("40").font(.jk(18, .heavy))
                 }
-                .foregroundColor(.black).frame(width: 210, height: 50).background(Capsule().fill(TUI.gold))
+                .foregroundColor(.black).frame(width: 200, height: 44).background(Capsule().fill(TUI.gold))
                 .opacity(spinning ? 0.6 : 1)
             }
             .buttonStyle(TuiPress())
             Text(drawMsg).font(.jk(15, .bold)).foregroundColor(lime).frame(height: 20)
         }
-        .padding(.top, 8)
+        .padding(.top, 4)
         .onAppear { if carouselPos < 1 { carouselPos = Double(n * 2) } }
     }
 }
