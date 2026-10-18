@@ -22,10 +22,10 @@ enum GunSprites {
     // muzzle position as a fraction of the sprite
     static func muzzle(_ id: String) -> CGPoint {
         switch id {
-        case "pistol": return CGPoint(x: 0.253, y: 0.492)
-        case "smg": return CGPoint(x: 0.204, y: 0.439)
-        case "shotgun": return CGPoint(x: 0.204, y: 0.439)
-        default: return CGPoint(x: 0.206, y: 0.442)
+        case "pistol": return CGPoint(x: 0.268, y: 0.499)
+        case "smg": return CGPoint(x: 0.19, y: 0.419)
+        case "shotgun": return CGPoint(x: 0.207, y: 0.426)
+        default: return CGPoint(x: 0.178, y: 0.408)
         }
     }
 

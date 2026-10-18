@@ -52,6 +52,13 @@ final class BRActor {
     var stuck: CGFloat = 0
     var avoidT: CGFloat = 0
     var avoidDir: CGFloat = 0
+    var stance = 0          // 0 stand 1 crouch 2 prone
+    var stride: CGFloat = 0
+    var spd: CGFloat = 0
+    var sprinting = false
+    var diveT: CGFloat = 0
+    var diveCD: CGFloat = 0
+    var stanceT: CGFloat = 0
     var color: BRCol
     var team = 0
     var cash = 0
@@ -87,6 +94,16 @@ final class BREngine {
     var lookIdle: CGFloat = 1
     var firing = false
     var crouch = false
+    var prone = false
+    var sprintT: CGFloat = 0
+    var eyeNow: CGFloat = 54
+    var camDip: CGFloat = 0
+    var plates = 2
+    var plateT: CGFloat = 0
+    var plateBank: CGFloat = 0
+    var bobScale: CGFloat = 1
+    var diveDir: CGFloat = 0
+    var proneBlend: CGFloat = 0
     var autoAim = true
 
     // player stats
@@ -322,18 +339,58 @@ final class BREngine {
         recoilP -= recoilP * min(1, dt * 7)
         gunKick = max(0, gunKick - dt * 9)
         tracerT = max(0, tracerT - dt)
-        let spd: CGFloat = (crouch ? 105 : 200) * (1 - 0.4 * adsT)
         var fwd = -move.dy
         var str = move.dx
         let mag = hypot(fwd, str)
         if mag > 1 { fwd /= mag; str /= mag }
-        let ca = cos(m.ang), sa = sin(m.ang)
-        let dx = (ca * fwd - sa * str) * spd * dt
-        let dy = (sa * fwd + ca * str) * spd * dt
-        walk(m, dx, dy)
         let moving = min(1, mag)
+        // stance
+        let wantSprint = mag > 0.93 && fwd > 0.6 && !firing && !ads && !crouch && !prone && m.reloadT <= 0 && plateT <= 0
+        m.sprinting = wantSprint
+        if m.diveT > 0 { m.diveT -= dt }
+        m.stance = prone ? 2 : (crouch ? 1 : 0)
+        sprintT += ((wantSprint ? 1 : 0) - sprintT) * min(1, dt * 9)
+        proneBlend += ((prone ? 1 : 0) - proneBlend) * min(1, dt * 7)
+        var tgtEye: CGFloat = prone ? 20 : (crouch ? 40 : 54)
+        if m.diveT > 0 { tgtEye = 26 }
+        eyeNow += (tgtEye - eyeNow) * min(1, dt * 10)
+        var speed: CGFloat = prone ? 55 : (crouch ? 105 : (mag < 0.55 ? 120 : (wantSprint ? 290 : 200)))
+        speed *= (1 - 0.4 * adsT)
+        if plateT > 0 { speed *= 0.6 }
+        var ca = cos(m.ang), sa = sin(m.ang)
+        var mdx = (ca * fwd - sa * str) * speed * dt
+        var mdy = (sa * fwd + ca * str) * speed * dt
+        var camTarget: CGFloat = 0
+        if m.diveT > 0 {
+            let k = m.diveT / 0.7
+            let v = 150 + 260 * k
+            ca = cos(diveDir); sa = sin(diveDir)
+            mdx = ca * v * dt
+            mdy = sa * v * dt
+            camTarget = sin(k * .pi) * 0.16
+            if m.diveT <= dt { prone = true; crouch = false; showToast("PRONE") }
+        }
+        camDip += (camTarget - camDip) * min(1, dt * 12)
+        walk(m, mdx, mdy)
+        m.spd = hypot(mdx, mdy) / max(dt, 0.0001)
+        let rate: CGFloat = m.diveT > 0 ? 0 : (prone ? 4 : (crouch ? 7 : (wantSprint ? 15 : (mag < 0.55 ? 8 : 11))))
         bobAmp += (moving - bobAmp) * min(1, dt * 8)
-        bobT += dt * (crouch ? 6 : 10) * moving
+        bobT += dt * rate * moving
+        m.stride += dt * rate * moving
+        bobScale = prone ? 0.45 : (wantSprint ? 1.9 : (mag < 0.55 ? 0.7 : 1))
+        // plate application
+        if plateT > 0 {
+            if m.sprinting || m.diveT > 0 || m.armor >= 100 { plateT = 0 }
+            else {
+                plateT += dt / 1.6
+                if plateT >= 1 {
+                    plateT = 0
+                    m.armor = min(100, m.armor + 33.4)
+                    plates -= 1
+                    showToast("ARMOR APPLIED")
+                }
+            }
+        }
         if let s = m.slots[m.cur] {
             let g = BRGuns.def(s.gun)
             let t = pickTarget(m, cone: 0.9)
@@ -348,7 +405,7 @@ final class BREngine {
                 if abs(diff) < 0.09 { wantFire = true }
             }
             if wantFire {
-                let extra = (crouch ? 0.6 : 1.0) * (moving > 0.2 ? 0.02 : 0) * (1 - 0.6 * adsT)
+                let extra = (prone ? 0.4 : (crouch ? 0.6 : 1.0)) * (moving > 0.2 ? (wantSprint ? 0.03 : 0.02) : 0) * (1 - 0.6 * adsT)
                 fire(m, extra: extra)
             }
             _ = g
@@ -388,9 +445,9 @@ final class BREngine {
                 for k in 0..<2 where m.slots[k] != nil { m.slots[k]?.reserve += it.amt }
                 showToast("AMMO  +\(it.amt)")
             case 2:
-                if m.armor >= 100 { continue }
-                m.armor = min(100, m.armor + CGFloat(it.amt))
-                showToast("ARMOR PLATE")
+                if plates >= 5 { continue }
+                plates += 1
+                showToast("ARMOR PLATE  +1")
             case 3:
                 meds += 1
                 showToast("MED KIT")
@@ -411,6 +468,24 @@ final class BREngine {
             me.reloadT = 0
             me.cd = 0.25
         }
+    }
+
+    func applyPlate() {
+        guard me.alive, plates > 0, me.armor < 99.9, plateT <= 0, me.diveT <= 0 else { return }
+        plateT = 0.001
+    }
+
+    func setProne() {
+        guard me.alive, me.diveT <= 0 else { return }
+        if me.sprinting && !prone {
+            me.diveT = 0.7
+            diveDir = me.ang
+            crouch = false
+            ads = false
+            return
+        }
+        prone.toggle()
+        if prone { crouch = false }
     }
 
     func heal() {
@@ -480,7 +555,7 @@ final class BREngine {
             let t = rx * dx + ry * dy
             if t < 0 || t > bt { continue }
             let perp = abs(rx * dy - ry * dx)
-            if perp < 14 {
+            if perp < (b.stance == 2 || b.diveT > 0 ? 8 : (b.stance == 1 ? 11 : 14)) {
                 best = b
                 bt = t
             }
@@ -586,11 +661,34 @@ final class BREngine {
             let fwd: CGFloat = dist > g.range * 0.55 ? 1 : (dist < g.range * 0.25 ? -0.6 : 0)
             let str = sin(time * 1.4 + CGFloat(a.id)) * 0.7
             let ca = cos(a.ang), sa = sin(a.ang)
-            let sp: CGFloat = 120
+            if a.diveT > 0 {
+                a.diveT -= dt
+                a.stance = 2
+                walk(a, cos(a.ang) * 280 * (a.diveT / 0.6) * dt, sin(a.ang) * 280 * (a.diveT / 0.6) * dt)
+                a.spd = 0
+                return
+            }
+            a.diveCD -= dt
+            if a.diveCD <= 0 && dist < 320 && dist > 120 && CGFloat.random(in: 0...1) < 0.01 {
+                a.diveT = 0.6
+                a.diveCD = 8
+                return
+            }
+            a.stanceT -= dt
+            if a.stanceT <= 0 {
+                a.stanceT = CGFloat.random(in: 1.2...3)
+                let r = CGFloat.random(in: 0...1)
+                a.stance = dist > 260 && r < 0.3 ? 2 : (r < 0.65 ? 1 : 0)
+            }
+            let sp: CGFloat = a.stance == 2 ? 40 : (a.stance == 1 ? 80 : 120)
+            a.sprinting = false
+            a.spd = abs(fwd) + abs(str) > 0.05 ? sp : 0
+            a.stride += dt * (a.spd > 0 ? 8 : 0)
             walk(a, (ca * fwd - sa * str) * sp * dt, (sa * fwd + ca * str) * sp * dt)
             return
         }
         a.tgt = nil
+        a.stance = 0
         if a.team == 0 && me.alive && !outside {
             let dm = hypot(me.p.x - a.p.x, me.p.y - a.p.y)
             if dm > 200 {
@@ -621,7 +719,11 @@ final class BREngine {
         }
         let diff = brWrap(want - a.ang)
         a.ang += max(-4 * dt, min(4 * dt, diff))
-        let sp: CGFloat = (abs(diff) < 1 ? 145 : 40) * (outside ? 1.25 : 1)
+        let far = dd > 400 || outside
+        a.sprinting = far && abs(diff) < 0.6
+        let sp: CGFloat = (abs(diff) < 1 ? (a.sprinting ? 235 : 145) : 40) * (outside ? 1.15 : 1)
+        a.spd = sp
+        a.stride += dt * (a.sprinting ? 14 : 9)
         let before = a.p
         walk(a, cos(a.ang) * sp * dt, sin(a.ang) * sp * dt)
         let moved = hypot(a.p.x - before.x, a.p.y - before.y)

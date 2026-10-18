@@ -14,8 +14,8 @@ extension BREngine {
         let m = me
         let W = size.width, H = size.height
         let focal = (W / 2) / tan(curFov / 2)
-        let hz = H * 0.5 + sin(bobT) * 4 * bobAmp + (pitch + recoilP) * focal
-        let eye = BREngine.eyeH
+        let hz = H * 0.5 + sin(bobT) * 4 * bobAmp * bobScale + (pitch + recoilP + camDip) * focal
+        let eye = eyeNow
 
         let zb = drawBase(&ctx, size, hz, focal)
         let cols = zb.count
@@ -153,47 +153,28 @@ extension BREngine {
     private func drawActor(_ ctx: inout GraphicsContext, _ a: BRActor, sx: CGFloat, feet: CGFloat, f: CGFloat, fog: CGFloat) {
         let hpx = 72 * f
         let wpx = 26 * f
-        let topY = feet - hpx
         let k = 1 - fog * 0.5
         let c = a.color
         let ally = a.team == me.team
-        // ground shadow
-        ctx.fill(Path(ellipseIn: CGRect(x: sx - wpx * 0.9, y: feet - 3 * f, width: wpx * 1.8, height: 6 * f)), with: .color(brc(0, 0, 0, 0.28)))
-        // legs
-        let legC = brc(0.15 * k, 0.17 * k, 0.22 * k)
-        ctx.fill(Path(roundedRect: CGRect(x: sx - wpx * 0.38, y: feet - hpx * 0.46, width: wpx * 0.34, height: hpx * 0.46), cornerRadius: 2 * f), with: .color(legC))
-        ctx.fill(Path(roundedRect: CGRect(x: sx + wpx * 0.04, y: feet - hpx * 0.46, width: wpx * 0.34, height: hpx * 0.46), cornerRadius: 2 * f), with: .color(legC))
-        ctx.fill(Path(CGRect(x: sx - wpx * 0.42, y: feet - 5 * f, width: wpx * 0.4, height: 5 * f)), with: .color(brc(0.06, 0.06, 0.07)))
-        ctx.fill(Path(CGRect(x: sx + wpx * 0.02, y: feet - 5 * f, width: wpx * 0.4, height: 5 * f)), with: .color(brc(0.06, 0.06, 0.07)))
-        // torso + vest
-        let torso = CGRect(x: sx - wpx / 2, y: topY + hpx * 0.17, width: wpx, height: hpx * 0.4)
-        ctx.fill(Path(roundedRect: torso, cornerRadius: wpx * 0.14), with: .color(brc(c.0 * k, c.1 * k, c.2 * k)))
-        ctx.fill(Path(roundedRect: torso.insetBy(dx: wpx * 0.12, dy: hpx * 0.04), cornerRadius: wpx * 0.1), with: .color(brc(0.16 * k, 0.17 * k, 0.2 * k, 0.85)))
-        // arms
-        ctx.fill(Path(roundedRect: CGRect(x: sx - wpx * 0.72, y: topY + hpx * 0.2, width: wpx * 0.24, height: hpx * 0.32), cornerRadius: wpx * 0.1), with: .color(brc(c.0 * k * 0.8, c.1 * k * 0.8, c.2 * k * 0.8)))
-        ctx.fill(Path(roundedRect: CGRect(x: sx + wpx * 0.48, y: topY + hpx * 0.2, width: wpx * 0.24, height: hpx * 0.32), cornerRadius: wpx * 0.1), with: .color(brc(c.0 * k * 0.8, c.1 * k * 0.8, c.2 * k * 0.8)))
-        // rifle held across
-        ctx.fill(Path(roundedRect: CGRect(x: sx - wpx * 0.5, y: topY + hpx * 0.33, width: wpx * 1.15, height: hpx * 0.06), cornerRadius: 1.5 * f), with: .color(brc(0.07, 0.07, 0.09)))
-        // head + helmet
-        let hr = hpx * 0.095
-        let hy = topY + hpx * 0.085
-        ctx.fill(Path(ellipseIn: CGRect(x: sx - hr, y: hy - hr, width: hr * 2, height: hr * 2)), with: .color(brc(0.85 * k, 0.68 * k, 0.55 * k)))
-        var helm = Path()
-        helm.addArc(center: CGPoint(x: sx, y: hy - hr * 0.1), radius: hr * 1.12, startAngle: .degrees(180), endAngle: .degrees(360), clockwise: false)
-        helm.closeSubpath()
-        ctx.fill(helm, with: .color(brc(0.2 * k, 0.24 * k, 0.2 * k)))
-        if a.hurt > 0 {
-            ctx.fill(Path(roundedRect: torso, cornerRadius: wpx * 0.14), with: .color(brc(1, 1, 1, a.hurt * 0.5)))
-        }
-        if a.flash > 0 {
-            let r = hpx * 0.1
-            ctx.fill(Path(ellipseIn: CGRect(x: sx + wpx * 0.75 - r, y: topY + hpx * 0.36 - r, width: r * 2, height: r * 2)), with: .color(brc(1, 0.9, 0.4, 0.9)))
-        }
-        // name tag
         let dist = hypot(a.p.x - me.p.x, a.p.y - me.p.y)
+        let st = a.stance
+        let moving = a.spd > 8
+        let swing = moving ? sin(a.stride) : 0
+        let amp: CGFloat = a.sprinting ? 1.5 : 1
+        // pose: vertical scale of the standing figure
+        let sy: CGFloat = a.diveT > 0 ? 0.4 : st == 2 ? 0.34 : (st == 1 ? 0.72 : (a.sprinting ? 0.95 : 1))
+        let sxs: CGFloat = st == 2 ? 1.5 : 1
+        let lean: CGFloat = a.sprinting ? wpx * 0.12 : 0
+        var fig = ctx
+        fig.translateBy(x: sx, y: feet)
+        fig.scaleBy(x: sxs, y: sy)
+        fig.translateBy(x: -sx + lean, y: -feet)
+        drawFigure(&fig, a, sx: sx, feet: feet, hpx: hpx, wpx: wpx, f: f, k: k, c: c, swing: swing * amp, st: st)
+        let topS = feet - hpx * sy
+        // name tag
         if dist < 520 || ally {
             let tag = ally ? brc(0.45, 0.95, 0.55) : brc(1, 0.5, 0.45)
-            let ty = topY - 12
+            let ty = topS - 14
             ctx.draw(Text(a.name).font(.system(size: 10, weight: .heavy)).foregroundColor(tag), at: CGPoint(x: sx, y: ty - 8))
             let bw: CGFloat = 38
             ctx.fill(Path(CGRect(x: sx - bw / 2, y: ty, width: bw, height: 3.5)), with: .color(brc(0, 0, 0, 0.6)))
@@ -204,23 +185,76 @@ extension BREngine {
         }
     }
 
+    private func drawFigure(_ c2: inout GraphicsContext, _ a: BRActor, sx: CGFloat, feet: CGFloat, hpx: CGFloat, wpx: CGFloat, f: CGFloat, k: CGFloat, c: BRCol, swing: CGFloat, st: Int) {
+        let topY = feet - hpx
+        // ground shadow
+        c2.fill(Path(ellipseIn: CGRect(x: sx - wpx * 0.9, y: feet - 3 * f, width: wpx * 1.8, height: 6 * f)), with: .color(brc(0, 0, 0, 0.28)))
+        // legs
+        let legC = brc(0.15 * k, 0.17 * k, 0.22 * k)
+        c2.fill(Path(roundedRect: CGRect(x: sx - wpx * 0.38, y: feet - hpx * 0.46 - max(0, swing) * hpx * 0.07, width: wpx * 0.34, height: hpx * 0.46), cornerRadius: 2 * f), with: .color(legC))
+        c2.fill(Path(roundedRect: CGRect(x: sx + wpx * 0.04, y: feet - hpx * 0.46 - max(0, -swing) * hpx * 0.07, width: wpx * 0.34, height: hpx * 0.46), cornerRadius: 2 * f), with: .color(legC))
+        c2.fill(Path(CGRect(x: sx - wpx * 0.42, y: feet - 5 * f - max(0, swing) * hpx * 0.07, width: wpx * 0.4, height: 5 * f)), with: .color(brc(0.06, 0.06, 0.07)))
+        c2.fill(Path(CGRect(x: sx + wpx * 0.02, y: feet - 5 * f - max(0, -swing) * hpx * 0.07, width: wpx * 0.4, height: 5 * f)), with: .color(brc(0.06, 0.06, 0.07)))
+        // torso + vest
+        let torso = CGRect(x: sx - wpx / 2, y: topY + hpx * 0.17, width: wpx, height: hpx * 0.4)
+        c2.fill(Path(roundedRect: torso, cornerRadius: wpx * 0.14), with: .color(brc(c.0 * k, c.1 * k, c.2 * k)))
+        c2.fill(Path(roundedRect: torso.insetBy(dx: wpx * 0.12, dy: hpx * 0.04), cornerRadius: wpx * 0.1), with: .color(brc(0.16 * k, 0.17 * k, 0.2 * k, 0.85)))
+        // arms
+        c2.fill(Path(roundedRect: CGRect(x: sx - wpx * 0.72, y: topY + hpx * 0.2 + swing * hpx * 0.02, width: wpx * 0.24, height: hpx * 0.32), cornerRadius: wpx * 0.1), with: .color(brc(c.0 * k * 0.8, c.1 * k * 0.8, c.2 * k * 0.8)))
+        c2.fill(Path(roundedRect: CGRect(x: sx + wpx * 0.48, y: topY + hpx * 0.2 + swing * hpx * 0.02, width: wpx * 0.24, height: hpx * 0.32), cornerRadius: wpx * 0.1), with: .color(brc(c.0 * k * 0.8, c.1 * k * 0.8, c.2 * k * 0.8)))
+        // rifle held across
+        c2.fill(Path(roundedRect: CGRect(x: sx - wpx * 0.5, y: topY + hpx * 0.33, width: wpx * 1.15, height: hpx * 0.06), cornerRadius: 1.5 * f), with: .color(brc(0.07, 0.07, 0.09)))
+        // head + helmet
+        let hr = hpx * 0.095
+        let hy = topY + hpx * 0.085
+        c2.fill(Path(ellipseIn: CGRect(x: sx - hr, y: hy - hr, width: hr * 2, height: hr * 2)), with: .color(brc(0.85 * k, 0.68 * k, 0.55 * k)))
+        var helm = Path()
+        helm.addArc(center: CGPoint(x: sx, y: hy - hr * 0.1), radius: hr * 1.12, startAngle: .degrees(180), endAngle: .degrees(360), clockwise: false)
+        helm.closeSubpath()
+        c2.fill(helm, with: .color(brc(0.2 * k, 0.24 * k, 0.2 * k)))
+        if a.hurt > 0 {
+            c2.fill(Path(roundedRect: torso, cornerRadius: wpx * 0.14), with: .color(brc(1, 1, 1, a.hurt * 0.5)))
+        }
+        if a.flash > 0 {
+            let r = hpx * 0.1
+            c2.fill(Path(ellipseIn: CGRect(x: sx + wpx * 0.75 - r, y: topY + hpx * 0.36 - r, width: r * 2, height: r * 2)), with: .color(brc(1, 0.9, 0.4, 0.9)))
+        }
+    }
+
     private func drawViewGun(_ ctx: inout GraphicsContext, _ size: CGSize) {
         let m = me
         guard m.alive, let s = m.slots[m.cur] else { return }
         let img = GunSprites.image(s.gun)
         let mz = GunSprites.muzzle(s.gun)
-        let bob = sin(bobT) * 6 * bobAmp
-        let sway = cos(bobT * 0.5) * 5 * bobAmp
+        let bob = sin(bobT) * 6 * bobAmp * bobScale
+        let sway = cos(bobT * 0.5) * 5 * bobAmp * bobScale * (1 + proneBlend * 2.5)
         var rect = GunSprites.rect(size)
-        let dip: CGFloat = m.reloadT > 0 ? min(1, m.reloadT * 2.5) * rect.height * 0.4 : 0
+        var dip: CGFloat = m.reloadT > 0 ? min(1, m.reloadT * 2.5) * rect.height * 0.4 : 0
+        // armor plate: gun lowers while applying
+        if plateT > 0 { dip += sin(min(1, plateT * 6) * .pi / 2) * rect.height * 0.3 * (plateT < 0.9 ? 1 : (1 - plateT) * 10) }
+        if m.diveT > 0 { dip += sin(m.diveT / 0.7 * .pi) * rect.height * 0.35 }
+        dip += proneBlend * rect.height * 0.08
         rect.origin.x += sway + gunKick * 20
         rect.origin.y += bob + dip + gunKick * 16 - recoilP * 40
+        let sp = sprintT * (1 - adsT)
+        if sp > 0.01 {
+            rect.origin.x += sp * rect.width * 0.1
+            rect.origin.y += sp * rect.height * 0.22
+        }
         let isScope = s.gun == "rifle" || s.gun == "smg"
         let gunA: CGFloat = isScope ? 1 - min(1, adsT * 1.6) : 1 - adsT * 0.6
         let spr = ctx.resolve(Image(uiImage: img))
         if gunA > 0.02 {
             ctx.drawLayer { l in
                 l.opacity = Double(gunA)
+                if sp > 0.01 || m.diveT > 0 {
+                    let px = rect.maxX - rect.width * 0.12, py = rect.maxY - rect.height * 0.2
+                    var ang = -0.5 * sp
+                    if m.diveT > 0 { ang += sin(m.diveT / 0.7 * .pi) * -0.35 }
+                    l.translateBy(x: px, y: py)
+                    l.rotate(by: .radians(Double(ang)))
+                    l.translateBy(x: -px, y: -py)
+                }
                 l.draw(spr, in: rect)
             }
         }
