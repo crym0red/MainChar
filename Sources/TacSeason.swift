@@ -66,14 +66,7 @@ enum TacSeason {
     }
 
     static func tier(_ xp: Int) -> Int { min(tiers, xp / xpPerTier) }
-    static func league(_ rating: Int) -> String {
-        if rating < 1000 { return "BRONZE" }
-        if rating < 1200 { return "SILVER" }
-        if rating < 1400 { return "GOLD" }
-        if rating < 1600 { return "PLATINUM" }
-        if rating < 1900 { return "DIAMOND" }
-        return "LEGEND"
-    }
+    static func league(_ rating: Int) -> String { TacLeague.name(rating) }
 
     static let themes = ["map_desert", "map_station", "map_grace"]
 }

@@ -277,6 +277,61 @@ struct CSArsenal: View {
 
 // MARK: league
 
+enum TacLeague {
+    static let all: [(String, Int, Color)] = [
+        ("IRON", 0, Color(red: 0.45, green: 0.45, blue: 0.5)),
+        ("BRONZE", 100, Color(red: 0.75, green: 0.5, blue: 0.3)),
+        ("SILVER", 250, Color(red: 0.8, green: 0.85, blue: 0.9)),
+        ("GOLD", 500, Color(red: 1, green: 0.8, blue: 0.2)),
+        ("PLATINUM", 900, Color(red: 0.5, green: 0.9, blue: 0.95)),
+        ("DIAMOND", 1400, Color(red: 0.5, green: 0.7, blue: 1)),
+        ("MASTER", 2200, Color(red: 0.75, green: 0.45, blue: 1)),
+        ("GRANDMASTER", 3500, Color(red: 1, green: 0.4, blue: 0.5)),
+        ("LEGEND", 5500, Color(red: 1, green: 0.55, blue: 0.15)),
+        ("ELITE", 8000, Color(red: 0.3, green: 1, blue: 0.6)),
+        ("CHAMPION", 12000, Color(red: 0.2, green: 0.9, blue: 1)),
+        ("MYTHIC", 18000, Color(red: 1, green: 0.3, blue: 0.9)),
+        ("ULTRA MYTHIC", 27000, Color(red: 1, green: 0.2, blue: 0.2)),
+        ("SUPER MYTHICAL", 45000, Color(red: 0.12, green: 0.12, blue: 0.14))
+    ]
+    static func name(_ rating: Int) -> String { all.last(where: { rating >= $0.1 })?.0 ?? all[0].0 }
+    static func index(_ rating: Int) -> Int { all.lastIndex(where: { rating >= $0.1 }) ?? 0 }
+    static func color(_ rating: Int) -> Color { all[index(rating)].2 }
+    /// badge shows above Bronze (Silver and up)
+    static func shows(_ rating: Int) -> Bool { index(rating) >= 2 }
+    static var myRating = 1000
+}
+
+struct LeagueShield: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: r.minX, y: r.minY + r.height * 0.12))
+        p.addLine(to: CGPoint(x: r.midX, y: r.minY))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.minY + r.height * 0.12))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.minY + r.height * 0.55))
+        p.addLine(to: CGPoint(x: r.midX, y: r.maxY))
+        p.addLine(to: CGPoint(x: r.minX, y: r.minY + r.height * 0.55))
+        p.closeSubpath()
+        return p
+    }
+}
+
+struct LeagueBadge: View {
+    let rating: Int
+    var size: CGFloat = 16
+    var body: some View {
+        if TacLeague.shows(rating) {
+            let i = TacLeague.index(rating)
+            ZStack {
+                LeagueShield().fill(TacLeague.color(rating))
+                LeagueShield().stroke(Color.black.opacity(0.7), lineWidth: 1)
+                Text("\(i - 1)").font(.system(size: size * 0.5, weight: .heavy, design: .rounded)).foregroundColor(.black.opacity(0.8)).offset(y: -size * 0.05)
+            }
+            .frame(width: size * 0.85, height: size)
+        }
+    }
+}
+
 struct CSLeague: View {
     let rating: Int
     let cash: Int
@@ -284,7 +339,7 @@ struct CSLeague: View {
     let back: () -> Void
     @State private var tab = 0
 
-    private let leagues: [(String, Int, Color)] = [("IRON", 20, Color(red: 0.45, green: 0.45, blue: 0.5)), ("BRONZE", 100, Color(red: 0.75, green: 0.5, blue: 0.3)), ("SILVER", 250, Color(red: 0.8, green: 0.85, blue: 0.9)), ("GOLD", 500, CS.gold), ("PLATINUM", 900, Color(red: 0.5, green: 0.9, blue: 0.95)), ("DIAMOND", 1400, Color(red: 0.5, green: 0.7, blue: 1))]
+    private let leagues = TacLeague.all
 
     private func reward(_ k: Int) -> (String, String, Color) {
         switch k % 4 {
@@ -309,24 +364,24 @@ struct CSLeague: View {
                         .buttonStyle(TuiPress())
                     }
                 }
-                Text("Gain trophies as you get victories from your battles and move on to the next leagues.").font(.jk(13, .medium)).foregroundColor(.white.opacity(0.9)).padding(.top, 8)
+                Text("Win battles for +10 trophies each and climb all the way to Super Mythical.").font(.jk(13, .medium)).foregroundColor(.white.opacity(0.9)).padding(.top, 8)
                 if tab == 0 {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(alignment: .bottom, spacing: 0) {
                             ForEach(0..<leagues.count, id: \.self) { li in
                                 let l = leagues[li]
-                                let nextV = li + 1 < leagues.count ? leagues[li + 1].1 : l.1 + 600
+                                let nextV = li + 1 < leagues.count ? leagues[li + 1].1 : l.1 + 5000
                                 VStack(spacing: 0) {
                                     HStack(spacing: 8) {
                                         SF("shield.lefthalf.filled").font(.system(size: 26)).foregroundColor(l.2)
                                         VStack(alignment: .leading) {
-                                            Text(l.0).font(.jk(15, .heavy)).foregroundColor(.white)
+                                            Text(l.0).font(.jk(15, .heavy)).foregroundColor(.white).lineLimit(1).minimumScaleFactor(0.6)
                                             HStack(spacing: 3) { SF("trophy.fill").font(.system(size: 12)).foregroundColor(CS.gold); Text("\(l.1)+").font(.jk(14, .heavy)).foregroundColor(.white) }
                                         }
                                         Spacer()
-                                        Text("+\(5 + li * 5)%").font(.jk(11, .heavy)).foregroundColor(.white).padding(4).background(Rectangle().fill(CS.blue))
+                                        Text("+\(li * 5 + 5)%").font(.jk(11, .heavy)).foregroundColor(.white).padding(4).background(Rectangle().fill(CS.blue))
                                     }
-                                    .padding(8).frame(width: 220).background(Color.black.opacity(0.85)).overlay(Rectangle().stroke(Color.white.opacity(0.7), lineWidth: 1))
+                                    .padding(8).frame(width: 250).background(Color.black.opacity(0.85)).overlay(Rectangle().stroke(Color.white.opacity(0.7), lineWidth: 1))
                                     HStack(spacing: 14) {
                                         ForEach(0..<4, id: \.self) { k in
                                             let v = l.1 + (nextV - l.1) * k / 4
@@ -381,56 +436,85 @@ struct CSKillcam: View {
     let e: TacticalEngine
     let changeLoadout: () -> Void
 
+    private struct Bracket: Shape {
+        let tl: Bool, tr: Bool, bl: Bool, br: Bool
+        func path(in r: CGRect) -> Path {
+            var p = Path(); let l: CGFloat = 70
+            if tl { p.move(to: CGPoint(x: r.minX + l, y: r.minY)); p.addLine(to: CGPoint(x: r.minX, y: r.minY)); p.addLine(to: CGPoint(x: r.minX, y: r.minY + l)) }
+            if tr { p.move(to: CGPoint(x: r.maxX - l, y: r.minY)); p.addLine(to: CGPoint(x: r.maxX, y: r.minY)); p.addLine(to: CGPoint(x: r.maxX, y: r.minY + l)) }
+            if bl { p.move(to: CGPoint(x: r.minX + l, y: r.maxY)); p.addLine(to: CGPoint(x: r.minX, y: r.maxY)); p.addLine(to: CGPoint(x: r.minX, y: r.maxY - l)) }
+            if br { p.move(to: CGPoint(x: r.maxX - l, y: r.maxY)); p.addLine(to: CGPoint(x: r.maxX, y: r.maxY)); p.addLine(to: CGPoint(x: r.maxX, y: r.maxY - l)) }
+            return p
+        }
+    }
+
     var body: some View {
         let k = e.players.first { $0.id == e.lastKiller }
         let kg = k?.gun ?? "pistol"
+        let kri = k.map { min(TacRank.ranks.count - 1, $0.handle.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) % 997 } % 14 + 2) } ?? 0
         return GeometryReader { geo in
             let W = geo.size.width, H = geo.size.height
             ZStack {
+                // frame brackets
+                Bracket(tl: true, tr: true, bl: true, br: true).stroke(Color.white.opacity(0.85), lineWidth: 2)
+                    .frame(width: W - 40, height: H - 90).position(x: W / 2, y: H / 2 + 16)
+                // header strip
                 VStack(spacing: 0) {
-                    HStack(spacing: 14) {
-                        Text("YOU").font(.jk(11, .heavy)).foregroundColor(.white)
-                        Text("\(e.scores[0])").font(.system(size: 36, weight: .heavy, design: .rounded)).foregroundColor(.white)
-                        Text("VS").font(.jk(20, .heavy)).foregroundColor(.white)
-                        Text("\(e.rivalScore)").font(.system(size: 36, weight: .heavy, design: .rounded)).foregroundColor(.white)
-                        Text("ENEMY").font(.jk(11, .heavy)).foregroundColor(.white)
+                    HStack(spacing: 8) {
+                        SF("skull.fill", "scope").font(.system(size: 20)).foregroundColor(.white)
+                        Text("KILLCAM").font(.jk(22, .heavy)).foregroundColor(.white)
+                        Spacer()
                     }
-                    .padding(.horizontal, 24).background(Color.black.opacity(0.55))
-                    VStack(spacing: 0) {
-                        Text("KILLED BY").font(.jk(15, .semibold)).foregroundColor(.white)
-                        Text(k?.name ?? "The Storm").font(.jk(26, .heavy)).foregroundColor(Color(red: 1, green: 0.2, blue: 0.15))
-                        Text("ENEMY LOADOUT").font(.jk(19, .semibold)).foregroundColor(.white)
-                    }
-                    .frame(width: 360).background(Color.black.opacity(0.55))
+                    .padding(.horizontal, 14).frame(height: 36).shadow(color: .black.opacity(0.7), radius: 3)
+                    Rectangle().fill(Color.white.opacity(0.7)).frame(height: 2)
                     Spacer()
                 }
                 .frame(width: W, height: H, alignment: .top)
-                VStack(spacing: 4) {
-                    CSSlot(title: "\(TWeapons.w(kg).name) [TIER-1]", w: 190, h: 96, icon: GunSprites.icon(TWeapons.rig(kg)))
-                    ZStack(alignment: .bottomLeading) {
-                        LinearGradient(colors: [Color(red: 0.3, green: 0.34, blue: 0.2), Color(red: 0.15, green: 0.17, blue: 0.1)], startPoint: .top, endPoint: .bottom)
-                        HStack { Text("DEFAULT (COMMON)").font(.jk(11, .heavy)).foregroundColor(.white); Spacer() }.padding(6).frame(maxHeight: .infinity, alignment: .top)
-                        if let k = k { PortraitAvatar(key: k.handle, size: 54, look: TacAvatar.look(for: k.handle)).frame(maxWidth: .infinity) }
-                    }
-                    .frame(width: 190, height: 96)
+                HStack(spacing: 5) {
+                    Circle().fill(Color.red).frame(width: 9, height: 9)
+                    Text("REPLAY").font(.jk(14, .heavy)).foregroundColor(.red)
                 }
-                .position(x: 110, y: H * 0.56)
-                VStack(spacing: 4) {
-                    HStack(spacing: 4) {
-                        CSSlot(title: "HELMET", w: 90, h: 92, empty: true)
-                        CSSlot(title: "BASIC ARMOR", w: 90, h: 92, sf: "shield.fill")
+                .position(x: 70, y: 66)
+                Text(e.replayOn ? (e.replayDone ? "REPLAY ENDED" : "WATCHING REPLAY") : "RESPAWN IN: \(max(1, Int(ceil(e.me.respawn))))s").font(.jk(16, .heavy)).foregroundColor(.white)
+                    .shadow(color: .black.opacity(0.8), radius: 3).position(x: W / 2, y: 62)
+                // killed by
+                VStack(spacing: 2) {
+                    Text("KILLED BY").font(.jk(15, .semibold)).foregroundColor(.white).shadow(color: .black.opacity(0.8), radius: 3)
+                    HStack(spacing: 0) {
+                        VStack(spacing: 6) {
+                            HStack(spacing: 5) {
+                                Text(k?.name ?? "The Storm").font(.jk(15, .semibold)).foregroundColor(.white).lineLimit(1).minimumScaleFactor(0.6)
+                                if let k = k { LeagueBadge(rating: k.trophies, size: 16) }
+                            }
+                            SF("skull.fill", "scope").font(.system(size: 22)).foregroundColor(.white.opacity(0.85))
+                        }
+                        .frame(width: 150, height: 58).background(Color(red: 0.14, green: 0.12, blue: 0.1))
+                        ZStack {
+                            LinearGradient(colors: [Color(red: 0.95, green: 0.55, blue: 0.1), Color(red: 0.6, green: 0.25, blue: 0.1)], startPoint: .top, endPoint: .bottom)
+                            if let k = k { PortraitAvatar(key: k.handle, size: 54, look: TacAvatar.look(for: k.handle)) }
+                        }
+                        .frame(width: 140, height: 58).clipped()
+                        VStack(spacing: 0) {
+                            TacRankTile(idx: kri, size: 30, progress: nil, showName: false)
+                            Text("\(kri + 1)").font(.jk(16, .heavy)).foregroundColor(.white)
+                        }
+                        .frame(width: 70, height: 58)
                     }
-                    HStack(spacing: 4) {
-                        CSSlot(title: "BOOTS", w: 90, h: 92, empty: true)
-                        CSSlot(title: "DEFAULT GLOVE", w: 90, h: 92, sf: "hand.raised.fill")
-                    }
-                    CSSlot(title: "CLAN", w: 184, h: 70, empty: true)
                 }
-                .position(x: W - 110, y: H * 0.54)
-                CSButton(title: "CHANGE LOADOUT", w: 190, h: 40, size: 13) { changeLoadout() }.position(x: 110, y: H - 34)
-                Text("\(max(1, Int(ceil(e.me.respawn))))").font(.system(size: 34, weight: .heavy, design: .rounded)).foregroundColor(.white)
-                    .frame(width: 130, height: 50).background(Color.black.opacity(0.6)).overlay(Rectangle().stroke(Color.white, lineWidth: 2))
-                    .position(x: W - 90, y: H - 34)
+                .position(x: W / 2, y: H - 62)
+                // killed with
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Killed with [\(TWeapons.w(kg).name)]").font(.jk(11, .semibold)).foregroundColor(.white.opacity(0.85))
+                    Image(uiImage: GunSprites.icon(TWeapons.rig(kg))).renderingMode(.template).resizable().scaledToFit()
+                        .foregroundColor(.white.opacity(0.8)).frame(width: 90, height: 34)
+                }
+                .shadow(color: .black.opacity(0.7), radius: 2)
+                .position(x: 90, y: H - 46)
+                CSButton(title: "CHANGE LOADOUT", w: 150, h: 30, size: 11) { changeLoadout() }.position(x: W - 100, y: 70)
+                if e.replayOn {
+                    CSButton(title: "REPLAY", w: 130, h: 40, size: 15) { e.replayAgain() }.position(x: W - 250, y: H - 40)
+                    CSButton(title: "RESPAWN", col: CS.orange, dark: CS.orangeDark, w: 150, h: 40, size: 16) { e.respawnNow() }.position(x: W - 100, y: H - 40)
+                }
             }
         }
     }

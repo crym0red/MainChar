@@ -1038,7 +1038,9 @@ final class TacScene {
 
     func sync(_ e: TacticalEngine) {
         guard !e.players.isEmpty, roots.count == e.players.count else { return }
-        let focus: TPlayer = e.me.alive ? e.me : (e.players.first { $0.team == e.me.team && $0.alive } ?? e.me)
+        let rsv = e.beginReplayView()
+        defer { e.endReplayView(rsv) }
+        let focus: TPlayer = e.replayOn ? (e.players.first { $0.id == e.replayKiller } ?? e.me) : e.me.alive ? e.me : (e.gameMode != 6 ? e.players.first { $0.id == e.lastKiller && $0.alive && !$0.isPlayer } : nil) ?? (e.players.first { $0.team == e.me.team && $0.alive } ?? e.me)
         focusFloor = TMap.floorOf(focus.pos)
         for i in 0..<3 { floorRoot[i].isHidden = focusFloor != i }
         applyDestruction(Float(max(0.001, min(0.05, CACurrentMediaTime() - lastDestroyT))))
@@ -1073,8 +1075,7 @@ final class TacScene {
         }
         let fx = sx(focus.pos)
         if !started || camFloor != focusFloor { camX = fx; camZ = focus.pos.y; started = true; camFloor = focusFloor }
-        camX += (fx - camX) * 0.2
-        camZ += (focus.pos.y - camZ) * 0.2
+        if e.replayOn { camX = fx; camZ = focus.pos.y } else { camX += (fx - camX) * 0.2; camZ += (focus.pos.y - camZ) * 0.2 }
         let sh = e.shake
         let jx: CGFloat = sh > 0 ? CGFloat.random(in: -sh...sh) * 0.6 : 0
         let jz: CGFloat = sh > 0 ? CGFloat.random(in: -sh...sh) * 0.6 : 0
@@ -1096,7 +1097,7 @@ final class TacScene {
             let rprog: Float? = focus.reloadT > 0 ? Float(max(0, min(1, 1 - focus.reloadT / max(0.1, gw.reload)))) : nil
             let vdt = Float(max(0.001, min(0.05, e.time - lastVmT)))
             lastVmT = e.time
-            vm.update(dt: vdt, t: Float(e.time), move: Float(min(1, hypot(e.move.dx, e.move.dy))), kick: Float(e.kick), reload: rprog, flashing: focus.flash > 0, recoilScale: TWeapons.recoil(focus.gun))
+            vm.update(dt: vdt, t: Float(e.time), move: e.replayOn ? 0.6 : Float(min(1, hypot(e.move.dx, e.move.dy))), kick: e.replayOn ? (focus.flash > 0 ? 6 : 0) : Float(e.kick), reload: rprog, flashing: focus.flash > 0, recoilScale: TWeapons.recoil(focus.gun))
             vm.flash(focus.flash > 0)
             camNode.camera?.fieldOfView += ((e.scoped ? TAtt.mods(e.me.gun).zoomFOV : 62) - (camNode.camera?.fieldOfView ?? 62)) * 0.3
             camNode.position = MXVector3(Float(ex + jx * 0.3), Float(eh), Float(ez + jz * 0.3))
@@ -1116,7 +1117,7 @@ final class TacScene {
 
         for (i, p) in e.players.enumerated() {
             let rt = roots[i]
-            let show = (p.team == e.me.team || p.spotted || (!p.alive && p.seenEver)) && TMap.floorOf(p.pos) == focusFloor
+            let show = (e.replayOn || p.team == e.me.team || p.spotted || (!p.alive && p.seenEver)) && TMap.floorOf(p.pos) == focusFloor
             rt.isHidden = !show || (fpMode && p.id == focus.id)
             if !show { continue }
             let ks: Float = fpMode ? 1.18 : 1
@@ -1168,7 +1169,7 @@ final class TacScene {
         }
         // bullets
         for (i, node) in bulletPool.enumerated() {
-            if i < e.bullets.count, TMap.floorOf(e.bullets[i].pos) == focusFloor {
+            if !e.replayOn, i < e.bullets.count, TMap.floorOf(e.bullets[i].pos) == focusFloor {
                 let b = e.bullets[i]
                 node.isHidden = false
                 node.position = MXVector3(Float(sx(b.pos)), 30, Float(b.pos.y))
@@ -1179,7 +1180,7 @@ final class TacScene {
             } else { node.isHidden = true }
         }
         for (i, node) in nadePool.enumerated() {
-            if i < e.nades.count, TMap.floorOf(e.nades[i].pos) == focusFloor {
+            if !e.replayOn, i < e.nades.count, TMap.floorOf(e.nades[i].pos) == focusFloor {
                 let g = e.nades[i]
                 node.isHidden = false
                 node.position = MXVector3(Float(sx(g.pos)), 8, Float(g.pos.y))
@@ -1224,7 +1225,7 @@ final class TacScene {
 
 extension TacticalEngine {
     func drawOverlay3D(_ ctx: inout GraphicsContext, _ size: CGSize) {
-        guard let pr = project else { return }
+        guard let pr = project, !replayOn else { return }
         let focus: TPlayer = me.alive ? me : (players.first { $0.team == me.team && $0.alive } ?? me)
         // fog of war (top-down view only)
         let vp = focus.pos
@@ -1283,7 +1284,9 @@ extension TacticalEngine {
             let crownW: CGFloat = p.rank == 2 ? 15 * k : 0
             let badgeW: CGFloat = p.rank == 1 ? 34 * k : 0
             let gap: CGFloat = 4 * k
-            let total = (crownW > 0 ? crownW + gap : 0) + nsz.width + (badgeW > 0 ? badgeW + gap : 0)
+            let showL = TacLeague.shows(p.trophies)
+            let lgW: CGFloat = showL ? 11 * k : 0
+            let total = (crownW > 0 ? crownW + gap : 0) + nsz.width + (badgeW > 0 ? badgeW + gap : 0) + (showL ? lgW + gap : 0)
             var x0 = pt.x - total / 2
             let yMid = pt.y - 8 * k
             if crownW > 0 {
@@ -1314,6 +1317,14 @@ extension TacticalEngine {
                 let br = CGRect(x: x0, y: yMid - 6 * k, width: badgeW, height: 12 * k)
                 ctx.fill(Path(roundedRect: br, cornerRadius: 3 * k), with: .color(Color(red: 0.1, green: 0.55, blue: 0.4)))
                 ctx.draw(Text("STAFF").font(.system(size: 8 * k, weight: .heavy)).foregroundColor(.white), at: CGPoint(x: br.midX, y: br.midY))
+                x0 += badgeW + gap
+            }
+            if showL {
+                let sr = CGRect(x: x0, y: yMid - 7 * k, width: lgW, height: 14 * k)
+                let sh = LeagueShield().path(in: sr)
+                ctx.fill(sh, with: .color(TacLeague.color(p.trophies)))
+                ctx.stroke(sh, with: .color(.black.opacity(0.75)), lineWidth: 1)
+                ctx.draw(Text("\(TacLeague.index(p.trophies) - 1)").font(.system(size: 7 * k, weight: .heavy)).foregroundColor(.black.opacity(0.85)), at: CGPoint(x: sr.midX, y: sr.midY - 0.5 * k))
             }
             let bw: CGFloat = 54 * k, bh: CGFloat = 5 * k
             let bar = CGRect(x: pt.x - bw / 2, y: pt.y + 2 * k, width: bw, height: bh)

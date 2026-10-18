@@ -252,6 +252,7 @@ final class TPlayer {
     var strafeT: CGFloat = 0
     var role = 0
     var rank = 0   // 0 fighter, 1 staff, 2 admin
+    var trophies = 0
     var site = 0
     var spotted = false
     var seenEver = false
@@ -431,6 +432,38 @@ final class TacticalEngine {
     var myGun = "pistol"
     var mapPick = 0
     var lastKiller = -1
+    // killcam replay
+    struct RSnap { var pos: [CGPoint]; var aim: [CGFloat]; var alive: [Bool]; var gun: [String]; var flash: [CGFloat]; var crouch: [Bool]; var hurt: [CGFloat]; var knife: [Bool] }
+    var rbuf: [RSnap] = []
+    var rAcc: CGFloat = 0
+    var replay: [RSnap] = []
+    var replayOn = false
+    var replayT: CGFloat = 0
+    var replayKiller = -1
+    private func rCapture() -> RSnap {
+        RSnap(pos: players.map { $0.pos }, aim: players.map { $0.aim }, alive: players.map { $0.alive }, gun: players.map { $0.gun }, flash: players.map { $0.flash }, crouch: players.map { $0.crouch }, hurt: players.map { $0.hurt }, knife: players.map { $0.knife })
+    }
+    private func rApply(_ s: RSnap) {
+        for (i, p) in players.enumerated() where i < s.pos.count {
+            p.pos = s.pos[i]; p.aim = s.aim[i]; p.alive = s.alive[i]; p.gun = s.gun[i]; p.flash = s.flash[i]; p.crouch = s.crouch[i]; p.hurt = s.hurt[i]; p.knife = s.knife[i]
+        }
+    }
+    /// swaps the world into the replay frame for rendering; pair with endReplayView
+    func beginReplayView() -> RSnap? {
+        guard replayOn, !replay.isEmpty else { return nil }
+        let cur = rCapture()
+        rApply(replay[min(replay.count - 1, max(0, Int(replayT * 30)))])
+        return cur
+    }
+    var replayDone: Bool { replayT >= CGFloat(replay.count) / 30 + 0.4 }
+    func replayAgain() { replayT = 0 }
+    func respawnNow() {
+        guard !me.alive, !over else { return }
+        replayOn = false
+        me.respawn = 0
+        respawnPlayer(me)
+    }
+    func endReplayView(_ s: RSnap?) { if let s = s { rApply(s) } }
     var kills: Int { me.kills }
 
     private let react: [CGFloat] = [0.55, 0.33, 0.18]
@@ -447,9 +480,11 @@ final class TacticalEngine {
         var names: [(String, String, String)] = TacRoster.pick(nb)
         while names.count < nb { let k = names.count + 1; names.append(("Recruit \(k)", "recruit\(k)", "")) }
         players = [TPlayer(id: 0, team: 0, name: TacProfile.name, handle: "you", emoji: "", isPlayer: true)]
+        players[0].trophies = TacLeague.myRating
         for i in 0..<nb {
             let bp = TPlayer(id: i + 1, team: i < 4 ? 0 : 1, name: names[i].0, handle: names[i].1, emoji: names[i].2, isPlayer: false)
             bp.rank = TacRoster.rank(of: names[i].1)
+            bp.trophies = max(0, TacLeague.myRating + Int.random(in: -400...900) + (Int.random(in: 0..<8) == 0 ? Int.random(in: 1000...6000) : 0))
             players.append(bp)
         }
         scores = [0, 0]
@@ -573,12 +608,23 @@ final class TacticalEngine {
         let dt = min(0.05, CGFloat(now.timeIntervalSince(l)))
         last = now
         if paused || over { return }
-        let n = (!me.alive && fast && phase < 3) ? 3 : 1
+        let n = (!me.alive && fast && phase < 3 && !replayOn) ? 3 : 1
         for _ in 0..<n { update(dt) }
     }
 
     private func update(_ dt: CGFloat) {
         time += dt
+        if me.alive {
+            replayOn = false
+            rAcc += dt
+            if rAcc >= 1.0 / 30 {
+                rAcc = 0
+                rbuf.append(rCapture())
+                if rbuf.count > 90 { rbuf.removeFirst() }
+            }
+        } else if replayOn {
+            replayT = min(replayT + dt, CGFloat(replay.count) / 30 + 0.5)
+        }
         bannerT = max(0, bannerT - dt)
         hitT = max(0, hitT - dt)
         shake = max(0, shake - dt * 30)
@@ -761,6 +807,7 @@ final class TacticalEngine {
     }
 
     private func respawnPlayer(_ p: TPlayer) {
+        if p.isPlayer { rbuf.removeAll(); replayOn = false }
         let list = p.id % 2 == 0 ? TMap.atkSpawn : TMap.defSpawn
         var best = list[0], bd: CGFloat = -1
         for c in list {
@@ -794,7 +841,7 @@ final class TacticalEngine {
 
     private func dmTick(_ dt: CGFloat) {
         if gameMode == 6 { brTick(dt); return }
-        for p in players where !p.alive && p.respawn > 0 {
+        for p in players where !p.alive && p.respawn > 0 && !(p.isPlayer && replayOn) {
             p.respawn -= dt
             if p.respawn <= 0 { respawnPlayer(p) }
         }
@@ -1128,14 +1175,17 @@ final class TacticalEngine {
             victim.hp = 0
             victim.alive = false
             let killer = players.first { $0.id == owner }
-            if victim.isPlayer { lastKiller = owner }
+            if victim.isPlayer {
+                lastKiller = owner
+                if gameMode != 6, owner != 0, owner != victim.id, rbuf.count > 8 { replay = rbuf; replayOn = true; replayT = 0; replayKiller = owner }
+            }
             if let k = killer, k.team != victim.team {
                 k.kills += 1
                 if gameMode == 0 { k.money = min(16000, k.money + 300) }
                 if k.isPlayer { fxT = 1; fxId = killFx; fxSerial += 1 }
             }
             if gameMode != 0 {
-                victim.respawn = gameMode == 6 ? 0 : 3
+                victim.respawn = gameMode == 6 ? 0 : (victim.isPlayer && replayOn ? 999 : 3)
                 if gameMode == 6 && victim.isPlayer { brPlace = players.filter { $0.alive }.count + 1; brEndT = 3 }
                 if gameMode == 1, let k = killer, k.team != victim.team { scores[k.team] += 1 }
                 if gameMode == 2 { tags.append(Tag(pos: victim.pos, team: victim.team, life: 25)) }
@@ -2513,7 +2563,7 @@ extension Game {
     func tacticalFinish(won: Bool, kills: Int, gems: Int) {
         var st = s
         var d = st.ex.tac ?? TacData()
-        if won { d.wins += 1; d.rating += 25 } else { d.losses += 1; d.rating = max(0, d.rating - 18) }
+        if won { d.wins += 1; d.rating += 10 } else { d.losses += 1; d.rating = max(0, d.rating - 5) }
         d.kills += kills
         let baseXP = 40 + kills * 10 + (won ? 60 : 0)
         d.xpExtra = (d.xpExtra ?? 0) + baseXP * (TacRank.mult(d.prestige ?? 0) - 1)
@@ -2521,6 +2571,7 @@ extension Game {
         x.xp += 40 + kills * 10 + (won ? 60 : 0)
         d.sx = x
         st.ex.tac = d
+        TacLeague.myRating = d.rating
         st.ex.gems += gems
         s = st
     }

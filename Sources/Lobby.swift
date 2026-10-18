@@ -112,18 +112,19 @@ struct LobbyView: View {
     private func menuRow(_ icon: String, _ label: String, dot: Bool = false, col: Color = .white, _ act: @escaping () -> Void) -> some View {
         Button(action: act) {
             HStack(spacing: 8) {
-                SF(icon, "circle.fill").font(.system(size: 15, weight: .bold)).foregroundColor(col).frame(width: 24)
-                Text(label).font(.jk(14, .heavy)).foregroundColor(col).lineLimit(1)
+                SF(icon, "circle.fill").font(.system(size: 13, weight: .bold)).foregroundColor(col).frame(width: 22)
+                Text(label).font(.jk(13, .heavy)).foregroundColor(col).lineLimit(1)
                 if dot { Text("!").font(.jk(8, .heavy)).foregroundColor(.white).frame(width: 12, height: 12).background(Rectangle().fill(Color.red)).offset(y: -5) }
                 Spacer(minLength: 0)
             }
-            .frame(height: 24)
+            .frame(height: 20)
             .shadow(color: .black.opacity(0.8), radius: 3, y: 1)
         }
         .buttonStyle(TuiPress())
     }
 
     private func homeScreen(_ t: TacData, _ size: CGSize) -> some View {
+        TacLeague.myRating = t.rating
         let xp = TacRank.totalXP(t)
         let ri = TacRank.index(xp)
         let next = min(TacRank.ranks.count - 1, ri + 1)
@@ -147,6 +148,7 @@ struct LobbyView: View {
                         HStack(spacing: 8) {
                             TacRankTile(idx: ri, size: 26, progress: TacRank.progress(xp), showName: false)
                             Text(username).font(.jk(13, .heavy)).foregroundColor(.white).lineLimit(1).minimumScaleFactor(0.6).frame(maxWidth: 110)
+                            LeagueBadge(rating: t.rating, size: 18)
                             Text("LEVEL \(ri + 1)" + ((t.prestige ?? 0) > 0 ? " P\(t.prestige ?? 0)" : "")).font(.jk(12, .heavy)).foregroundColor(.white).fixedSize()
                         }
                         ZStack {
@@ -168,7 +170,7 @@ struct LobbyView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Button { screen = 5 } label: {
                     HStack(spacing: 8) {
-                        TacRankTile(idx: ri, size: 44, progress: TacRank.progress(xp), showName: false)
+                        TacRankTile(idx: ri, size: 36, progress: TacRank.progress(xp), showName: false)
                         VStack(alignment: .leading, spacing: 4) {
                             HStack(spacing: 4) {
                                 SF("trophy.fill").font(.system(size: 11)).foregroundColor(CS.gold)
@@ -183,7 +185,7 @@ struct LobbyView: View {
                         Spacer(minLength: 0)
                         SF("shippingbox.fill", "gift.fill").font(.system(size: 26)).foregroundColor(CS.orange)
                     }
-                    .padding(6).frame(width: 200).background(CS.panel.opacity(0.75)).overlay(Rectangle().stroke(Color.white.opacity(0.2), lineWidth: 1))
+                    .padding(5).frame(width: 200).background(CS.panel.opacity(0.75)).overlay(Rectangle().stroke(Color.white.opacity(0.2), lineWidth: 1))
                 }
                 .buttonStyle(TuiPress())
                 Button { seasonTab = 0; showSeason = true } label: {
@@ -193,10 +195,10 @@ struct LobbyView: View {
                         Text("\(min(110, t.sx?.xp ?? 0))/110").font(.jk(13, .heavy)).foregroundColor(.white)
                         Spacer()
                     }
-                    .padding(.horizontal, 6).frame(width: 200, height: 28).background(CS.panel.opacity(0.75)).overlay(Rectangle().stroke(CS.gold.opacity(0.7), lineWidth: 1))
+                    .padding(.horizontal, 6).frame(width: 200, height: 24).background(CS.panel.opacity(0.75)).overlay(Rectangle().stroke(CS.gold.opacity(0.7), lineWidth: 1))
                 }
                 .buttonStyle(TuiPress())
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 1) {
                     menuRow("cart.fill", "SHOP", col: CS.orange) { seasonTab = 2; showSeason = true }
                     menuRow("scope", "MISSIONS") { seasonTab = 0; showSeason = true }
                     menuRow("person.3.fill", "FRIENDS") { showAdmin = true }
@@ -206,8 +208,8 @@ struct LobbyView: View {
                 }
                 .padding(.top, 4)
             }
-            .frame(width: 210, alignment: .topLeading)
-            .position(x: 16 + 105, y: 58 + 150)
+            .frame(width: 210, height: 240, alignment: .topLeading)
+            .position(x: 16 + 105, y: 58 + 120)
             // right column
             VStack(spacing: 6) {
                 Button { nav.tacMode = 6; screen = 1 } label: {
@@ -227,44 +229,9 @@ struct LobbyView: View {
                 .buttonStyle(TuiPress())
                 chestRow("scope", "\(t.kills % 50)/50", Color(red: 0.95, green: 0.2, blue: 0.5))
                 chestRow("trophy.fill", "\(t.wins % 3)/3", Color(red: 0.1, green: 0.8, blue: 0.5))
-                HStack(spacing: 8) {
-                    Button { seasonTab = 2; showSeason = true } label: { CSHex(icon: "arrow.triangle.2.circlepath", col: CS.gold, size: 46, dot: true, label: "SPIN") }.buttonStyle(TuiPress())
-                    Button { seasonTab = 2; showSeason = true } label: { CSHex(icon: "rectangle.stack.fill", col: CS.gold, size: 46) }.buttonStyle(TuiPress())
-                    Button { seasonTab = 2; showSeason = true } label: { CSHex(icon: "gift.fill", col: .white, size: 46) }.buttonStyle(TuiPress())
-                    Button { seasonTab = 0; showSeason = true } label: { CSHex(icon: "shippingbox.fill", col: .cyan, size: 46, dot: true) }.buttonStyle(TuiPress())
-                }
             }
             .frame(width: rcw)
             .position(x: W - 16 - rcw / 2, y: 58 + 110)
-            // bottom row
-            HStack(spacing: 12) {
-                Text("SEASONAL\nDRAW").font(.system(size: 11, weight: .black, design: .rounded)).italic().foregroundColor(CS.orange).multilineTextAlignment(.center).fixedSize()
-                Button { showAdmin = true } label: {
-                    ZStack {
-                        Circle().fill(Color(red: 0.05, green: 0.15, blue: 0.1)).frame(width: 40, height: 40).overlay(Circle().stroke(Color.green, lineWidth: 2))
-                        SF("person.fill.viewfinder", "person.fill").font(.system(size: 18)).foregroundColor(.white)
-                    }
-                }
-                .buttonStyle(TuiPress())
-                Button { seasonTab = 2; showSeason = true } label: {
-                    ZStack {
-                        Image(systemName: "hexagon.fill").resizable().scaledToFit().foregroundColor(Color(red: 0.55, green: 0.42, blue: 0.0)).frame(width: 60, height: 60)
-                        Image(systemName: "hexagon").resizable().scaledToFit().foregroundColor(CS.gold).frame(width: 60, height: 60)
-                        VStack(spacing: 0) {
-                            Text("FREE").font(.jk(8, .heavy)).foregroundColor(.white)
-                            SF("shippingbox.fill", "gift.fill").font(.system(size: 20)).foregroundColor(.red)
-                        }
-                    }
-                }
-                .buttonStyle(TuiPress())
-                Text("LUCKY\nDRAW").font(.system(size: 11, weight: .black, design: .rounded)).italic().foregroundColor(Color(red: 0.7, green: 0.5, blue: 1)).multilineTextAlignment(.center).fixedSize()
-                SF("gift.fill").font(.system(size: 22)).foregroundColor(CS.gold)
-                VStack(spacing: 0) {
-                    SF("exclamationmark.triangle.fill").font(.system(size: 18)).foregroundColor(.red)
-                    Text("INACTIVE").font(.jk(6, .heavy)).foregroundColor(.white)
-                }
-            }
-            .position(x: W / 2, y: H - 30)
             // bottom buttons
             CSButton(title: "ARSENAL", w: 180, h: 40, size: 18, dot: true) { showAvatar = true }
                 .position(x: 16 + 90, y: H - 28)
@@ -295,36 +262,36 @@ struct LobbyView: View {
         let locked = TacRank.index(TacRank.totalXP(game.s.ex.tac ?? TacData())) + 1 < lockLv
         return Button { if !locked { nav.tacMode = i } } label: {
             VStack(spacing: 0) {
-                Text(TWeapons.modeNames[i]).font(.jk(15, .heavy)).foregroundColor(on ? col : .white)
-                    .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.7).frame(height: 42).padding(.top, 8)
+                Text(TWeapons.modeNames[i]).font(.jk(13, .heavy)).foregroundColor(on ? col : .white)
+                    .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.55).padding(.horizontal, 3).frame(height: 36).padding(.top, 4)
                 Spacer(minLength: 0)
                 ZStack {
-                    Image(systemName: "hexagon.fill").resizable().scaledToFit().foregroundColor(col.opacity(on ? 0.35 : 0.15)).frame(width: w * 0.62)
-                    SF(CS.modeIcons[i], "circle.fill").font(.system(size: w * 0.26, weight: .bold)).foregroundColor(on ? col : .white.opacity(0.75))
+                    Image(systemName: "hexagon.fill").resizable().scaledToFit().foregroundColor(col.opacity(on ? 0.35 : 0.15)).frame(width: w * 0.5)
+                    SF(CS.modeIcons[i], "circle.fill").font(.system(size: w * 0.2, weight: .bold)).foregroundColor(on ? col : .white.opacity(0.75))
                 }
                 Spacer(minLength: 0)
-                Text(CS.modeInfo[i]).font(.jk(10, .semibold)).foregroundColor(.white.opacity(0.6)).multilineTextAlignment(.center).lineLimit(2).padding(.horizontal, 8).frame(height: 28)
+                Text(CS.modeInfo[i]).font(.jk(9, .semibold)).foregroundColor(.white.opacity(0.6)).multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.8).padding(.horizontal, 4).frame(height: 24)
                 HStack(spacing: 4) {
                     Text("\(r.0)").font(.jk(14, .heavy))
                     SF("circle.hexagongrid.fill", "circle.fill").font(.system(size: 12)).foregroundColor(CS.gold)
                     Text("PER WIN").font(.jk(10, .heavy)).opacity(0.8)
                 }
-                .foregroundColor(.white).padding(.top, 4)
+                .foregroundColor(.white).padding(.top, 2)
                 HStack(spacing: 4) {
                     Text("\(r.1)").font(.jk(14, .heavy))
                     SF("diamond.fill").font(.system(size: 12)).foregroundColor(Color(red: 0.7, green: 0.35, blue: 1))
                     Text("PER WIN").font(.jk(10, .heavy)).opacity(0.8)
                 }
-                .foregroundColor(.white).padding(.vertical, 4).padding(.bottom, 6)
+                .foregroundColor(.white).padding(.vertical, 2).padding(.bottom, 4)
             }
             .overlay {
                 if locked {
                     ZStack {
                         Color.black.opacity(0.6)
                         VStack(spacing: 4) {
-                            SF("lock.fill").font(.system(size: 24)).foregroundColor(.white)
-                            Text("REQUIRED LEVEL").font(.jk(9, .heavy)).foregroundColor(.white)
-                            Text("\(lockLv)").font(.jk(20, .heavy)).foregroundColor(.white)
+                            SF("lock.fill").font(.system(size: 20)).foregroundColor(.white)
+                            Text("REQUIRED LEVEL").font(.jk(8, .heavy)).foregroundColor(.white).lineLimit(1).minimumScaleFactor(0.6)
+                            Text("\(lockLv)").font(.jk(18, .heavy)).foregroundColor(.white)
                         }
                     }
                 }
@@ -343,8 +310,8 @@ struct LobbyView: View {
         return ZStack {
             VStack(spacing: 0) {
                 CSHeader(title: "GAME MODE", cash: game.s.ex.gems, coins: t.wins) { screen = 0 }.padding(.top, 8)
-                Spacer(minLength: 8)
-                HStack(spacing: 7) { ForEach(modeOrder, id: \.self) { modeCard($0, cw, H * 0.6) } }
+                Spacer(minLength: 4)
+                HStack(spacing: 7) { ForEach(modeOrder, id: \.self) { modeCard($0, cw, max(150, H - 170)) } }
                 Spacer(minLength: 0)
             }
             HStack(spacing: 8) {
@@ -357,7 +324,7 @@ struct LobbyView: View {
                     .buttonStyle(TuiPress())
                 }
             }
-            .position(x: W / 2, y: H - 36)
+            .position(x: W / 2, y: H - 30)
             if nav.tacMode != 6 {
                 HStack(spacing: 8) {
                     ForEach([0, 2, 3], id: \.self) { k in
@@ -369,13 +336,13 @@ struct LobbyView: View {
                         .buttonStyle(TuiPress())
                     }
                 }
-                .position(x: W / 2, y: H - 76)
+                .position(x: W / 2, y: H - 80)
             } else {
-                Text("MAP: THE WOODS").font(.jk(11, .heavy)).foregroundColor(CS.gold).position(x: W / 2, y: H - 76)
+                Text("MAP: THE WOODS").font(.jk(11, .heavy)).foregroundColor(CS.gold).position(x: W / 2, y: H - 80)
             }
-            CSButton(title: "CREATE SQUAD", w: 190, h: 44, size: 16) { showAdmin = true }.position(x: 90, y: H - 36)
-            CSButton(title: "PLAY", col: CS.orange, dark: CS.orangeDark, w: 190, h: 46, size: 26) { searchT = 0; screen = 2 }
-                .position(x: W - 120, y: H - 36)
+            CSButton(title: "CREATE SQUAD", w: 180, h: 40, size: 16) { showAdmin = true }.position(x: 100, y: H - 30)
+            CSButton(title: "PLAY", col: CS.orange, dark: CS.orangeDark, w: 180, h: 42, size: 26) { searchT = 0; screen = 2 }
+                .position(x: W - 110, y: H - 30)
         }
         .padding(.horizontal, 6)
     }
