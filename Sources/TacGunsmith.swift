@@ -348,11 +348,13 @@ enum TAttBuild {
 struct GunPreview3D: UIViewRepresentable {
     let gid: String
     let sig: String
+    var yaw: Double = 0
 
     final class Coord {
         var last = ""
         let holder = MXNode()
         let spin = MXNode()
+        var yaw: Float = 0
     }
 
     func makeCoordinator() -> Coord { Coord() }
@@ -394,12 +396,13 @@ struct GunPreview3D: UIViewRepresentable {
         c.spin.addChildNode(c.holder)
         sc.rootNode.addChildNode(c.spin)
         v.preRender = { [weak c] t in
-            c?.spin.eulerAngles = MXVector3(0, Float(sin(t * 0.7)) * 0.38, 0)
+            c?.spin.eulerAngles = MXVector3(0, (c?.yaw ?? 0) + Float(sin(t * 0.7)) * 0.38, 0)
         }
         return v
     }
 
     func updateUIView(_ v: MXView, context: Context) {
+        context.coordinator.yaw = Float(yaw)
         let key = gid + "#" + sig
         guard context.coordinator.last != key else { return }
         context.coordinator.last = key

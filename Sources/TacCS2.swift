@@ -518,6 +518,7 @@ struct CSKillcam: View {
             } else {
                 CSButton(title: "CHANGE LOADOUT", w: 150, h: 30, size: 11) { changeLoadout() }.position(x: W - 100, y: 70)
             }
+            if e.gameMode == 7 { FrontSpawnPicker(e: e).position(x: W / 2, y: H - 86) }
             if e.replayOn && e.gameMode != 6 {
                 CSButton(title: "REPLAY", w: 120, h: 36, size: 14) { e.replayAgain() }.position(x: W / 2 - 75, y: H - 128)
                 CSButton(title: "RESPAWN", col: CS.orange, dark: CS.orangeDark, w: 130, h: 36, size: 14) { e.respawnNow() }.position(x: W / 2 + 70, y: H - 128)

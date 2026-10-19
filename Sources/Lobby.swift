@@ -20,8 +20,8 @@ struct LobbyView: View {
     @State private var fromMatch = false
     @State private var gsBack = 6
     @State private var opsBack = 0
-    private let modeOrder = [1, 4, 5, 0, 3, 2, 6]
-    private let modeLock = [4, 1, 6, 5, 1, 3, 1]
+    private let modeOrder = [7, 1, 4, 5, 0, 3, 2, 6]
+    private let modeLock = [4, 1, 6, 5, 1, 3, 1, 1]
 
     private let lime = TUI.accent
     private let diffNames = ["EASY", "NORMAL", "HARD"]
@@ -43,9 +43,11 @@ struct LobbyView: View {
                     case 8: CSStash(back: { screen = 0 }, ops: { opsBack = 8; screen = 9 })
                     case 9: CSOps(back: { screen = opsBack })
                     case 10: CSMarket(back: { screen = 0 })
+                    case 11: workPage(t, g.size)
+                    case 12: custPage(t, g.size)
                     case 5: CSLeague(rating: t.rating, cash: game.s.ex.gems, coins: t.wins) { screen = 0 }
                     case 6:
-                        CSLoadout(gun: $nav.tacGun, countdown: fromMatch ? cd : nil, showBattle: fromMatch, gunsmith: fromMatch ? nil : { gsBack = 6; screen = 7 }, ok: { if fromMatch { beginMatch() } else { screen = 4 } }, battle: { beginMatch() })
+                        if !fromMatch { loadoutPage(t, g.size) } else { CSLoadout(gun: $nav.tacGun, countdown: fromMatch ? cd : nil, showBattle: fromMatch, gunsmith: fromMatch ? nil : { gsBack = 6; screen = 7 }, ok: { if fromMatch { beginMatch() } else { screen = 4 } }, battle: { beginMatch() }) }
                     default: homeScreen(t, g.size)
                     }
                 }
@@ -102,7 +104,7 @@ struct LobbyView: View {
     }
 
     private func startLoading() {
-        TMap.load(nav.tacMode == 6 ? 4 : nav.tacMap)
+        TMap.load((nav.tacMode == 6 || nav.tacMode == 7) ? 4 : nav.tacMap)
         mapImg = TacRadar.image(1)
         loadP = 0
         screen = 3
@@ -130,123 +132,57 @@ struct LobbyView: View {
 
     private func homeScreen(_ t: TacData, _ size: CGSize) -> some View {
         TacLeague.myRating = t.rating
-        let xp = TacRank.totalXP(t)
-        let ri = TacRank.index(xp)
-        let next = min(TacRank.ranks.count - 1, ri + 1)
-        let W = size.width, H = size.height
-        let rcw: CGFloat = 250
-        return ZStack {
-            AvatarSoldierPreview(style: TacAvatar.style(TacAvatar.myKey), rank: ri, gun: nav.tacGun)
-                .frame(width: W * 0.36, height: H * 0.9)
-                .position(x: W * 0.5, y: H * 0.5)
-                .allowsHitTesting(false)
-            // top bar
-            HStack(alignment: .top) {
-                HStack(spacing: 12) {
-                    Button { showStats = true } label: { SF("gearshape.2.fill", "gearshape.fill").font(.system(size: 20)).foregroundColor(.white) }.buttonStyle(TuiPress())
-                    Button { showAdmin = true } label: { SF("envelope.fill").font(.system(size: 20)).foregroundColor(.white) }.buttonStyle(TuiPress())
-                }
-                .frame(width: 110, alignment: .leading)
-                Spacer(minLength: 0)
-                Button { showRanks = true } label: {
-                    VStack(spacing: 2) {
-                        HStack(spacing: 8) {
-                            TacRankTile(idx: ri, size: 26, progress: TacRank.progress(xp), showName: false)
-                            Text(username).font(.jk(13, .heavy)).foregroundColor(.white).lineLimit(1).minimumScaleFactor(0.6).frame(maxWidth: 110)
-                            LeagueBadge(rating: t.rating, size: 18)
-                            Text("LEVEL \(ri + 1)" + ((t.prestige ?? 0) > 0 ? " P\(t.prestige ?? 0)" : "")).font(.jk(12, .heavy)).foregroundColor(.white).fixedSize()
-                        }
-                        ZStack {
-                            Rectangle().fill(Color.white.opacity(0.18))
-                            GeometryReader { gg in Rectangle().fill(Color(red: 0.2, green: 0.75, blue: 0.3)).frame(width: gg.size.width * CGFloat(TacRank.progress(xp))) }
-                            Text("\(xp)/\(TacRank.ranks[next].xp)").font(.jk(9, .heavy)).foregroundColor(.white)
-                        }
-                        .frame(width: 220, height: 12)
-                    }
-                }
-                .buttonStyle(TuiPress())
-                Spacer(minLength: 0)
-                CSCurrency(cash: game.s.ex.gems, coins: t.wins).frame(width: 150, alignment: .trailing)
+        return LobbyShell(active: 0, size: size, t: t, act: { homeAct($0) }) {
+            LobbyHome(t: t, size: LS.area(size), diff: $diff, act: { homeAct($0) })
+        }
+    }
+
+    private func loadoutPage(_ t: TacData, _ size: CGSize) -> some View {
+        LobbyShell(active: 2, size: size, t: t, act: { homeAct($0) }) {
+            LoadoutHome(t: t, size: LS.area(size), act: { homeAct($0) })
+        }
+    }
+
+    private func custPage(_ t: TacData, _ size: CGSize) -> some View {
+        LobbyShell(active: 1, size: size, t: t, act: { homeAct($0) }) {
+            CustomizeHome(t: t, size: LS.area(size), act: { homeAct($0) })
+        }
+    }
+
+    private func workPage(_ t: TacData, _ size: CGSize) -> some View {
+        LobbyShell(active: 3, size: size, t: t, act: { homeAct($0) }) {
+            CSWorkshop(t: t, size: LS.area(size), act: { homeAct($0) }, playMap: {
+                nav.tacMap = 5
+                if nav.tacMode == 6 || nav.tacMode == 7 { nav.tacMode = 1 }
+                searchT = 0
+                screen = 2
+            })
+        }
+    }
+
+    private func homeAct(_ a: LobbyAct) {
+        switch a {
+        case .nav(let i):
+            switch i {
+            case 0: screen = 0
+            case 1: screen = 12
+            case 2: fromMatch = false; screen = 6
+            case 3: screen = 11
+            case 4: showRanks = true
+            case 5: showAdmin = true
+            case 6: seasonTab = 2; showSeason = true
+            default: showStats = true
             }
-            .padding(.top, 6).padding(.horizontal, 4)
-            .frame(width: W, height: 56, alignment: .top)
-            .position(x: W / 2, y: 28)
-            // left column
-            VStack(alignment: .leading, spacing: 6) {
-                Button { screen = 5 } label: {
-                    HStack(spacing: 8) {
-                        TacRankTile(idx: ri, size: 36, progress: TacRank.progress(xp), showName: false)
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack(spacing: 4) {
-                                SF("trophy.fill").font(.system(size: 11)).foregroundColor(CS.gold)
-                                Text("\(t.rating)").font(.jk(14, .heavy)).foregroundColor(.white)
-                            }
-                            ZStack(alignment: .leading) {
-                                Rectangle().fill(Color.white.opacity(0.15))
-                                Rectangle().fill(CS.blue).frame(width: 70 * CGFloat(TacRank.progress(xp)))
-                            }
-                            .frame(width: 70, height: 6)
-                        }
-                        Spacer(minLength: 0)
-                        SF("shippingbox.fill", "gift.fill").font(.system(size: 26)).foregroundColor(CS.orange)
-                    }
-                    .padding(5).frame(width: 200).background(CS.panel.opacity(0.75)).overlay(Rectangle().stroke(Color.white.opacity(0.2), lineWidth: 1))
-                }
-                .buttonStyle(TuiPress())
-                Button { seasonTab = 0; showSeason = true } label: {
-                    HStack {
-                        Text("BATTLE PASS").font(.jk(9, .heavy)).foregroundColor(.black).padding(.horizontal, 5).padding(.vertical, 2).background(Rectangle().fill(CS.gold))
-                        Spacer()
-                        Text("\(min(110, t.sx?.xp ?? 0))/110").font(.jk(13, .heavy)).foregroundColor(.white)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 6).frame(width: 200, height: 24).background(CS.panel.opacity(0.75)).overlay(Rectangle().stroke(CS.gold.opacity(0.7), lineWidth: 1))
-                }
-                .buttonStyle(TuiPress())
-                VStack(alignment: .leading, spacing: 0) {
-                    menuRow("cart.fill", "SHOP", col: CS.orange) { seasonTab = 2; showSeason = true }
-                    menuRow("scope", "MISSIONS") { seasonTab = 0; showSeason = true }
-                    menuRow("wrench.and.screwdriver.fill", "GUNSMITH", col: CS.gold) { gsBack = 0; screen = 7 }
-                    menuRow("cart.badge.plus", "MARKET", col: CS.gold) { screen = 10 }
-                    menuRow("doc.text.fill", "OPERATIONS") { opsBack = 0; screen = 9 }
-                    menuRow("bag.fill", "STASH") { screen = 8 }
-                    menuRow("person.3.fill", "FRIENDS") { showAdmin = true }
-                    menuRow("shield.lefthalf.filled", "MY CLAN", dot: true) { showRanks = true }
-                    menuRow("trophy.fill", "LEADERBOARD", dot: true) { showRanks = true }
-                }
-                .frame(width: 200, alignment: .leading)
-                .padding(.top, 2)
-            }
-            .frame(width: 220, height: 268, alignment: .topLeading)
-            .position(x: 16 + 110, y: 58 + 134)
-            // right column
-            VStack(spacing: 6) {
-                Button { nav.tacMode = 6; screen = 1 } label: {
-                    HStack(spacing: 0) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("NEW MODE").font(.jk(9, .heavy)).foregroundColor(.white).padding(.horizontal, 6).padding(.vertical, 2).background(Rectangle().fill(Color.red))
-                            Text("EXTRACTION").font(.jk(17, .heavy)).foregroundColor(CS.orange).lineLimit(1).minimumScaleFactor(0.7)
-                            Text("Harbor Complex · huge map · extract alive").font(.jk(9, .bold)).foregroundColor(.white.opacity(0.8)).lineLimit(1)
-                        }
-                        Spacer(minLength: 0)
-                        SF("scope", "circle.fill").font(.system(size: 40, weight: .bold)).foregroundColor(Color(red: 0.55, green: 0.9, blue: 0.2).opacity(0.9))
-                    }
-                    .padding(10).frame(width: rcw, height: 78)
-                    .background(LinearGradient(colors: [Color(red: 0.05, green: 0.12, blue: 0.08), Color.black], startPoint: .top, endPoint: .bottom))
-                    .overlay(Rectangle().stroke(CS.orange, lineWidth: 1.5))
-                }
-                .buttonStyle(TuiPress())
-                chestRow("scope", "\(t.kills % 50)/50", Color(red: 0.95, green: 0.2, blue: 0.5))
-                chestRow("trophy.fill", "\(t.wins % 3)/3", Color(red: 0.1, green: 0.8, blue: 0.5))
-                contractRow()
-            }
-            .frame(width: rcw)
-            .position(x: W - 16 - rcw / 2, y: 58 + 110)
-            // bottom buttons
-            CSButton(title: "ARSENAL", w: 180, h: 40, size: 18, dot: true) { showAvatar = true }
-                .position(x: 16 + 90, y: H - 28)
-            CSButton(title: "BATTLE", col: CS.orange, dark: CS.orangeDark, w: 180, h: 40, size: 20) { screen = 1 }
-                .position(x: W - 16 - 90, y: H - 28)
+        case .screen(let s):
+            if s == 2 { searchT = 0 }
+            if s == 7 { gsBack = 0 }
+            screen = s
+        case .season(let tb): seasonTab = tb; showSeason = true
+        case .avatar: showAvatar = true
+        case .friends: showAdmin = true
+        case .ranks: showRanks = true
+        case .stats: showStats = true
+        case .loadout: fromMatch = false; screen = 6
         }
     }
 
@@ -334,7 +270,7 @@ struct LobbyView: View {
 
     private func modeScreen(_ t: TacData, _ size: CGSize) -> some View {
         let W = size.width, H = size.height
-        let cw = min(140, (W - 60 - 6 * 7) / 7)
+        let cw = min(140, (W - 60 - 7 * 7) / 8)
         return ZStack {
             VStack(spacing: 0) {
                 CSHeader(title: "GAME MODE", cash: game.s.ex.gems, coins: t.wins) { screen = 0 }.padding(.top, 8)
@@ -353,9 +289,11 @@ struct LobbyView: View {
                 }
             }
             .position(x: W / 2, y: H - 30)
-            if nav.tacMode != 6 {
+            if nav.tacMode == 7 {
+                FrontClassPicker().position(x: W / 2, y: H - 80)
+            } else if nav.tacMode != 6 {
                 HStack(spacing: 8) {
-                    ForEach([0, 2, 3], id: \.self) { k in
+                    ForEach([0, 2, 3, 5], id: \.self) { k in
                         Button { nav.tacMap = k } label: {
                             Text(TMap.mapNames[k]).font(.jk(11, .heavy)).foregroundColor(nav.tacMap == k ? .black : .white.opacity(0.85))
                                 .padding(.horizontal, 12).frame(height: 28)
@@ -452,7 +390,7 @@ struct LobbyView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(TMap.mapNames[woods ? 2 : nav.tacMap]).font(.jk(34, .heavy)).lineLimit(1).minimumScaleFactor(0.6).foregroundColor(.white)
+                                Text(TMap.mapNames[(woods || m == 7) ? 4 : nav.tacMap]).font(.jk(34, .heavy)).lineLimit(1).minimumScaleFactor(0.6).foregroundColor(.white)
                                 Text(TWeapons.modeNames[m]).font(.jk(22, .heavy)).foregroundColor(CS.modeCols[m])
                             }
                             Spacer()
@@ -461,7 +399,7 @@ struct LobbyView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("• \(m == 6 ? "Extract with your loot to keep it" : (m == 0 ? "First to 3 rounds wins" : "First to the kill target wins"))")
                             Text("• \(m == 6 ? "Die and the bag is lost" : "5 minutes time limit")")
-                            Text("• \(m == 6 ? "Solo raid vs AI squads" : "Up to 10 players")")
+                            Text("• \(m == 6 ? "Solo raid vs AI squads" : (m == 7 ? "60 combatants · 5 capture points" : "Up to 10 players"))")
                         }
                         .font(.jk(14, .semibold)).foregroundColor(.white).padding(.top, 8)
                         Spacer(minLength: 0)

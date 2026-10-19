@@ -16,24 +16,6 @@ struct TacData: Codable, Hashable {
 
 // MARK: - Geometry
 
-func tSegT(_ a: CGPoint, _ b: CGPoint, _ r: CGRect) -> CGFloat? {
-    var t0: CGFloat = 0
-    var t1: CGFloat = 1
-    let d: [(CGFloat, CGFloat, CGFloat, CGFloat)] = [(b.x - a.x, a.x, r.minX, r.maxX), (b.y - a.y, a.y, r.minY, r.maxY)]
-    for (p, q, lo, hi) in d {
-        if abs(p) < 1e-9 {
-            if q < lo || q > hi { return nil }
-        } else {
-            var ta = (lo - q) / p
-            var tb = (hi - q) / p
-            if ta > tb { swap(&ta, &tb) }
-            t0 = max(t0, ta)
-            t1 = min(t1, tb)
-            if t0 > t1 { return nil }
-        }
-    }
-    return t0
-}
 
 func tDist(_ a: CGPoint, _ b: CGPoint) -> CGFloat { hypot(a.x - b.x, a.y - b.y) }
 
@@ -163,8 +145,52 @@ enum TNav {
     }
 
     static func clear(_ a: CGPoint, _ b: CGPoint) -> Bool {
-        for o in TMap.baseSolid where tSegT(a, b, o.insetBy(dx: -15, dy: -15)) != nil { return false }
-        return true
+        var blocked = false
+        TGrid.forEachSeg(a, b) { k in
+            if k < TMap.baseSolid.count && tSegT(a, b, TMap.baseSolid[k].insetBy(dx: -15, dy: -15)) != nil { blocked = true; return true }
+            return false
+        }
+        return !blocked
+    }
+
+    private static var gsB: [Int32] = []
+    private static var cameB: [Int32] = []
+    private static var seenB: [UInt32] = []
+    private static var closedB: [UInt32] = []
+    private static var genB: UInt32 = 0
+    private static var heapF: [Int32] = []
+    private static var heapI: [Int32] = []
+
+    private static func hpush(_ f: Int32, _ i: Int32) {
+        heapF.append(f); heapI.append(i)
+        var c = heapF.count - 1
+        while c > 0 {
+            let p = (c - 1) / 2
+            if heapF[p] <= heapF[c] { break }
+            heapF.swapAt(p, c); heapI.swapAt(p, c)
+            c = p
+        }
+    }
+
+    private static func hpop() -> Int32? {
+        guard !heapF.isEmpty else { return nil }
+        let top = heapI[0]
+        let lastF = heapF.removeLast(), lastI = heapI.removeLast()
+        if !heapF.isEmpty {
+            heapF[0] = lastF; heapI[0] = lastI
+            var c = 0
+            let n = heapF.count
+            while true {
+                let l = 2 * c + 1, r = l + 1
+                var m = c
+                if l < n && heapF[l] < heapF[m] { m = l }
+                if r < n && heapF[r] < heapF[m] { m = r }
+                if m == c { break }
+                heapF.swapAt(m, c); heapI.swapAt(m, c)
+                c = m
+            }
+        }
+        return top
     }
 
     static func path(_ from: CGPoint, _ to: CGPoint) -> [CGPoint] {
@@ -172,44 +198,52 @@ enum TNav {
         let g = nearestFree(idx(to))
         if s == g { return [to] }
         let n = cols * rows
-        var gs = [Int](repeating: Int.max, count: n)
-        var came = [Int](repeating: -1, count: n)
-        var closed = [Bool](repeating: false, count: n)
-        var open: [Int] = [s]
-        gs[s] = 0
-        let gc = g % cols, gr = g / cols
-        func h(_ i: Int) -> Int {
-            let dx = abs(i % cols - gc), dy = abs(i / cols - gr)
-            return 10 * (dx + dy) - 6 * min(dx, dy)
+        if gsB.count != n {
+            gsB = [Int32](repeating: 0, count: n)
+            cameB = [Int32](repeating: -1, count: n)
+            seenB = [UInt32](repeating: 0, count: n)
+            closedB = [UInt32](repeating: 0, count: n)
+            genB = 0
         }
+        genB &+= 1
+        if genB == 0 {
+            for i in 0..<n { seenB[i] = 0; closedB[i] = 0 }
+            genB = 1
+        }
+        let gen = genB
+        heapF.removeAll(keepingCapacity: true)
+        heapI.removeAll(keepingCapacity: true)
+        let gc = g % cols, gr = g / cols
+        @inline(__always) func h(_ i: Int) -> Int32 {
+            let dx = abs(i % cols - gc), dy = abs(i / cols - gr)
+            return Int32(10 * (dx + dy) - 6 * min(dx, dy))
+        }
+        gsB[s] = 0; seenB[s] = gen; cameB[s] = -1
+        hpush(h(s), Int32(s))
         var found = false
         var guardN = 0
-        while !open.isEmpty && guardN < 9000 {
+        while let ci = hpop(), guardN < 40000 {
             guardN += 1
-            var bi = 0
-            var bf = Int.max
-            for (k, o) in open.enumerated() {
-                let f = gs[o] + h(o)
-                if f < bf { bf = f; bi = k }
-            }
-            let cur = open.remove(at: bi)
+            let cur = Int(ci)
             if cur == g { found = true; break }
-            if closed[cur] { continue }
-            closed[cur] = true
+            if closedB[cur] == gen { continue }
+            closedB[cur] = gen
             let c = cur % cols, r = cur / cols
+            let gcur = gsB[cur]
             for dc in -1...1 {
                 for dr in -1...1 {
                     if dc == 0 && dr == 0 { continue }
                     let nc = c + dc, nr = r + dr
                     if nc < 0 || nr < 0 || nc >= cols || nr >= rows { continue }
                     let ni = nr * cols + nc
-                    if blocked[ni] || closed[ni] { continue }
+                    if blocked[ni] || closedB[ni] == gen { continue }
                     if dc != 0 && dr != 0 && (blocked[r * cols + nc] || blocked[nr * cols + c]) { continue }
-                    let cost = gs[cur] + (dc != 0 && dr != 0 ? 14 : 10)
-                    if cost < gs[ni] {
-                        gs[ni] = cost
-                        came[ni] = cur
-                        open.append(ni)
+                    let cost = gcur + (dc != 0 && dr != 0 ? 14 : 10)
+                    if seenB[ni] != gen || cost < gsB[ni] {
+                        seenB[ni] = gen
+                        gsB[ni] = cost
+                        cameB[ni] = Int32(cur)
+                        hpush(cost + h(ni), Int32(ni))
                     }
                 }
             }
@@ -217,7 +251,7 @@ enum TNav {
         guard found else { return [to] }
         var cells: [Int] = []
         var k = g
-        while k != -1 { cells.append(k); k = came[k] }
+        while k != -1 { cells.append(k); k = Int(cameB[k]) }
         cells.reverse()
         var pts = cells.map { center($0) }
         pts.append(to)
@@ -278,6 +312,8 @@ final class TPlayer {
     var trophies = 0
     var site = 0
     var spotted = false
+    var cls = 0   // frontline class: 0 assault 1 medic 2 support 3 recon 4 engineer
+    var fl = 0    // frontline squad id (0 none)
     var seenEver = false
     var onStair = false
     var knife = false
@@ -426,7 +462,19 @@ final class TacticalEngine {
     var cpProg: [CGFloat] = [0, 0, 0]
     var cpT: CGFloat = 0
     var rivalScore: Int { gameMode == 4 ? (scores.dropFirst().max() ?? 0) : scores[1] }
-    var cpZones: [CGRect] { [TMap.site(0), TMap.site(1), TMap.hubZone] }
+    var cpZones: [CGRect] { gameMode == 7 ? TFront.zones : [TMap.site(0), TMap.site(1), TMap.hubZone] }
+    static var flClass: Int {
+        get { max(0, min(4, UserDefaults.standard.integer(forKey: "ms.flclass"))) }
+        set { UserDefaults.standard.set(newValue, forKey: "ms.flclass") }
+    }
+    var flSpawn = -1          // -1 base, 0..4 owned point, 10 squad mate
+    var flChat: [FLMsg] = []
+    var flAuraT: CGFloat = 0.5
+    var flAuraN = 0
+    var flChatT: CGFloat = 9
+    var flBleedT: CGFloat = 2
+    var flMeZone = -1
+    var flOwner: [Int] = [-1, -1, -1, -1, -1]
     var gameMode = 0
     var killTarget = 30
     struct Loot { var pos: CGPoint; var id: String; var taken: Bool }
@@ -539,16 +587,16 @@ final class TacticalEngine {
     func setup(gun: String, diff: Int, mode: Int = 0) {
         self.diff = diff
         gameMode = mode
-        TMap.load(mode == 6 ? 4 : mapPick)
+        TMap.load((mode == 6 || mode == 7) ? 4 : mapPick)
         tags = []
         myGun = gun
-        let nb = mode == 6 ? 36 : 9
+        let nb = mode == 6 ? 36 : (mode == 7 ? TFront.bots : 9)
         var names: [(String, String, String)] = TacRoster.pick(nb)
         while names.count < nb { let k = names.count + 1; names.append(("Recruit \(k)", "recruit\(k)", "")) }
         players = [TPlayer(id: 0, team: 0, name: TacProfile.name, handle: "you", emoji: "", isPlayer: true)]
         players[0].trophies = TacLeague.myRating
         for i in 0..<nb {
-            let bp = TPlayer(id: i + 1, team: i < 4 ? 0 : 1, name: names[i].0, handle: names[i].1, emoji: names[i].2, isPlayer: false)
+            let bp = TPlayer(id: i + 1, team: mode == 7 ? (i < (nb - 1) / 2 ? 0 : 1) : (i < 4 ? 0 : 1), name: names[i].0, handle: names[i].1, emoji: names[i].2, isPlayer: false)
             bp.rank = TacRoster.rank(of: names[i].1)
             bp.trophies = max(0, TacLeague.myRating + Int.random(in: -400...900) + (Int.random(in: 0..<8) == 0 ? Int.random(in: 1000...6000) : 0))
             players.append(bp)
@@ -560,6 +608,12 @@ final class TacticalEngine {
             scores = Array(repeating: 0, count: 10)
         }
         if mode == 6 { for p in players { p.team = p.isPlayer ? 0 : 1 } }
+        if mode == 7 {
+            killTarget = TFront.tickets
+            TFront.prepare()
+            TFront.assign(players)
+            flChat = []; flSpawn = -1; flChatT = 9; flBleedT = 2; flAuraT = 0.5; flAuraN = 0
+        }
         round = 0
         phase = 0
         over = false
@@ -594,11 +648,11 @@ final class TacticalEngine {
         var ai = 0, di = 0
         var defBots = 0
         let brSpawns = TMap.spawns.shuffled()
-        let spreadPts = gameMode != 0 && gameMode != 6 ? TMap.spreadPoints(players.count, sep: 700) : []
+        let spreadPts = gameMode != 0 && gameMode != 6 && gameMode != 7 ? TMap.spreadPoints(players.count, sep: 700) : []
         var spreadI = 0
         let raidPts = gameMode == 6 ? TMap.spreadPoints(players.count, sep: 650, avoid: [TMap.atkSpawn[2]], avoidDist: 1500) : []
         var raidI = 0
-        cpProg = [0, 0, 0]
+        cpProg = [CGFloat](repeating: 0, count: gameMode == 7 ? 5 : 3)
         cpT = 1.5
         for p in players {
             let survived = p.alive
@@ -660,7 +714,7 @@ final class TacticalEngine {
                 p.mag = magSize(p, p.gun)
                 p.spare = TWeapons.isPistol(p.gun) ? 99 : 2
                 if p.isPlayer {
-                    p.altGun = p.gun == "pistol" ? "eagle" : "pistol"
+                    p.altGun = TacticalEngine.altFor(p.gun)
                     p.altMag = magSize(p, p.altGun)
                     p.altSpare = 99
                     if gameMode == 6 { p.altGun = "pistol"; p.altMag = 15; p.altSpare = 99 }
@@ -748,7 +802,7 @@ final class TacticalEngine {
         }
         if phase == 0 {
             timer -= dt
-            if timer <= 0 { phase = 1; timer = gameMode == 0 ? 100 : (gameMode == 6 ? 99999 : 240); banner = gameMode == 6 ? "DEPLOYED" : "GO"; bannerT = 1 }
+            if timer <= 0 { phase = 1; timer = gameMode == 0 ? 100 : (gameMode == 6 ? 99999 : (gameMode == 7 ? TFront.minutes * 60 : 240)); banner = gameMode == 6 ? "DEPLOYED" : "GO"; bannerT = 1 }
             for p in players where !p.isPlayer { botLook(p, dt) }
             return
         }
@@ -780,7 +834,7 @@ final class TacticalEngine {
                 e.pingCd = max(0, e.pingCd - 0.1)
                 guard e.alive else { continue }
                 for a in players where a.team == me.team && a.alive {
-                    if TMap.pdist(a.pos, e.pos) < 900 && see(a.pos, e.pos) { e.spotted = true; e.seenEver = true; break }
+                    if TMap.pdist(a.pos, e.pos) < (gameMode == 7 && a.cls == 3 ? 1500 : 900) * (a.isPlayer ? TPerk.spotMul : 1) && see(a.pos, e.pos) { e.spotted = true; e.seenEver = true; break }
                 }
                 if e.spotted && !was && e.pingCd <= 0 {
                     e.pingCd = 4
@@ -896,6 +950,7 @@ final class TacticalEngine {
 
     private func respawnPlayer(_ p: TPlayer) {
         if p.isPlayer { rbuf.removeAll(); replayOn = false }
+        if gameMode == 7 { frontRespawn(p); return }
         var list = p.id % 2 == 0 ? TMap.atkSpawn : TMap.defSpawn
         if gameMode != 0 && gameMode != 6 { list = TMap.spreadPoints(14, sep: 500) + list }
         var best = list[0], bd: CGFloat = -1
@@ -914,13 +969,13 @@ final class TacticalEngine {
         else { setGun(p, p.isPlayer ? myGun : gunPick()) }
         if p.isPlayer {
             scoped = false; pitch = 0
-            p.altGun = p.gun == "pistol" ? "eagle" : "pistol"
+            p.altGun = TacticalEngine.altFor(p.gun)
             p.altMag = magSize(p, p.altGun)
             p.altSpare = 99
         }
     }
 
-    private func finishMatch(_ winner: Int) {
+    func finishMatch(_ winner: Int) {
         phase = 4
         over = true
         won = winner == me.team
@@ -950,7 +1005,10 @@ final class TacticalEngine {
             }
             tags = rest
         }
-        if gameMode == 3 {
+        if gameMode == 7 {
+            frontTick(dt)
+            if over { return }
+        } else if gameMode == 3 {
             if let w = players.first(where: { $0.ladder >= TWeapons.ladder.count }) { finishMatch(w.team); return }
         } else if let wi = scores.firstIndex(where: { $0 >= killTarget }) {
             finishMatch(wi); return
@@ -969,7 +1027,7 @@ final class TacticalEngine {
                 for i in 0..<3 { if cpProg[i] >= 1 { scores[0] += 1 } else if cpProg[i] <= -1 { scores[1] += 1 } }
             }
         }
-        if timer <= 0 {
+        if timer <= 0 && gameMode != 7 {
             if gameMode == 3 {
                 let a = players.filter { $0.team == 0 }.map { $0.ladder }.reduce(0, +)
                 let b = players.filter { $0.team == 1 }.map { $0.ladder }.reduce(0, +)
@@ -1161,7 +1219,7 @@ final class TacticalEngine {
         if p.isPlayer && gameMode == 6 && p.spare <= 0 && !TWeapons.isPistol(p.gun) && p.mag < magSize(p, p.gun) { raidFeedAmmo() }
         guard !p.knife, p.reloadT <= 0, p.mag < magSize(p, p.gun), p.spare > 0 else { return }
         let tierMul: CGFloat = (p.isPlayer && gameMode == 6) ? max(0.6, 1 - 0.05 * CGFloat(gunTier)) : 1
-        p.reloadT = g.reload * (p.isPlayer ? TAtt.mods(p.gun).reloadMul : 1) * tierMul
+        p.reloadT = g.reload * (p.isPlayer ? TAtt.mods(p.gun).reloadMul * TPerk.reloadMul : 1) * tierMul
     }
 
     private func finishReload(_ p: TPlayer) {
@@ -1285,9 +1343,10 @@ final class TacticalEngine {
             if let k = killer, k.isPlayer, k.team != victim.team, let msg = TacMeta.addMastery(k.gun) { pop(k.pos, msg, TUI.gold) }
             if gameMode == 6 && !victim.isPlayer { raidBotDrop(victim, by: owner) }
             if gameMode != 0 {
-                victim.respawn = gameMode == 6 ? 0 : (victim.isPlayer && replayOn ? 999 : 3)
+                victim.respawn = gameMode == 6 ? 0 : (victim.isPlayer && replayOn ? 999 : (gameMode == 7 ? 6 : 3))
                 if gameMode == 6 && victim.isPlayer { brPlace = players.filter { $0.alive }.count + 1; brEndT = 3 }
                 if (gameMode == 1 || gameMode == 4), let k = killer, k.team != victim.team { scores[k.team] += 1 }
+                if gameMode == 7 { scores[victim.team] += 1 }
                 if gameMode == 2 { tags.append(Tag(pos: victim.pos, team: victim.team, life: 25)) }
                 if gameMode == 3, let k = killer, k.team != victim.team {
                     k.ladder += 1
@@ -1317,10 +1376,13 @@ final class TacticalEngine {
             if b.life <= 0 { continue }
             var dead = false
             var hitK = -1
-            for k in TMap.floorIdx[TMap.floorOf(old)] where tSegT(old, b.pos, TMap.solid[k]) != nil {
+            let bnow = b.pos
+            TGrid.forEachSeg(old, bnow) { k in
+                guard tSegT(old, bnow, TMap.solid[k]) != nil else { return false }
                 let mt = TMap.solidMat[k]
-                if mt == .brick || mt == .concrete { TMap.hit(k, b.dmg * 0.9); dead = true; break }
+                if mt == .brick || mt == .concrete { TMap.hit(k, b.dmg * 0.9); dead = true; return true }
                 hitK = k
+                return false
             }
             if dead { continue }
             if hitK >= 0 {
@@ -1352,11 +1414,20 @@ final class TacticalEngine {
         for var n in nades {
             n.fuse -= dt
             var np = CGPoint(x: n.pos.x + n.vel.dx * dt, y: n.pos.y + n.vel.dy * dt)
-            for r in TMap.floorIdx[TMap.floorOf(n.pos)].map({ TMap.solid[$0] }) where r.contains(np) {
-                let tryX = CGPoint(x: n.pos.x + n.vel.dx * dt, y: n.pos.y)
-                if r.contains(tryX) { n.vel.dx = -n.vel.dx * 0.5 } else { n.vel.dy = -n.vel.dy * 0.5 }
+            let npc = np
+            let npos = n.pos
+            var bounce = false
+            var bx = false
+            TGrid.forEachNear(npc, 2) { k in
+                let r = TMap.solid[k]
+                guard r.contains(npc) else { return false }
+                bounce = true
+                bx = r.contains(CGPoint(x: npos.x + n.vel.dx * dt, y: npos.y))
+                return true
+            }
+            if bounce {
+                if bx { n.vel.dx = -n.vel.dx * 0.5 } else { n.vel.dy = -n.vel.dy * 0.5 }
                 np = n.pos
-                break
             }
             n.pos = np
             n.vel.dx *= pow(0.5, dt)
@@ -1478,6 +1549,7 @@ final class TacticalEngine {
 
     private func objective(_ p: TPlayer) -> CGPoint {
         if gameMode == 6 { return raidGoal(p) }
+        if gameMode == 7 { return frontGoal(p) }
         if gameMode == 5 {
             let zs = cpZones
             let notMine = (0..<3).filter { !(p.team == 0 ? cpProg[$0] >= 1 : cpProg[$0] <= -1) }
@@ -1721,6 +1793,16 @@ final class TacticalEngine {
             mg.fill(Path(d), with: .color(Color(red: 0.75, green: 0.55, blue: 0.28)))
         }
         let pulse = 0.5 + 0.5 * sin(Double(time) * 4)
+        if gameMode == 7 {
+            for (i, z) in cpZones.enumerated() {
+                let (c, edge) = clamp(P(z.midX, z.midY))
+                let pr = cpProg[i]
+                let col: Color = pr == 0 ? .gray : (pr > 0 ? Color(red: 0.3, green: 0.62, blue: 1) : Color(red: 1, green: 0.28, blue: 0.3))
+                g.fill(Path(ellipseIn: CGRect(x: c.x - 8, y: c.y - 8, width: 16, height: 16)), with: .color(Color.black.opacity(0.55)))
+                g.stroke(Path(ellipseIn: CGRect(x: c.x - 8, y: c.y - 8, width: 16, height: 16)), with: .color(col.opacity(edge ? 0.7 : 1)), lineWidth: 2)
+                g.draw(Text(["A", "B", "C", "D", "E"][i]).font(.system(size: 9, weight: .heavy)).foregroundColor(col), at: c)
+            }
+        }
         if gameMode == 5 {
             for (i, z) in cpZones.enumerated() {
                 let c = P(z.midX, z.midY)
@@ -2502,6 +2584,7 @@ struct TacticalPlay: View {
 
                     // top-center: roster with floor tags, score, objective, bomb location
                     HudScoreboard(e: e).frame(width: W).padding(.top, 2)
+                    if e.gameMode == 7 { FrontSide(e: e, W: W, H: H) }
 
                     // top-right: kill feed
                     HudFeed(e: e).padding(.trailing, 16).padding(.top, 84).frame(width: W, alignment: .trailing)

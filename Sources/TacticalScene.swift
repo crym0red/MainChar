@@ -407,6 +407,9 @@ final class TacScene {
     // MARK: build
 
     func build(_ e: TacticalEngine) {
+        MXRenderer.flatShade = TMap.kind == 4
+        MXGeometry.lowPolyCap = TMap.kind == 4 ? 10 : 64
+        defer { MXGeometry.lowPolyCap = 64 }
         let th = e.theme
         func C(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> UIColor { UIColor(red: r, green: g, blue: b, alpha: 1) }
         let skyCols: [UIColor] = TMap.look == 2 ? [C(0.35, 0.4, 0.5), C(0.65, 0.62, 0.6), C(0.9, 0.72, 0.5)] : TMap.look == 3 ? [C(0.3, 0.55, 0.9), C(0.72, 0.84, 0.95), C(0.98, 0.9, 0.7)] : TMap.look == 1 ? [C(0.42, 0.5, 0.58), C(0.66, 0.74, 0.78), C(0.82, 0.85, 0.8)] : th == 1 ? [C(0.02, 0.04, 0.12), C(0.05, 0.09, 0.2), C(0.12, 0.16, 0.3)] : (th == 2 ? [C(0.18, 0.07, 0.28), C(0.65, 0.25, 0.2), C(0.95, 0.55, 0.2)] : [C(0.25, 0.52, 0.9), C(0.62, 0.8, 0.96), C(0.95, 0.88, 0.72)])

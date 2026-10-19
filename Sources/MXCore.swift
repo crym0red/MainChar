@@ -149,6 +149,11 @@ class MXGeometry {
     }
     var meshData: MXMeshData? = nil
     var gpuMesh: AnyObject? = nil
+    /// global cap on round-shape segment counts (low-poly look); captured per geometry when it is created
+    static var lowPolyCap = 64
+    let capAtBuild = MXGeometry.lowPolyCap
+    /// geometries with the same key share one GPU mesh and can be drawn instanced
+    var cacheKey: String? { nil }
 
     init() {}
 
@@ -189,6 +194,7 @@ final class MXBox: MXGeometry {
     var length: CGFloat { didSet { invalidate() } }
     var chamferRadius: CGFloat { didSet { invalidate() } }
     var chamferSegmentCount = 2 { didSet { invalidate() } }
+    override var cacheKey: String? { "box|\(width)|\(height)|\(length)|\(chamferRadius)|\(chamferSegmentCount)" }
 
     init(width: CGFloat, height: CGFloat, length: CGFloat, chamferRadius: CGFloat) {
         self.width = width; self.height = height; self.length = length; self.chamferRadius = chamferRadius
@@ -249,6 +255,7 @@ final class MXBox: MXGeometry {
 final class MXPlane: MXGeometry {
     var width: CGFloat { didSet { invalidate() } }
     var height: CGFloat { didSet { invalidate() } }
+    override var cacheKey: String? { "plane|\(width)|\(height)" }
     init(width: CGFloat, height: CGFloat) { self.width = width; self.height = height; super.init() }
 
     override func build() -> MXMeshData {
@@ -281,11 +288,12 @@ private func lathe(_ md: MXMeshData, elem: Int, profile: [(Float, Float, Float, 
 final class MXSphere: MXGeometry {
     var radius: CGFloat { didSet { invalidate() } }
     var segmentCount = 24 { didSet { invalidate() } }
+    override var cacheKey: String? { "sph|\(radius)|\(segmentCount)|\(capAtBuild)" }
     init(radius: CGFloat) { self.radius = radius; super.init() }
 
     override func build() -> MXMeshData {
         let md = MXMeshData()
-        let seg = max(6, segmentCount)
+        let seg = max(5, min(capAtBuild, segmentCount))
         let rings = max(4, seg / 2)
         let r = Float(radius)
         var prof: [(Float, Float, Float, Float, Float)] = []
@@ -303,12 +311,13 @@ final class MXCylinder: MXGeometry {
     var radius: CGFloat { didSet { invalidate() } }
     var height: CGFloat { didSet { invalidate() } }
     var radialSegmentCount = 24 { didSet { invalidate() } }
+    override var cacheKey: String? { "cyl|\(radius)|\(height)|\(radialSegmentCount)|\(capAtBuild)" }
     init(radius: CGFloat, height: CGFloat) { self.radius = radius; self.height = height; super.init() }
 
     override func build() -> MXMeshData {
         let md = MXMeshData()
         let r = Float(radius), h = Float(height) / 2
-        let segs = max(6, radialSegmentCount)
+        let segs = max(5, min(capAtBuild, radialSegmentCount))
         lathe(md, elem: 0, profile: [(r, h, 1, 0, 0), (r, -h, 1, 0, 1)], segs: segs)
         lathe(md, elem: 1, profile: [(0, h, 0, 1, 0), (r, h, 0, 1, 1)], segs: segs)
         lathe(md, elem: 2, profile: [(r, -h, 0, -1, 0), (0, -h, 0, -1, 1)], segs: segs)
@@ -329,7 +338,7 @@ final class MXCone: MXGeometry {
     override func build() -> MXMeshData {
         let md = MXMeshData()
         let rt = Float(topRadius), rb = Float(bottomRadius), h = Float(height) / 2
-        let segs = max(6, radialSegmentCount)
+        let segs = max(5, min(capAtBuild, radialSegmentCount))
         let slope = (rb - rt) / (2 * h)
         let nl = sqrtf(1 + slope * slope)
         lathe(md, elem: 0, profile: [(rt, h, 1 / nl, slope / nl, 0), (rb, -h, 1 / nl, slope / nl, 1)], segs: segs)
@@ -364,7 +373,7 @@ final class MXCapsule: MXGeometry {
             let y = -hh + r * cosf(phi)
             prof.append((r * sinf(phi), y, sinf(phi), cosf(phi), (Float(height) / 2 - y) / total))
         }
-        lathe(md, elem: 0, profile: prof, segs: max(6, radialSegmentCount))
+        lathe(md, elem: 0, profile: prof, segs: max(5, min(capAtBuild, radialSegmentCount)))
         return md
     }
 }
@@ -416,7 +425,7 @@ final class MXTube: MXGeometry {
     override func build() -> MXMeshData {
         let md = MXMeshData()
         let ri = Float(innerRadius), ro = Float(outerRadius), h = Float(height) / 2
-        let segs = max(6, radialSegmentCount)
+        let segs = max(5, min(capAtBuild, radialSegmentCount))
         lathe(md, elem: 0, profile: [(ro, h, 1, 0, 0), (ro, -h, 1, 0, 1)], segs: segs)
         lathe(md, elem: 1, profile: [(ri, h, -1, 0, 0), (ri, -h, -1, 0, 1)], segs: segs)
         lathe(md, elem: 2, profile: [(ri, h, 0, 1, 0), (ro, h, 0, 1, 1)], segs: segs)

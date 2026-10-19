@@ -183,7 +183,7 @@ extension TacticalEngine {
         var used = Set<Int>()
         for b in players.filter({ !$0.isPlayer }).shuffled() {
             if b.watchDoor { continue }
-            let chance: Int = gameMode == 6 ? (b.faction == 1 ? 90 : 0) : 22
+            let chance: Int = gameMode == 6 ? (b.faction == 1 ? 90 : 0) : (gameMode == 7 ? 0 : 22)
             guard Int.random(in: 0..<100) < chance else { continue }
             var order = Array(TMap.stairs.indices).filter { !used.contains($0) && TMap.stairIntact($0) }
             if gameMode == 6 {

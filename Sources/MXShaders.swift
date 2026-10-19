@@ -63,6 +63,27 @@ vertex VOut vs_main(VIn v [[stage_in]],
     return o;
 }
 
+vertex VOut vs_inst(VIn v [[stage_in]],
+                    constant FrameU& f [[buffer(1)]],
+                    constant NodeU* ns [[buffer(2)]],
+                    uint iid [[instance_id]]) {
+    VOut o;
+    NodeU n = ns[iid];
+    float4 wp = n.model * float4(v.pos, 1.0);
+    o.pos = f.viewProj * wp;
+    o.wpos = wp.xyz;
+    o.nrm = (n.normalM * float4(v.nrm, 0.0)).xyz;
+    o.uv = v.uv;
+    return o;
+}
+
+vertex float4 vs_shadow_inst(VIn v [[stage_in]],
+                             constant FrameU& f [[buffer(1)]],
+                             constant NodeU* ns [[buffer(2)]],
+                             uint iid [[instance_id]]) {
+    return f.lightVP * (ns[iid].model * float4(v.pos, 1.0));
+}
+
 vertex float4 vs_shadow(VIn v [[stage_in]],
                         constant FrameU& f [[buffer(1)]],
                         constant NodeU& n [[buffer(2)]]) {
@@ -140,6 +161,11 @@ fragment float4 fs_main(VOut in [[stage_in]],
     float3 N = normalize(in.nrm);
     float3 V = normalize(f.camPos.xyz - in.wpos);
     if (m.flags2.x > 0.5 && dot(N, V) < 0.0) { N = -N; }
+    if (f.shadowInfo.w > 0.5) {
+        // low-poly look: every face is lit by its true face normal
+        float3 fn = normalize(cross(dfdx(in.wpos), dfdy(in.wpos)));
+        N = (dot(fn, V) < 0.0) ? -fn : fn;
+    }
 
     int model = int(m.params.w + 0.5);
     float3 col;

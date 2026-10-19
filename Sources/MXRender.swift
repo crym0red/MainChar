@@ -44,9 +44,11 @@ final class MXGPU {
         var opaque: MTLRenderPipelineState?
         var blended: MTLRenderPipelineState?
         var sky: MTLRenderPipelineState?
+        var opaqueI: MTLRenderPipelineState?
     }
     private var pipes: [Int: Pipes] = [:]
     var shadowPipe: MTLRenderPipelineState?
+    var shadowInstPipe: MTLRenderPipelineState?
     var brightPipe: MTLRenderPipelineState?
     var blurPipe: MTLRenderPipelineState?
     private var compPipes: [UInt: MTLRenderPipelineState] = [:]
@@ -144,6 +146,10 @@ final class MXGPU {
         if pipes[samples] == nil { buildPipes(samples) }
         return pipes[samples]?.blended
     }
+    func opaqueInstPipe(samples: Int) -> MTLRenderPipelineState? {
+        if pipes[samples] == nil { buildPipes(samples) }
+        return pipes[samples]?.opaqueI
+    }
     func skyPipe(samples: Int) -> MTLRenderPipelineState? {
         if pipes[samples] == nil { buildPipes(samples) }
         return pipes[samples]?.sky
@@ -154,9 +160,11 @@ final class MXGPU {
         p.opaque = make("opaque", vs: "vs_main", fs: "fs_main", color: .rgba16Float, depth: true, samples: s, vertex: true)
         p.blended = make("blended", vs: "vs_main", fs: "fs_main", color: .rgba16Float, depth: true, samples: s, blend: true, vertex: true)
         p.sky = make("sky", vs: "vs_full", fs: "fs_sky", color: .rgba16Float, depth: true, samples: s)
+        p.opaqueI = make("opaqueI", vs: "vs_inst", fs: "fs_main", color: .rgba16Float, depth: true, samples: s, vertex: true)
         pipes[s] = p
         if shadowPipe == nil {
             shadowPipe = make("shadow", vs: "vs_shadow", fs: nil, color: nil, depth: true, samples: 1, vertex: true)
+            shadowInstPipe = make("shadowI", vs: "vs_shadow_inst", fs: nil, color: nil, depth: true, samples: 1, vertex: true)
             brightPipe = make("bright", vs: "vs_full", fs: "fs_bright", color: .rgba16Float, depth: false, samples: 1)
             blurPipe = make("blur", vs: "vs_full", fs: "fs_blur", color: .rgba16Float, depth: false, samples: 1)
         }
@@ -285,6 +293,7 @@ final class MXView: UIView, MTKViewDelegate {
 
 final class MXRenderer {
     static var maxScale: CGFloat = 2.0
+    static var flatShade = false
     static var flipWinding: Bool = UserDefaults.standard.bool(forKey: "ms.mx.flip")
     static var shadowSize = 2048
 
@@ -303,6 +312,7 @@ final class MXRenderer {
     // scratch uniform memory
     private let frameU = UnsafeMutablePointer<SIMD4<Float>>.allocate(capacity: 44)
     private let nodeU = UnsafeMutablePointer<simd_float4x4>.allocate(capacity: 2)
+    private let nodeI = UnsafeMutablePointer<simd_float4x4>.allocate(capacity: 64)
     private let matU = UnsafeMutablePointer<SIMD4<Float>>.allocate(capacity: 8)
     private let post0 = UnsafeMutablePointer<SIMD4<Float>>.allocate(capacity: 2)
 
@@ -317,6 +327,7 @@ final class MXRenderer {
         var dist: Float
         var blended: Bool
         var matKey: Int
+        var meshKey: Int = 0
     }
 
     private var opaque: [Item] = []
@@ -333,7 +344,7 @@ final class MXRenderer {
     private var shadowOn = false
 
     deinit {
-        frameU.deallocate(); nodeU.deallocate(); matU.deallocate(); post0.deallocate()
+        frameU.deallocate(); nodeU.deallocate(); nodeI.deallocate(); matU.deallocate(); post0.deallocate()
     }
 
     // MARK: matrices
@@ -417,11 +428,35 @@ final class MXRenderer {
 
     // MARK: scene gather
 
+    private var meshCache: [String: MXGPUMesh] = [:]
+
     private func gpuMesh(_ g: MXGeometry) -> MXGPUMesh? {
         if let m = g.gpuMesh as? MXGPUMesh { return m }
+        if let k = g.cacheKey, let m = meshCache[k] { g.gpuMesh = m; return m }
         guard let d = gpu.device, let m = MXGPUMesh(g.mesh(), device: d) else { return nil }
         g.gpuMesh = m
+        if let k = g.cacheKey { meshCache[k] = m }
         return m
+    }
+
+    /// identical materials (same colours, textures and flags) hash the same so their draws can be merged
+    private func matSig(_ m: MXMaterial) -> Int {
+        var h = Hasher()
+        func prop(_ p: MXMaterialProperty) {
+            if let c = p.color { h.combine(c.x); h.combine(c.y); h.combine(c.z); h.combine(c.w) } else { h.combine(-1.0 as Float) }
+            if let i = p.image { h.combine(ObjectIdentifier(i)) }
+            h.combine(Float(p.intensity))
+            h.combine(p.contentsTransform.sx)
+            h.combine(p.contentsTransform.sy)
+        }
+        prop(m.diffuse); prop(m.normal); prop(m.multiply); prop(m.reflective); prop(m.emission); prop(m.specular)
+        h.combine(Float(m.shininess))
+        h.combine(Float(m.transparency))
+        h.combine(m.lightingModel)
+        h.combine(m.isDoubleSided)
+        h.combine(m.writesToDepthBuffer)
+        h.combine(m.readsFromDepthBuffer)
+        return h.finalize()
     }
 
     private func normalMatrix(_ m: simd_float4x4) -> simd_float4x4 {
@@ -431,6 +466,8 @@ final class MXRenderer {
         let n = simd_transpose(simd_inverse(r))
         return simd_float4x4(columns: (SIMD4<Float>(n.columns.0, 0), SIMD4<Float>(n.columns.1, 0), SIMD4<Float>(n.columns.2, 0), SIMD4<Float>(0, 0, 0, 1)))
     }
+
+    private var cullDist: Float = .infinity
 
     private func gather(_ n: MXNode, _ pw: simd_float4x4, _ op: Float, _ weapon: Bool, _ cam: MXNode) {
         if n.isHidden { return }
@@ -462,16 +499,16 @@ final class MXRenderer {
                     }
                 }
             }
-            if weapon || visible(c, rad) {
+            let dist = simd_length(c - camPos)
+            if weapon || (dist - rad < cullDist && visible(c, rad)) {
                 let nm = normalMatrix(w)
-                let dist = simd_length(c - camPos)
                 for e in 0..<mesh.counts.count where mesh.counts[e] > 0 {
                     guard let m = g.material(for: e) else { continue }
                     let alpha = Float(m.transparency) * o * (m.diffuse.color?.w ?? 1)
                     if alpha <= 0.003 { continue }
                     let bl = alpha < 0.999 || !m.writesToDepthBuffer
                     let it = Item(mesh: mesh, elem: e, mat: m, model: w, normalM: nm, alpha: alpha, order: n.renderingOrder, dist: dist,
-                                  blended: bl, matKey: ObjectIdentifier(m).hashValue)
+                                  blended: bl, matKey: matSig(m) &+ Int(alpha * 1000), meshKey: ObjectIdentifier(mesh).hashValue)
                     if weapon { if bl { wBlended.append(it) } else { wOpaque.append(it) } }
                     else { if bl { blended.append(it) } else { opaque.append(it) } }
                 }
@@ -581,10 +618,20 @@ final class MXRenderer {
             ensureShadow()
         }
 
+        cullDist = scene.fogEndDistance > scene.fogStartDistance ? Float(scene.fogEndDistance) * 1.1 : .infinity
         gather(scene.rootNode, matrix_identity_float4x4, 1, false, camNode)
 
         // sort
-        opaque.sort { $0.order != $1.order ? $0.order < $1.order : $0.matKey < $1.matKey }
+        opaque.sort {
+            if $0.order != $1.order { return $0.order < $1.order }
+            if $0.matKey != $1.matKey { return $0.matKey < $1.matKey }
+            if $0.meshKey != $1.meshKey { return $0.meshKey < $1.meshKey }
+            return $0.elem < $1.elem
+        }
+        shadowItems.sort {
+            let a = ObjectIdentifier($0.0).hashValue, b = ObjectIdentifier($1.0).hashValue
+            return a != b ? a < b : $0.1 < $1.1
+        }
         blended.sort { $0.order != $1.order ? $0.order < $1.order : $0.dist > $1.dist }
         wOpaque.sort { $0.order != $1.order ? $0.order < $1.order : $0.matKey < $1.matKey }
         wBlended.sort { $0.order != $1.order ? $0.order < $1.order : $0.dist > $1.dist }
@@ -631,7 +678,7 @@ final class MXRenderer {
             frameU[24 + i] = i < pts.count ? SIMD4<Float>(pts[i].1, pts[i].3) : SIMD4<Float>(0, 0, 0, 1)
         }
         frameU[32] = SIMD4<Float>(Float(dirs.count), Float(pts.count), shadowOn ? 1 : 0, 1 / Float(max(1, MXRenderer.shadowSize)))
-        frameU[33] = SIMD4<Float>(0.72, 1.4, 0.0012, 0)
+        frameU[33] = SIMD4<Float>(0.72, 1.4, 0.0012, MXRenderer.flatShade ? 1 : 0)
         if let sl = sunLight?.0, let sc = MXColor.linear(sl.shadowColor) { frameU[33].x = max(0.2, min(1, sc.w)) }
         put(34, simd_inverse(vp))
         let frameBytes = 38 * MemoryLayout<SIMD4<Float>>.stride
@@ -652,13 +699,35 @@ final class MXRenderer {
                 enc.setCullMode(.front)   // render back faces into the map to avoid acne
                 enc.setDepthBias(1.5, slopeScale: 2.5, clamp: 0.02)
                 enc.setVertexBytes(frameU, length: frameBytes, index: 1)
-                for (mesh, e, w) in shadowItems {
+                var instOn = false
+                var si = 0
+                while si < shadowItems.count {
+                    let (mesh, e, _) = shadowItems[si]
+                    var sj = si + 1
+                    while sj < shadowItems.count && sj - si < 32 && shadowItems[sj].0 === mesh && shadowItems[sj].1 == e { sj += 1 }
+                    defer { si = sj }
                     guard let ib = mesh.ibufs[e] else { continue }
-                    nodeU[0] = w
-                    nodeU[1] = matrix_identity_float4x4
+                    let useInst = sj - si >= 2 && gpu.shadowInstPipe != nil
+                    if useInst != instOn, let ip = gpu.shadowInstPipe {
+                        enc.setRenderPipelineState(useInst ? ip : sp)
+                        instOn = useInst
+                    }
                     enc.setVertexBuffer(mesh.vbuf, offset: 0, index: 0)
-                    enc.setVertexBytes(nodeU, length: 2 * MemoryLayout<simd_float4x4>.stride, index: 2)
-                    enc.drawIndexedPrimitives(type: .triangle, indexCount: mesh.counts[e], indexType: .uint32, indexBuffer: ib, indexBufferOffset: 0)
+                    if useInst {
+                        var n = 0
+                        for k in si..<sj {
+                            nodeI[n * 2] = shadowItems[k].2
+                            nodeI[n * 2 + 1] = matrix_identity_float4x4
+                            n += 1
+                        }
+                        enc.setVertexBytes(nodeI, length: n * 2 * MemoryLayout<simd_float4x4>.stride, index: 2)
+                        enc.drawIndexedPrimitives(type: .triangle, indexCount: mesh.counts[e], indexType: .uint32, indexBuffer: ib, indexBufferOffset: 0, instanceCount: n)
+                    } else {
+                        nodeU[0] = shadowItems[si].2
+                        nodeU[1] = matrix_identity_float4x4
+                        enc.setVertexBytes(nodeU, length: 2 * MemoryLayout<simd_float4x4>.stride, index: 2)
+                        enc.drawIndexedPrimitives(type: .triangle, indexCount: mesh.counts[e], indexType: .uint32, indexBuffer: ib, indexBufferOffset: 0)
+                    }
                 }
                 enc.endEncoding()
             }
@@ -726,7 +795,37 @@ final class MXRenderer {
             enc.drawIndexedPrimitives(type: .triangle, indexCount: it.mesh.counts[it.elem], indexType: .uint32, indexBuffer: ib, indexBufferOffset: 0)
         }
 
-        for it in opaque { draw(it) }
+        let instPipe = gpu.opaqueInstPipe(samples: samples)
+        func drawInst(_ a: Int, _ b: Int) {
+            let it = opaque[a]
+            guard let ib = it.mesh.ibufs[it.elem], let ip = instPipe else { for k in a..<b { draw(opaque[k]) }; return }
+            if lastPipe !== ip { enc.setRenderPipelineState(ip); lastPipe = ip }
+            let ds: MTLDepthStencilState?
+            if !it.mat.readsFromDepthBuffer { ds = gpu.dsNoRead }
+            else if !it.mat.writesToDepthBuffer { ds = gpu.dsNoWrite }
+            else { ds = gpu.dsOpaque }
+            if lastDS !== ds { enc.setDepthStencilState(ds); lastDS = ds }
+            let cull: MTLCullMode = it.mat.isDoubleSided ? .none : .back
+            if lastCull != cull { enc.setCullMode(cull); lastCull = cull }
+            var n = 0
+            for k in a..<b {
+                nodeI[n * 2] = opaque[k].model
+                nodeI[n * 2 + 1] = opaque[k].normalM
+                n += 1
+            }
+            enc.setVertexBuffer(it.mesh.vbuf, offset: 0, index: 0)
+            enc.setVertexBytes(nodeI, length: n * 2 * MemoryLayout<simd_float4x4>.stride, index: 2)
+            bind(enc, it.mat, alpha: it.alpha)
+            enc.drawIndexedPrimitives(type: .triangle, indexCount: it.mesh.counts[it.elem], indexType: .uint32, indexBuffer: ib, indexBufferOffset: 0, instanceCount: n)
+        }
+        var oi = 0
+        while oi < opaque.count {
+            let it = opaque[oi]
+            var oj = oi + 1
+            while oj < opaque.count && oj - oi < 32 && opaque[oj].matKey == it.matKey && opaque[oj].meshKey == it.meshKey && opaque[oj].elem == it.elem && opaque[oj].order == it.order { oj += 1 }
+            if oj - oi >= 2 { drawInst(oi, oj) } else { draw(it) }
+            oi = oj
+        }
         for it in blended { draw(it) }
 
         // first-person weapon: its own depth range so it never clips into walls

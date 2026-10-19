@@ -282,6 +282,16 @@ enum TwGunLib {
               let rs = top["rigs"] as? [String: Any] else { return }
         defs = md
         rigs = rs
+        TWorkshop.inject()
+    }
+
+    /// re-reads guns.json and re-applies Workshop sprite guns (drops cached custom meshes/materials)
+    static func reloadRigs() {
+        rigs = nil
+        worldCache = [:]
+        worldMuzzle = [:]
+        for i in 0..<sets.count { sets[i] = sets[i].filter { !$0.key.hasPrefix("cg") } }
+        load()
     }
 
     /// flattened gun-only model for soldiers (+x forward, grip at the origin); clone it per soldier

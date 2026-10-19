@@ -9,7 +9,7 @@ enum TMap {
     static let nFloors = 3
     static var W: CGFloat = 3000
     static var H: CGFloat = 1800
-    static var look: Int { kind == 4 ? 2 : kind }
+    static var look: Int { (kind == 4 || kind == 5) ? 2 : kind }
     static var totalW: CGFloat { off * 3 }
     static let th: CGFloat = 14
     static let wallH: CGFloat = 80
@@ -88,7 +88,7 @@ enum TMap {
 
     static func site(_ i: Int) -> CGRect { i == 0 ? siteA : siteB }
     static var siteNames: [String] { cur.siteNames }
-    static let mapNames = ["THE HOUSE", "THE WOODS", "WAREHOUSE YARD", "DESERT OUTPOST"]
+    static let mapNames = ["THE HOUSE", "THE WOODS", "WAREHOUSE YARD", "DESERT OUTPOST", "HARBOR COMPLEX", "CUSTOM MAP"]
 
     static func roomName(_ p: CGPoint) -> String {
         for r in rooms where r.r.contains(p) { return r.name }
@@ -194,6 +194,7 @@ enum TMap {
         case 2: cur = TWarehouse.shared
         case 3: cur = TDesert.shared
         case 4: cur = THarbor.shared
+        case 5: cur = TCustom.shared
         default: cur = THouse.shared
         }
         let d = cur
@@ -211,9 +212,10 @@ enum TMap {
         doorHold = [CGFloat](repeating: 0, count: d.layout.doors.count)
         resetTick += 1
         stairsReset()
+        TGrid.invalidate()
         TNav.reload()
     }
-    private static var needsApply = false
+    static var needsApply = false
 
     static func refreshDoors() {
         let b = baseSolid.count
@@ -294,14 +296,21 @@ enum TMap {
 
     static func los(_ a: CGPoint, _ b: CGPoint) -> Bool {
         if floorOf(a) != floorOf(b) { return crossLink(a, b) }
-        for k in floorIdx[floorOf(a)] where solidMat[k] != .glass && tSegT(a, b, solid[k]) != nil { return false }
-        return true
+        var hit = false
+        TGrid.forEachSeg(a, b) { k in
+            if solidMat[k] != .glass && tSegT(a, b, solid[k]) != nil { hit = true; return true }
+            return false
+        }
+        return !hit
     }
 
     static func rayDist(_ from: CGPoint, _ ang: CGFloat, _ maxD: CGFloat) -> CGFloat {
         let b = CGPoint(x: from.x + cos(ang) * maxD, y: from.y + sin(ang) * maxD)
         var best: CGFloat = 1
-        for k in floorIdx[floorOf(from)] where solidMat[k] != .glass { if let t = tSegT(from, b, solid[k]), t < best { best = t } }
+        TGrid.forEachSeg(from, b) { k in
+            if solidMat[k] != .glass, let t = tSegT(from, b, solid[k]), t < best { best = t }
+            return false
+        }
         return maxD * best
     }
 
@@ -310,7 +319,7 @@ enum TMap {
         let o = origin(fl)
         p.x = min(max(o + r, p.x), o + W - r)
         p.y = min(max(r, p.y), H - r)
-        for k in floorIdx[fl] {
+        TGrid.forEachNear(p, r + 2) { k in
             let o = solid[k]
             let cx = min(max(p.x, o.minX), o.maxX)
             let cy = min(max(p.y, o.minY), o.maxY)
@@ -320,11 +329,19 @@ enum TMap {
                 if d > 0.001 { p.x += dx / d * (r - d); p.y += dy / d * (r - d) }
                 else { p.y -= r }
             }
+            return false
         }
         pushRubble(&p, r)
     }
 
-    static func inSolid(_ p: CGPoint) -> Bool { solid.contains { $0.contains(p) } }
+    static func inSolid(_ p: CGPoint) -> Bool {
+        var hit = false
+        TGrid.forEachNear(p, 1) { k in
+            if solid[k].contains(p) { hit = true; return true }
+            return false
+        }
+        return hit
+    }
 }
 
 // MARK: - Map data

@@ -12,11 +12,11 @@ enum CS {
     static let gold = Color(red: 1.0, green: 0.78, blue: 0.2)
     static let modeCols: [Color] = [
         Color(red: 0.95, green: 0.7, blue: 0.1), Color(red: 0.2, green: 0.5, blue: 1), Color(red: 0.7, green: 0.3, blue: 1),
-        Color(red: 0.2, green: 0.85, blue: 0.4), Color(red: 1, green: 0.25, blue: 0.25), Color(red: 0.2, green: 0.85, blue: 0.9), Color(red: 0.55, green: 0.9, blue: 0.2)
+        Color(red: 0.2, green: 0.85, blue: 0.4), Color(red: 1, green: 0.25, blue: 0.25), Color(red: 0.2, green: 0.85, blue: 0.9), Color(red: 0.55, green: 0.9, blue: 0.2), Color(red: 0.25, green: 0.6, blue: 1)
     ]
-    static let modeIcons = ["timer", "person.2.fill", "tag.fill", "arrow.up.forward.circle.fill", "person.3.fill", "flag.fill", "scope"]
-    static let modeInfo = ["Plant or defuse the bomb.", "Team to 30 kills wins.", "Collect dog tags.", "Every kill upgrades your gun.", "Everyone for themselves.", "Hold zones A, B and C.", "Loot, fight AI, extract alive."]
-    static let modeReward = [(16, 24), (10, 14), (16, 20), (17, 20), (10, 14), (16, 20), (30, 40)]
+    static let modeIcons = ["timer", "person.2.fill", "tag.fill", "arrow.up.forward.circle.fill", "person.3.fill", "flag.fill", "scope", "shield.lefthalf.filled"]
+    static let modeInfo = ["Plant or defuse the bomb.", "Team to 30 kills wins.", "Collect dog tags.", "Every kill upgrades your gun.", "Everyone for themselves.", "Hold zones A, B and C.", "Loot, fight AI, extract alive.", "Capture A-E. Drain tickets."]
+    static let modeReward = [(16, 24), (10, 14), (16, 20), (17, 20), (10, 14), (16, 20), (30, 40), (24, 30)]
 }
 
 /// flat parallelogram-free button: gradient fill, white hairline, heavy caps
