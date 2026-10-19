@@ -211,10 +211,17 @@ enum TacRoster {
 struct AvatarSoldierPreview: UIViewRepresentable {
     let style: TwStyle
     var rank = 0
+    var gun = ""
+    var yaw: Double = 0
+    var zoom: Double = 1
+    var sway = true
 
     final class Coord {
         var last = ""
         var holder = MXNode()
+        var yaw: Float = 0
+        var zoom: Float = 1
+        var sway = true
     }
 
     func makeCoordinator() -> Coord { Coord() }
@@ -254,23 +261,33 @@ struct AvatarSoldierPreview: UIViewRepresentable {
 
         let holder = context.coordinator.holder
         sc.rootNode.addChildNode(holder)
-        v.preRender = { [weak holder] t in
-            holder?.eulerAngles = MXVector3(0, Float(sin(t * 0.98)) * 0.55, 0)
+        let co = context.coordinator
+        v.preRender = { [weak holder, weak co] t in
+            let y: Float = co?.yaw ?? 0
+            let sw: Float = (co?.sway ?? true) ? Float(sin(t * 0.98)) * 0.55 : 0
+            holder?.eulerAngles = MXVector3(0, y + sw, 0)
+            let z: Float = co?.zoom ?? 1
+            holder?.scale = MXVector3(z, z, z)
         }
         return v
     }
 
     func updateUIView(_ v: MXView, context: Context) {
+        context.coordinator.yaw = Float(yaw)
+        context.coordinator.zoom = Float(zoom)
+        context.coordinator.sway = sway
         let sig = (try? JSONEncoder().encode(style.look)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
-        let sig2 = sig + "#\(rank)"
+        let gid = gun.isEmpty ? "rifle" : gun
+        let sig2 = sig + "#\(rank)#" + gid + "#" + TAtt.viewSig(gid)
         guard context.coordinator.last != sig2 else { return }
         context.coordinator.last = sig2
         let h = context.coordinator.holder
         h.childNodes.forEach { $0.removeFromParentNode() }
         let sol = TwRig.soldier(team: UIColor(red: 0.3, green: 0.9, blue: 0.45, alpha: 1), style: style, rank: rank)
         for g in sol.variants { g.isHidden = true }
-        let rifle = TwRig.gunIdx("rifle")
+        let rifle = TwRig.gunIdx(gid)
         if rifle < sol.variants.count { sol.variants[rifle].isHidden = false }
+        TAtt.applyCamo(gid, set: 0)
         sol.root.position = MXVector3(0, -4, 0)
         h.addChildNode(sol.root)
     }

@@ -13,6 +13,7 @@ final class TwViewModel {
         let groups: [String: MXNode]
         let dirs: [String: MXVector3]
         let flash: MXNode?
+        var att: TAttNodes? = nil
     }
 
     private var rigs: [String: Rig] = [:]
@@ -25,6 +26,7 @@ final class TwViewModel {
     private var cycleDelay: Float = 0
     private var lastFlash = false
     private var lastGlove = UIColor.clear
+    private var lastAtt = ""
 
     static var gloveColor = UIColor(red: 0.165, green: 0.153, blue: 0.137, alpha: 1)
 
@@ -32,6 +34,9 @@ final class TwViewModel {
         root.scale = MXVector3(k, k, k)
         root.isHidden = true
         TwGunLib.load()
+        TwGunLib.vmMode = true
+        defer { TwGunLib.vmMode = false }
+        buildKnife()
         guard let rs = TwGunLib.rigs else { return }
         for (id, v) in rs {
             guard let rig = v as? [String: Any], let parts = rig["parts"] as? [[String: Any]] else { continue }
@@ -81,8 +86,65 @@ final class TwViewModel {
                 fl = f
             }
             root.addChildNode(gun)
-            rigs[id] = Rig(node: gun, groups: groups, dirs: dirs, flash: fl)
+            let attNodes = TAttBuild.build(id, into: gun, magHolder: groups["mag"], order: 1000)
+            rigs[id] = Rig(node: gun, groups: groups, dirs: dirs, flash: fl, att: attNodes)
         }
+    }
+
+    // MARK: knife
+
+    private var swing: Float = 0
+
+    private func kMat(_ key: String, _ r: Float, _ g: Float, _ b: Float) -> MXMaterial {
+        if let m = TwGunLib.vmMats[key] ?? TwGunLib.mats[key] { return m }
+        let m = MXMaterial()
+        m.diffuse.contents = UIColor(red: CGFloat(r), green: CGFloat(g), blue: CGFloat(b), alpha: 1)
+        return m
+    }
+
+    /// procedural combat knife in the same rig space as the guns (forward is -z, right is +x)
+    private func buildKnife() {
+        let steel = kMat("chrome", 0.72, 0.74, 0.77)
+        let dark = kMat("dark", 0.07, 0.075, 0.08)
+        let grip = kMat("grip", 0.09, 0.09, 0.1)
+        let glove = kMat("glove", 0.165, 0.153, 0.137)
+        func part(_ w: Float, _ h: Float, _ l: Float, _ x: Float, _ y: Float, _ z: Float, _ m: MXMaterial, _ c: Float = 0.08) -> MXNode {
+            let g = MXBox(width: CGFloat(w), height: CGFloat(h), length: CGFloat(l), chamferRadius: CGFloat(c))
+            g.firstMaterial = m
+            let n = MXNode(geometry: g)
+            n.position = MXVector3(x, y, z)
+            n.renderingOrder = 1000
+            n.castsShadow = false
+            return n
+        }
+        let gun = MXNode()
+        gun.isHidden = true
+        // everything is built around the fist at (9, -7.3, -27) so the whole knife can pitch about the hand
+        let kn = MXNode()
+        kn.position = MXVector3(9, -7.3, -27)
+        kn.eulerAngles = MXVector3(0.3, 0.06, 0)
+        // blade (stepped taper to a point) with a dark spine and a fuller line
+        kn.addChildNode(part(0.55, 3.9, 15, 0, 0.5, -11.5, steel, 0.05))
+        kn.addChildNode(part(0.5, 3.0, 4.2, 0, 0.2, -20.8, steel, 0.05))
+        kn.addChildNode(part(0.45, 2.0, 3.0, 0, -0.1, -23.4, steel, 0.04))
+        kn.addChildNode(part(0.4, 1.0, 2.2, 0, -0.3, -25.2, steel, 0.03))
+        kn.addChildNode(part(0.72, 0.5, 15, 0, 2.5, -11.5, dark, 0.04))
+        kn.addChildNode(part(0.62, 0.35, 11, 0, 0.9, -10.5, dark, 0.02))
+        // guard, handle, pommel
+        kn.addChildNode(part(5.2, 1.0, 1.5, 0, 0.2, -3.6, steel, 0.1))
+        kn.addChildNode(part(2.0, 2.5, 9.5, 0, 0, 1.2, grip, 0.25))
+        kn.addChildNode(part(2.5, 2.9, 1.1, 0, 0, 6.3, steel, 0.2))
+        for i in 0..<5 { kn.addChildNode(part(2.15, 0.28, 0.4, 0, 1.3, Float(-2 + i * 2), dark, 0.0)) }
+        // gloved fist wrapped around the handle, thumb and forearm
+        kn.addChildNode(part(3.9, 4.1, 5.2, 0, -0.1, 1.6, glove, 0.9))
+        kn.addChildNode(part(1.3, 1.4, 4.4, -1.9, 1.5, 0.2, glove, 0.5))
+        kn.addChildNode(part(3.0, 1.3, 4.0, 0.3, -2.2, -0.2, glove, 0.5))
+        gun.addChildNode(kn)
+        let fore = part(4.3, 4.5, 20, 11.8, -11.2, -13.5, glove, 1.0)
+        fore.eulerAngles = MXVector3(0.18, -0.1, 0)
+        gun.addChildNode(fore)
+        root.addChildNode(gun)
+        rigs["knife"] = Rig(node: gun, groups: [:], dirs: [:], flash: nil)
     }
 
     // MARK: runtime
@@ -91,7 +153,13 @@ final class TwViewModel {
         let gid = rigs[id] != nil ? id : "pistol"
         if TwViewModel.gloveColor != lastGlove {
             lastGlove = TwViewModel.gloveColor
-            TwGunLib.mats["glove"]?.diffuse.contents = TwViewModel.gloveColor
+            TwGunLib.vmMats["glove"]?.diffuse.contents = TwViewModel.gloveColor
+        }
+        let attKey = gid + "|" + TAtt.viewSig(gid)
+        if attKey != lastAtt {
+            lastAtt = attKey
+            TAtt.applyCamo(gid, set: 1)
+            for (key, r) in rigs { r.att?.apply(key) }
         }
         if gid == shown { return }
         shown = gid
@@ -128,7 +196,8 @@ final class TwViewModel {
         guard let r = rigs[shown] else { return }
         let shot = flashing && !lastFlash
         lastFlash = flashing
-        if shot {
+        if shot && shown == "knife" { swing = 1 }
+        if shot && shown != "knife" {
             slideK = 1
             recoil = min(1.5, recoil + 1)
             if shown == "pump" || shown == "awp" {
@@ -175,6 +244,15 @@ final class TwViewModel {
         let by = -abs(cos(t * 8)) * 0.18 * mv
         let ix = cos(t * 0.9) * 0.05
         let iy = sin(t * 1.7) * 0.05
+        if shown == "knife" {
+            swing = max(0, swing - dt * 2.7)
+            let s = 1 - swing                       // 0 -> 1 across the slash
+            let arc = sin(Float.pi * s) * (swing > 0 ? 1 : 0)
+            let sweep = (sm(0, 1, s) - 0.5) * 2     // -1 ... 1, right to left
+            root.position = MXVector3(bx + ix - (swing > 0 ? sweep * 9 : 0), by + iy + arc * 2.5, -arc * 9 + kick * 0.02)
+            root.eulerAngles = MXVector3(arc * -0.35, (swing > 0 ? sweep * 0.75 : 0), (swing > 0 ? sweep * -0.9 : 0))
+            return
+        }
         root.position = MXVector3(bx + ix + dip * 1.2,
                                    by + iy - dip * 4.5,
                                    kick * 0.02 + recoil * 0.9 * recoilScale)
@@ -185,7 +263,12 @@ final class TwViewModel {
 /// Shared weapon data: materials, parts and the third-person (soldier) gun templates.
 enum TwGunLib {
     static var defs: [String: [String: Any]] = [:]
-    static var mats: [String: MXMaterial] = [:]
+    /// 0 = shared (bots/world), 1 = first-person gun, 2 = gunsmith preview; separate instances so camo never leaks between them
+    static var sets: [[String: MXMaterial]] = [[:], [:], [:]]
+    static var setIdx = 0
+    static var mats: [String: MXMaterial] { get { sets[0] } set { sets[0] = newValue } }
+    static var vmMats: [String: MXMaterial] { get { sets[1] } set { sets[1] = newValue } }
+    static var vmMode: Bool { get { setIdx == 1 } set { setIdx = newValue ? 1 : 0 } }
     static var rigs: [String: Any]? = nil
     private static var worldCache: [String: MXNode] = [:]
     private static var worldMuzzle: [String: Float] = [:]
@@ -199,6 +282,16 @@ enum TwGunLib {
               let rs = top["rigs"] as? [String: Any] else { return }
         defs = md
         rigs = rs
+        TWorkshop.inject()
+    }
+
+    /// re-reads guns.json and re-applies Workshop sprite guns (drops cached custom meshes/materials)
+    static func reloadRigs() {
+        rigs = nil
+        worldCache = [:]
+        worldMuzzle = [:]
+        for i in 0..<sets.count { sets[i] = sets[i].filter { !$0.key.hasPrefix("cg") } }
+        load()
     }
 
     /// flattened gun-only model for soldiers (+x forward, grip at the origin); clone it per soldier
@@ -274,7 +367,7 @@ enum TwGunLib {
     }
 
     static func material(_ name: String) -> MXMaterial {
-        if let m = mats[name] { return m }
+        if let m = sets[setIdx][name] { return m }
         let d = defs[name] ?? [:]
         let c = (d["c"] as? [Double]) ?? [0.5, 0.5, 0.5]
         let m = MXMaterial()
@@ -303,7 +396,7 @@ enum TwGunLib {
             m.writesToDepthBuffer = false
             m.isDoubleSided = true
         }
-        mats[name] = m
+        sets[setIdx][name] = m
         return m
     }
 

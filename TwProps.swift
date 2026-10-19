@@ -522,6 +522,18 @@ final class TwProps {
             put(g, box(L * 0.76, 21, 0.3, pCol(0.25, 0.55, 0.95), glow: true), 0, 30.5, -D * 0.1 + 1.3)
             put(g, rb(L * 0.16, 3, 8, dark, 1, spec: 0.7), 0, 19.5, -D * 0.1)
             put(g, rb(L * 0.5, 2.6, 6, dark, 1.2, spec: 0.6), 0, 10, D / 2 + 1.2)
+        case .tree:
+            let trunk = pCol(0.3, 0.21, 0.13)
+            let h = 190 + CGFloat(hv % 5) * 12
+            put(g, cy(L * 0.36, h * 0.6, trunk, spec: 0.04, shin: 0.1), 0, h * 0.3, 0)
+            let leaf: [UIColor] = [pCol(0.13, 0.33, 0.15), pCol(0.17, 0.4, 0.17), pCol(0.11, 0.29, 0.14)]
+            put(g, rb(100, 52, 100, leaf[hv % 3], 9, spec: 0.04, shin: 0.1), 0, h * 0.5 + 26, 0, ry: CGFloat(hv % 7) * 0.2)
+            put(g, rb(76, 48, 76, leaf[(hv + 1) % 3], 8, spec: 0.04, shin: 0.1), 0, h * 0.5 + 66, 0, ry: 0.7)
+            put(g, rb(50, 44, 50, leaf[(hv + 2) % 3], 7, spec: 0.04, shin: 0.1), 0, h * 0.5 + 104, 0, ry: 0.3)
+        case .rock:
+            let gray = pCol(0.46, 0.47, 0.5)
+            put(g, rb(L, 34, D, gray, 10, spec: 0.1, shin: 0.2), 0, 17, 0)
+            put(g, rb(L * 0.62, 26, D * 0.62, pCol(0.52, 0.53, 0.55), 9, spec: 0.1, shin: 0.2), L * 0.1, 40, -D * 0.08, ry: 0.5)
         default:
             break
         }

@@ -24,6 +24,7 @@ private func ui(_ c: (CGFloat, CGFloat, CGFloat), _ k: CGFloat = 1) -> UIColor {
 // MARK: - Scene bridge
 
 final class TacScene {
+    var dollhouse = false
     let scene = MXScene()
     let view = MXView(frame: .zero)
     let camNode = MXNode()
@@ -41,6 +42,13 @@ final class TacScene {
     var debrisMats: [MXMaterial] = []
     var lastResetTick = 0
     var focusFloor = 0
+    var stackAnim: Float = 0
+    var stackPrev = -1
+    var stackT: Double = 0
+    let stackH: Float = 82
+    var linkedFloors = Set<Int>()
+    var stairNodes: [Int: [MXNode]] = [:]
+    var rubbleNodes: [Int: MXNode] = [:]
     var camFloor = 0
     var fpMode = false
     var fpFwd = CGPoint(x: 1, y: 0)
@@ -77,6 +85,13 @@ final class TacScene {
     var boomPool: [MXNode] = []
     var smokePool: [MXNode] = []
     var packNodes: [MXNode] = []
+    var lootNodes: [MXNode] = []
+    var dynNodes: [MXNode] = []
+    var evGas: MXNode? = nil
+    var evBeam: MXNode? = nil
+    var stormSegs: [[MXNode]] = [[], [], []]
+    var lastStormRad: CGFloat = -1
+    var lastStormC = CGPoint.zero
     let bombNode = MXNode()
 
     private var texCache: [String: UIImage] = [:]
@@ -272,6 +287,22 @@ final class TacScene {
         }
     }
 
+    private func grassTex() -> UIImage {
+        makeTex("grass") { g, s in
+            UIColor(red: 0.2, green: 0.34, blue: 0.15, alpha: 1).setFill(); g.fill(CGRect(x: 0, y: 0, width: s, height: s))
+            var r = LCG(s: 313)
+            for _ in 0..<40 {
+                UIColor(red: 0.3, green: 0.24, blue: 0.14, alpha: 0.18).setFill()
+                g.fillEllipse(in: CGRect(x: r.next() * s, y: r.next() * s, width: 8 + r.next() * 18, height: 6 + r.next() * 12))
+            }
+            for _ in 0..<520 {
+                let t = 0.7 + r.next() * 0.6
+                UIColor(red: 0.18 * t, green: 0.36 * t, blue: 0.14 * t, alpha: 0.85).setFill()
+                g.fill(CGRect(x: r.next() * s, y: r.next() * s, width: 1.5, height: 3 + r.next() * 4))
+            }
+        }
+    }
+
     private func siteTex(_ letter: String, _ w: CGFloat, _ h: CGFloat) -> UIImage {
         let sz = CGSize(width: w * 2, height: h * 2)
         return UIGraphicsImageRenderer(size: sz).image { c in
@@ -337,6 +368,28 @@ final class TacScene {
         return m
     }
 
+    /// splits a rect into the pieces left after removing the holes
+    private func carve(_ r: CGRect, _ holes: [CGRect]) -> [CGRect] {
+        var pieces = [r]
+        for h in holes {
+            var next: [CGRect] = []
+            for p in pieces {
+                let i = p.intersection(h)
+                if i.isNull || i.width < 0.5 || i.height < 0.5 { next.append(p); continue }
+                if i.minY > p.minY { next.append(CGRect(x: p.minX, y: p.minY, width: p.width, height: i.minY - p.minY)) }
+                if i.maxY < p.maxY { next.append(CGRect(x: p.minX, y: i.maxY, width: p.width, height: p.maxY - i.maxY)) }
+                if i.minX > p.minX { next.append(CGRect(x: p.minX, y: i.minY, width: i.minX - p.minX, height: i.height)) }
+                if i.maxX < p.maxX { next.append(CGRect(x: i.maxX, y: i.minY, width: p.maxX - i.maxX, height: i.height)) }
+            }
+            pieces = next
+        }
+        return pieces
+    }
+
+    private func stairHoles(_ floor: Int, upper: Bool) -> [CGRect] {
+        TMap.stairs.indices.filter { upper ? TMap.stairLo[$0] + 1 == floor : TMap.stairLo[$0] == floor }.map { TMap.stairRect($0, floor: floor) }
+    }
+
     private func box(_ r: CGRect, h: CGFloat, y0: CGFloat = 0, mats: [MXMaterial], chamfer: CGFloat = 0) -> MXNode {
         let g = MXBox(width: r.width, height: h, length: r.height, chamferRadius: chamfer)
         g.materials = mats
@@ -354,10 +407,13 @@ final class TacScene {
     // MARK: build
 
     func build(_ e: TacticalEngine) {
+        MXRenderer.flatShade = TMap.kind == 4
+        MXGeometry.lowPolyCap = TMap.kind == 4 ? 10 : 64
+        defer { MXGeometry.lowPolyCap = 64 }
         let th = e.theme
         func C(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> UIColor { UIColor(red: r, green: g, blue: b, alpha: 1) }
-        let skyCols: [UIColor] = th == 1 ? [C(0.02, 0.04, 0.12), C(0.05, 0.09, 0.2), C(0.12, 0.16, 0.3)] : (th == 2 ? [C(0.18, 0.07, 0.28), C(0.65, 0.25, 0.2), C(0.95, 0.55, 0.2)] : [C(0.25, 0.52, 0.9), C(0.62, 0.8, 0.96), C(0.95, 0.88, 0.72)])
-        let fogC: UIColor = th == 1 ? C(0.04, 0.06, 0.12) : (th == 2 ? C(0.22, 0.12, 0.12) : C(0.3, 0.28, 0.26))
+        let skyCols: [UIColor] = TMap.look == 2 ? [C(0.35, 0.4, 0.5), C(0.65, 0.62, 0.6), C(0.9, 0.72, 0.5)] : TMap.look == 3 ? [C(0.3, 0.55, 0.9), C(0.72, 0.84, 0.95), C(0.98, 0.9, 0.7)] : TMap.look == 1 ? [C(0.42, 0.5, 0.58), C(0.66, 0.74, 0.78), C(0.82, 0.85, 0.8)] : th == 1 ? [C(0.02, 0.04, 0.12), C(0.05, 0.09, 0.2), C(0.12, 0.16, 0.3)] : (th == 2 ? [C(0.18, 0.07, 0.28), C(0.65, 0.25, 0.2), C(0.95, 0.55, 0.2)] : [C(0.25, 0.52, 0.9), C(0.62, 0.8, 0.96), C(0.95, 0.88, 0.72)])
+        let fogC: UIColor = TMap.look == 2 ? C(0.55, 0.52, 0.5) : TMap.look == 3 ? C(0.85, 0.76, 0.6) : TMap.look == 1 ? C(0.6, 0.67, 0.65) : th == 1 ? C(0.04, 0.06, 0.12) : (th == 2 ? C(0.22, 0.12, 0.12) : C(0.3, 0.28, 0.26))
         let ambI: CGFloat = th == 1 ? 560 : (th == 2 ? 560 : 520)
         let ambC: UIColor = th == 1 ? C(0.55, 0.65, 0.95) : (th == 2 ? C(0.9, 0.65, 0.7) : C(0.78, 0.8, 0.9))
         let sunI: CGFloat = (th == 1 ? 500 : (th == 2 ? 900 : 1500)) * 0.5
@@ -370,8 +426,8 @@ final class TacScene {
         }
         scene.background.contents = skyImg
         scene.fogColor = fogC
-        scene.fogStartDistance = fpMode ? 1100 : 1400
-        scene.fogEndDistance = fpMode ? 3300 : 4200
+        scene.fogStartDistance = fpMode ? (TMap.look == 1 ? 450 : (TMap.look >= 2 ? 900 : 1100)) : 1400
+        scene.fogEndDistance = fpMode ? (TMap.look == 1 ? 2000 : (TMap.look >= 2 ? 3000 : 3300)) : 4200
         scene.fogDensityExponent = 1.4
         let root = scene.rootNode
         for i in 0..<3 {
@@ -415,7 +471,7 @@ final class TacScene {
         fill.look(at: MXVector3(0, 0, 0))
 
         let lampCols: [UIColor] = [C(0.75, 0.86, 1), C(1, 0.84, 0.58), C(1, 0.72, 0.46)]
-        for rm in TMap.rooms {
+        for rm in TMap.rooms where rm.mat < 6 {
             let n = max(1, Int(rm.r.width / 600))
             for j in 0..<n {
                 let lx = rm.r.minX + rm.r.width * (CGFloat(j) + 0.5) / CGFloat(n)
@@ -457,38 +513,49 @@ final class TacScene {
 
         // ceilings (only shown in first person)
         for i in 0..<3 {
-            let pl = MXPlane(width: 3000, height: 1800)
             let cm = MXMaterial()
             cm.diffuse.contents = UIColor(red: 0.72, green: 0.7, blue: 0.66, alpha: 1)
             cm.emission.contents = UIColor(red: 0.04, green: 0.04, blue: 0.04, alpha: 1)
             cm.isDoubleSided = true
-            pl.firstMaterial = cm
-            let cn = MXNode(geometry: pl)
-            cn.position = MXVector3(Float(1500 + TMap.origin(i)), Float(TMap.wallH) + 0.5, 900)
-            cn.eulerAngles = MXVector3(Float.pi / 2, 0, 0)
-            cn.castsShadow = false
+            let cn = MXNode()
+            let full = CGRect(x: TMap.origin(i), y: 0, width: TMap.W, height: TMap.H)
+            for pc in carve(full, stairHoles(i, upper: false)) {
+                let pl = MXPlane(width: pc.width, height: pc.height)
+                pl.firstMaterial = cm
+                let pn = MXNode(geometry: pl)
+                pn.position = MXVector3(Float(pc.midX), Float(TMap.wallH) + 0.5, Float(pc.midY))
+                pn.eulerAngles = MXVector3(Float.pi / 2, 0, 0)
+                pn.castsShadow = false
+                cn.addChildNode(pn)
+            }
             cn.isHidden = true
             floorRoot[i].addChildNode(cn)
             ceilNodes.append(cn)
         }
 
         // floors
-        let floorCols: [(CGFloat, CGFloat, CGFloat)] = [(0.72, 0.59, 0.41), (0.7, 0.6, 0.45), (0.5, 0.26, 0.2), (0.72, 0.5, 0.34), (0.4, 0.27, 0.17), (0.66, 0.56, 0.42)]
+        let floorCols: [(CGFloat, CGFloat, CGFloat)] = [(0.72, 0.59, 0.41), (0.7, 0.6, 0.45), (0.5, 0.26, 0.2), (0.72, 0.5, 0.34), (0.4, 0.27, 0.17), (0.66, 0.56, 0.42), (0.22, 0.36, 0.17), (0.38, 0.3, 0.2), (0.34, 0.35, 0.38)]
         for rm in TMap.floorTiles {
             let b = floorCols[rm.mat]
             let img: UIImage
             switch rm.mat {
+            case 6: img = grassTex()
+            case 7: img = noiseTex(b, "dirt7", dots: 2200, grid: false)
+            case 8: img = noiseTex(b, "asph8", dots: 3000, grid: true)
             case 0: img = noiseTex(b, "sand0", dots: 2600, grid: false)
             case 4: img = woodTex(b, "wood4")
             case 3, 5: img = tileTex(b, "tile\(rm.mat)")
             case 1: img = noiseTex(b, "slab", dots: 1800, grid: false)
             default: img = noiseTex(b, "carpet", dots: 1400, grid: false)
             }
-            let tile: CGFloat = rm.mat == 1 ? 140 : (rm.mat == 3 || rm.mat == 5 ? 112 : 128)
-            let top = mat(img, sx: rm.r.width / tile, sy: rm.r.height / tile)
+            let tile: CGFloat = rm.mat == 6 ? 170 : (rm.mat == 1 ? 140 : (rm.mat == 3 || rm.mat == 5 ? 112 : 128))
             let side = mat(nil, color: ui(b, 0.5))
-            let n = box(rm.r, h: 1, y0: -1, mats: [side, side, side, side, top, side])
-            fr(rm.r.midX).addChildNode(n)
+            let ffl = TMap.floorOfX(rm.r.midX)
+            for pc in carve(rm.r, stairHoles(ffl, upper: true)) {
+                let top = mat(img, sx: pc.width / tile, sy: pc.height / tile)
+                let n = box(pc, h: 1, y0: ["Woods", "Yard", "Desert", "Harbor"].contains(rm.name) ? -2 : (rm.name == "Ground" ? -1.5 : -1), mats: [side, side, side, side, top, side])
+                fr(pc.midX).addChildNode(n)
+            }
         }
         // rugs
         for rg in TMap.rugs {
@@ -498,7 +565,7 @@ final class TacScene {
             fr(rg.0.midX).addChildNode(n)
         }
         // sites
-        for i in 0..<2 {
+        for i in 0..<2 where TMap.look != 1 && TMap.kind != 4 {
             let r = TMap.site(i)
             let m = mat(siteTex(i == 0 ? "A" : "B", r.width, r.height))
             m.lightingModel = .constant
@@ -535,13 +602,17 @@ final class TacScene {
         let wallH = TMap.wallH
         let capMats = [C(0.4, 0.41, 0.44), C(0.92, 0.88, 0.8), C(0.5, 0.38, 0.26)].map { mat(nil, color: $0) }
         let solidWalls = [MXNode(), MXNode(), MXNode()]
+        let woodsMap = TMap.look >= 1
+        let bark = TMap.look == 3 ? noiseTex((0.78, 0.66, 0.46), "sandstone", dots: 2400, grid: false) : (TMap.look == 2 ? cinder : woodTex((0.34, 0.24, 0.15), "bark"))
         for (k, o) in TMap.walls.enumerated() {
             let wf = TMap.floorOfX(o.midX)
-            let img = wf == 0 ? cinder : (wf == 1 ? paper : plank)
+            let img = wf == 0 ? cinder : (wf == 1 ? (woodsMap ? bark : paper) : plank)
             let tile: CGFloat = wf == 1 ? 160 : 128
-            let front = mat(img, sx: o.width / tile, sy: wallH / tile)
-            let side = mat(img, sx: o.height / tile, sy: wallH / tile)
-            let n = box(o, h: wallH, mats: [front, side, front, side, capMats[wf], front])
+            let tall = woodsMap && wf == 1 && min(o.width, o.height) > 40
+            let hh: CGFloat = tall ? 260 : wallH
+            let front = mat(img, sx: o.width / tile, sy: hh / tile)
+            let side = mat(img, sx: o.height / tile, sy: hh / tile)
+            let n = box(o, h: hh, mats: [front, side, front, side, capMats[wf], front])
             if TMap.hp[k] > 0 { floorRoot[wf].addChildNode(n); breakNodes[k] = (n, floorRoot[wf]) }
             else { solidWalls[wf].addChildNode(n) }
         }
@@ -560,7 +631,15 @@ final class TacScene {
             debrisFloor.append(0)
         }
         // stairs
+        stairNodes = [:]
+        rubbleNodes = [:]
         for i in TMap.stairs.indices {
+            var stepNodes: [MXNode] = []
+            let lr = TMap.stairRect(i, floor: TMap.stairLo[i])
+            let rub = solid(lr.insetBy(dx: 3, dy: 3), h: 26, color: UIColor(red: 0.32, green: 0.29, blue: 0.26, alpha: 1), top: UIColor(red: 0.4, green: 0.37, blue: 0.33, alpha: 1))
+            rub.isHidden = true
+            fr(lr.midX).addChildNode(rub)
+            rubbleNodes[i] = rub
             for fl in TMap.stairLo[i]...(TMap.stairLo[i] + 1) {
                 let r = TMap.stairRect(i, floor: fl)
                 if fl == TMap.stairLo[i] {
@@ -572,11 +651,33 @@ final class TacScene {
                         let n = solid(sr, h: 3 + CGFloat(k) * 4.5, color: c, top: c)
                         n.castsShadow = false
                         fr(r.midX).addChildNode(n)
+                        stepNodes.append(n)
                     }
                 } else {
-                    let hole = solid(r, h: 1.2, y0: 0.4, color: UIColor(red: 0.04, green: 0.05, blue: 0.08, alpha: 1), top: UIColor(red: 0.04, green: 0.05, blue: 0.08, alpha: 1))
-                    hole.castsShadow = false
-                    fr(r.midX).addChildNode(hole)
+                    // open stairwell: descending steps below the floor line, dark walls around
+                    let wallC = UIColor(red: 0.2, green: 0.17, blue: 0.14, alpha: 1)
+                    let t: CGFloat = 3
+                    let deep = CGFloat(stackH) - 2
+                    for wr in [CGRect(x: r.minX - t, y: r.minY - t, width: r.width + 2 * t, height: t),
+                               CGRect(x: r.minX - t, y: r.maxY, width: r.width + 2 * t, height: t),
+                               CGRect(x: r.minX - t, y: r.minY, width: t, height: r.height),
+                               CGRect(x: r.maxX, y: r.minY, width: t, height: r.height)] {
+                        let w = solid(wr, h: deep, y0: -deep, color: wallC)
+                        w.castsShadow = false
+                        fr(r.midX).addChildNode(w)
+                    }
+                    let steps = 7
+                    let sh = r.height / CGFloat(steps)
+                    for k in 0..<steps {
+                        let sr = CGRect(x: r.minX, y: r.minY + CGFloat(k) * sh, width: r.width, height: sh + 0.5)
+                        let top = -(6 + CGFloat(k) * 11)
+                        let c = UIColor(red: 0.5 - 0.02 * CGFloat(k), green: 0.42 - 0.02 * CGFloat(k), blue: 0.3, alpha: 1)
+                        let n = solid(sr, h: 5, y0: top - 5, color: c, top: c)
+                        n.castsShadow = false
+                        fr(r.midX).addChildNode(n)
+                        stepNodes.append(n)
+                    }
+
                 }
                 let rail = UIColor(red: 0.95, green: 0.82, blue: 0.2, alpha: 1)
                 let glow = UIColor(red: 0.5, green: 0.42, blue: 0.08, alpha: 1)
@@ -585,6 +686,39 @@ final class TacScene {
                 l.castsShadow = false; rr.castsShadow = false
                 fr(r.midX).addChildNode(l)
                 fr(r.midX).addChildNode(rr)
+                stepNodes.append(l); stepNodes.append(rr)
+            }
+            stairNodes[i] = stepNodes
+        }
+        // harbor skyline: cranes, silos and towers rising behind the boundary
+        if TMap.kind == 4 {
+            var sr = SystemRandomNumberGenerator()
+            var seed: UInt64 = 91
+            func rnd() -> CGFloat { seed = seed &* 6364136223846793005 &+ 1442695040888963407; return CGFloat((seed >> 33) & 0xFFFF) / 65535 }
+            _ = sr.next()
+            let W = TMap.W, H = TMap.H, off = TMap.off
+            for i in 0..<110 {
+                let side = i % 4
+                let t = rnd()
+                let w = 90 + rnd() * 240, d = 90 + rnd() * 240
+                let hgt = 260 + rnd() * 760
+                var x: CGFloat, y: CGFloat
+                switch side {
+                case 0: x = t * W; y = -60 - rnd() * 500
+                case 1: x = t * W; y = H + 60 + rnd() * 500
+                case 2: x = -60 - rnd() * 500; y = t * H
+                default: x = W + 60 + rnd() * 500; y = t * H
+                }
+                let g = 0.22 + rnd() * 0.22
+                let col = i % 5 == 0 ? UIColor(red: 0.55, green: 0.25, blue: 0.15, alpha: 1) : UIColor(red: g, green: g * 1.05, blue: g * 1.2, alpha: 1)
+                let n = solid(CGRect(x: x + off, y: y, width: w, height: d), h: hgt, color: col, top: col)
+                n.castsShadow = false
+                floorRoot[1].addChildNode(n)
+                if i % 3 == 0 {
+                    let boom = solid(CGRect(x: x + off - w, y: y + d / 2 - 8, width: w * 3.2, height: 16), h: 18, y0: hgt, color: col, top: col)
+                    boom.castsShadow = false
+                    floorRoot[1].addChildNode(boom)
+                }
             }
         }
         // props
@@ -598,7 +732,7 @@ final class TacScene {
         }
         for f in 0..<3 { chunked(prG[f], into: floorRoot[f]) }
         for f in 0..<3 {
-            let rr = TMap.rooms.filter { $0.fl == f }.map { $0.r }
+            let rr = TMap.rooms.filter { $0.fl == f && $0.mat < 6 }.map { $0.r }
             floorRoot[f].addChildNode(props.decals(in: rr, avoid: TMap.baseSolid, seed: f + 1).flattenedClone())
         }
         // health packs
@@ -620,6 +754,119 @@ final class TacScene {
             fr(k.pos.x).addChildNode(g)
             packNodes.append(g)
         }
+        // cabin roofs
+        for rf in TMap.roofs {
+            let top = UIColor(red: 0.3, green: 0.21, blue: 0.14, alpha: 1)
+            let n = solid(rf.insetBy(dx: -8, dy: -8), h: 8, y0: TMap.wallH, color: UIColor(red: 0.38, green: 0.27, blue: 0.18, alpha: 1), top: top, chamfer: 1)
+            fr(rf.midX).addChildNode(n)
+        }
+        // battle royale: loot pickups and the storm wall
+        func lootColor(_ id: String) -> UIColor {
+            if id == "g:awp" || id == "g:ak" || id == "g:m4" || id == "armor:3" { return C(1, 0.78, 0.2) }
+            if id.hasPrefix("g:") || id.hasPrefix("armor") { return C(0.35, 0.65, 1) }
+            if id.hasPrefix("val") || id.hasPrefix("part") || id == "intel" || id == "key" { return C(1, 0.82, 0.2) }
+            if id.hasPrefix("vault") { return C(1, 0.45, 0.1) }
+            if id == "plate" { return C(0.3, 0.55, 1) }
+            if id == "band" || id == "kit" { return C(0.9, 0.95, 1) }
+            if id == "med" { return C(0.3, 0.95, 0.45) }
+            if id == "nade" { return C(1, 0.55, 0.2) }
+            return C(0.92, 0.92, 0.92)
+        }
+        let lootHold = [MXNode(), MXNode(), MXNode()]
+        for f in 0..<3 { floorRoot[f].addChildNode(lootHold[f]) }
+        for l in (e.gameMode == 6 ? Array(e.loot.prefix(TMap.lootSpots.count)) : e.loot) {
+            let g = MXNode()
+            let col = lootColor(l.id)
+            let isGun = l.id.hasPrefix("g:")
+            let body = MXNode(geometry: MXBox(width: isGun ? 24 : 12, height: isGun ? 5 : 12, length: isGun ? 7 : 12, chamferRadius: 1.5))
+            body.geometry?.firstMaterial = mat(nil, color: col, emission: col)
+            body.position = MXVector3(0, 16, 0)
+            body.castsShadow = false
+            let pad = MXNode(geometry: MXCylinder(radius: 15, height: 0.8))
+            let pm = mat(nil, color: col, emission: col)
+            pm.lightingModel = .constant
+            pad.geometry?.firstMaterial = pm
+            pad.position = MXVector3(0, 1, 0)
+            pad.castsShadow = false
+            g.addChildNode(body); g.addChildNode(pad)
+            g.position = MXVector3(Float(l.pos.x), 0, Float(l.pos.y))
+            g.spinY = 2.2
+            lootHold[TMap.floorOf(l.pos)].addChildNode(g)
+            lootNodes.append(g)
+        }
+        if e.gameMode == 6 {
+            for z in TacticalEngine.raidZones {
+                let col = z.key ? C(1, 0.75, 0.2) : C(0.2, 1, 0.5)
+                let bm = mat(nil, color: col, emission: col)
+                bm.lightingModel = .constant
+                bm.isDoubleSided = true
+                bm.transparency = 0.22
+                bm.writesToDepthBuffer = false
+                let beam = MXNode(geometry: MXCylinder(radius: 52, height: 260))
+                beam.geometry?.firstMaterial = bm
+                beam.position = MXVector3(Float(z.pos.x), 130, Float(z.pos.y))
+                beam.castsShadow = false
+                beam.renderingOrder = 8
+                let pm = mat(nil, color: col, emission: col)
+                pm.lightingModel = .constant
+                let pad = MXNode(geometry: MXCylinder(radius: 55, height: 0.8))
+                pad.geometry?.firstMaterial = pm
+                pad.position = MXVector3(Float(z.pos.x), 1, Float(z.pos.y))
+                pad.castsShadow = false
+                floorRoot[TMap.floorOf(z.pos)].addChildNode(beam)
+                floorRoot[TMap.floorOf(z.pos)].addChildNode(pad)
+            }
+        }
+        if e.gameMode == 6 {
+            // dropped loot pool (bot drops, supply drops), one set of slots per floor
+            let dcol = C(0.4, 1, 0.95)
+            for f in 0..<3 {
+                for _ in 0..<12 {
+                    let g = MXNode()
+                    let body = MXNode(geometry: MXBox(width: 14, height: 8, length: 12, chamferRadius: 1.5))
+                    body.geometry?.firstMaterial = mat(nil, color: dcol, emission: dcol)
+                    body.position = MXVector3(0, 14, 0)
+                    body.castsShadow = false
+                    let pad = MXNode(geometry: MXCylinder(radius: 14, height: 0.8))
+                    let pm = mat(nil, color: dcol, emission: dcol)
+                    pm.lightingModel = .constant
+                    pad.geometry?.firstMaterial = pm
+                    pad.position = MXVector3(0, 1, 0)
+                    pad.castsShadow = false
+                    g.addChildNode(body); g.addChildNode(pad)
+                    g.spinY = 2.2
+                    g.isHidden = true
+                    lootHold[f].addChildNode(g)
+                    dynNodes.append(g)
+                }
+            }
+            let gcol = C(0.3, 1, 0.3)
+            let gm = mat(nil, color: gcol, emission: gcol)
+            gm.lightingModel = .constant
+            gm.isDoubleSided = true
+            gm.transparency = 0.28
+            gm.writesToDepthBuffer = false
+            let gas = MXNode(geometry: MXCylinder(radius: 230, height: 70))
+            gas.geometry?.firstMaterial = gm
+            gas.castsShadow = false
+            gas.renderingOrder = 9
+            gas.isHidden = true
+            floorRoot[1].addChildNode(gas)
+            evGas = gas
+            let bcol = C(1, 0.8, 0.2)
+            let bm2 = mat(nil, color: bcol, emission: bcol)
+            bm2.lightingModel = .constant
+            bm2.isDoubleSided = true
+            bm2.transparency = 0.3
+            bm2.writesToDepthBuffer = false
+            let sb = MXNode(geometry: MXCylinder(radius: 9, height: 320))
+            sb.geometry?.firstMaterial = bm2
+            sb.castsShadow = false
+            sb.renderingOrder = 9
+            sb.isHidden = true
+            floorRoot[1].addChildNode(sb)
+            evBeam = sb
+        }
         // bomb
         let bb = MXNode(geometry: MXBox(width: 18, height: 10, length: 14, chamferRadius: 2))
         bb.geometry?.firstMaterial = mat(nil, color: UIColor(red: 0.8, green: 0.1, blue: 0.1, alpha: 1), emission: UIColor(red: 0.6, green: 0, blue: 0, alpha: 1))
@@ -636,6 +883,7 @@ final class TacScene {
         bombNode.isHidden = true
         root.addChildNode(bombNode)
         // players
+                TAtt.resetCamo()
                 for p in e.players {
             let rt = MXNode()
             let col: UIColor = p.isPlayer ? UIColor(red: 0.3, green: 0.9, blue: 0.45, alpha: 1) : (p.team == e.me.team ? UIColor(red: 0.25, green: 0.6, blue: 1, alpha: 1) : UIColor(red: 1, green: 0.25, blue: 0.3, alpha: 1))
@@ -654,6 +902,16 @@ final class TacScene {
             lastPos.append(.zero)
             let head = sol.face
             faceMats.append(sol.faceMat)
+            let blob = MXNode(geometry: MXCylinder(radius: 13, height: 0.2))
+            let bm = MXMaterial()
+            bm.lightingModel = .constant
+            bm.diffuse.contents = UIColor.black
+            bm.transparency = 0.42
+            bm.writesToDepthBuffer = false
+            blob.geometry?.firstMaterial = bm
+            blob.position = MXVector3(0, 0.3, 0)
+            blob.castsShadow = false
+            rt.addChildNode(blob)
             rt.addChildNode(body)
             root.addChildNode(rt)
             roots.append(rt); bodies.append(body); heads.append(head); guns.append(gun); flashes.append(fl)
@@ -732,6 +990,8 @@ final class TacScene {
         case .sandbag: colors = (0.76, 0.68, 0.44)
         case .tv: colors = (0.1, 0.12, 0.16)
         case .plant: colors = (0.16, 0.45, 0.22)
+        case .tree: colors = (0.2, 0.4, 0.16)
+        case .rock: colors = (0.45, 0.46, 0.48)
         }
         let c = ui(colors)
         let cl = ui(colors, 1.2)
@@ -794,6 +1054,16 @@ final class TacScene {
             leaf.geometry?.firstMaterial = mat(nil, color: c)
             leaf.position = MXVector3(Float(r.midX), 30, Float(r.midY))
             g.addChildNode(pot); g.addChildNode(leaf)
+        case .tree:
+            let tr = MXNode(geometry: MXCylinder(radius: r.width * 0.46, height: 70))
+            tr.geometry?.firstMaterial = mat(nil, color: ui((0.3, 0.2, 0.12)))
+            tr.position = MXVector3(Float(r.midX), 35, Float(r.midY))
+            let top = MXNode(geometry: MXSphere(radius: r.width * 0.75))
+            top.geometry?.firstMaterial = mat(nil, color: c)
+            top.position = MXVector3(Float(r.midX), 100, Float(r.midY))
+            g.addChildNode(tr); g.addChildNode(top)
+        case .rock:
+            g.addChildNode(solid(r, h: TMap.propH(.rock), color: c, top: cl, chamfer: 8))
         }
         return g
     }
@@ -831,6 +1101,16 @@ final class TacScene {
             lastResetTick = TMap.resetTick
             for k in brokenSet { if let v = breakNodes[k] { v.1.addChildNode(v.0) } }
             brokenSet = []
+            for (_, v) in stairNodes { for n in v { n.isHidden = false } }
+            for (_, v) in rubbleNodes { v.isHidden = true }
+        }
+        if !TMap.stairBroken.isEmpty {
+            let sl = TMap.stairBroken
+            TMap.stairBroken = []
+            for i in sl {
+                for n in stairNodes[i] ?? [] { n.isHidden = true }
+                rubbleNodes[i]?.isHidden = false
+            }
         }
         if !TMap.broken.isEmpty {
             let list = TMap.broken
@@ -873,6 +1153,21 @@ final class TacScene {
             debrisV[i] = v
             d.position = MXVector3(p.x, p.y, p.z)
             d.isHidden = debrisFloor[i] != focusFloor
+        }
+    }
+
+    private func updateStormRing(_ e: TacticalEngine, force: Bool) {
+        if !force && abs(e.stormRad - lastStormRad) < 1.5 && abs(e.stormC.x - lastStormC.x) < 1.5 && abs(e.stormC.y - lastStormC.y) < 1.5 { return }
+        lastStormRad = e.stormRad
+        lastStormC = e.stormC
+        let R = e.stormRad
+        let w = Float(2 * CGFloat.pi * R / 64) * 1.2 + 6
+        for f in 0..<3 {
+            for (i, n) in stormSegs[f].enumerated() {
+                let a = Double(i) / 64 * 2 * Double.pi
+                n.position = MXVector3(Float(e.stormC.x + TMap.origin(f) + CGFloat(cos(a)) * R), 200, Float(e.stormC.y + CGFloat(sin(a)) * R))
+                n.scale = MXVector3(w, 1, w)
+            }
         }
     }
 
@@ -927,11 +1222,57 @@ final class TacScene {
 
     func sync(_ e: TacticalEngine) {
         guard !e.players.isEmpty, roots.count == e.players.count else { return }
-        let focus: TPlayer = e.me.alive ? e.me : (e.players.first { $0.team == e.me.team && $0.alive } ?? e.me)
-        focusFloor = TMap.floorOf(focus.pos)
-        for i in 0..<3 { floorRoot[i].isHidden = focusFloor != i }
+        let rsv = e.beginReplayView()
+        defer { e.endReplayView(rsv) }
+        let focus: TPlayer = e.replayOn ? (e.players.first { $0.id == e.replayKiller } ?? e.me) : e.me.alive ? e.me : (e.gameMode != 6 ? e.players.first { $0.id == e.lastKiller && $0.alive && !$0.isPlayer } : nil) ?? (e.players.first { $0.team == e.me.team && $0.alive } ?? e.me)
+        // floors are stacked vertically, so taking stairs glides the world up/down instead of cutting to another floor
+        let nf = TMap.floorOf(focus.pos)
+        if stackPrev >= 0 && nf != stackPrev && !e.replayOn { stackAnim = Float(nf - stackPrev) * stackH }
+        if e.replayOn { stackAnim = 0 }
+        stackPrev = nf
+        let nowT = CACurrentMediaTime()
+        let sdt = Float(max(0.001, min(0.1, nowT - stackT)))
+        stackT = nowT
+        stackAnim -= stackAnim * min(1, sdt * 7)
+        if abs(stackAnim) < 0.5 { stackAnim = 0 }
+        focusFloor = nf
+        var linked = Set<Int>()
+        if fpMode && !e.replayOn {
+            let fpl = TMap.planOf(focus.pos)
+            for i in TMap.stairs.indices where TMap.stairIntact(i) || true {
+                let lo = TMap.stairLo[i]
+                guard nf == lo || nf == lo + 1 else { continue }
+                if TMap.rectDist(TMap.stairs[i], fpl) < 560 { linked.insert(nf == lo ? lo + 1 : lo) }
+            }
+        }
+        for i in 0..<3 {
+            let dy = Float(i - nf) * stackH + stackAnim
+            floorRoot[i].position = MXVector3(-Float(TMap.origin(i)), dy, 0)
+            floorRoot[i].isHidden = i != nf && !linked.contains(i) && (stackAnim == 0 || abs(i - nf) != 1)
+        }
+        linkedFloors = linked
         applyDestruction(Float(max(0.001, min(0.05, CACurrentMediaTime() - lastDestroyT))))
         lastDestroyT = CACurrentMediaTime()
+        for (i, l) in e.loot.enumerated() where i < lootNodes.count { lootNodes[i].isHidden = l.taken }
+        if e.gameMode == 6 {
+            for (j, n) in dynNodes.enumerated() {
+                let idx = e.dynBase + j
+                if idx < e.loot.count && !e.loot[idx].taken && !e.loot[idx].id.isEmpty {
+                    n.isHidden = false
+                    n.position = MXVector3(Float(e.loot[idx].pos.x), 0, Float(e.loot[idx].pos.y))
+                } else {
+                    n.isHidden = true
+                }
+            }
+            if let g = evGas {
+                g.isHidden = e.evKind != 4
+                g.position = MXVector3(Float(e.evPos.x), 35, Float(e.evPos.y))
+            }
+            if let b = evBeam {
+                b.isHidden = e.evKind != 1
+                b.position = MXVector3(Float(e.evPos.x), 160, Float(e.evPos.y))
+            }
+        }
         for i in doorLeaves.indices where i < TMap.doorOpen.count {
             let ang = Float(TMap.doorOpen[i]) * 1.65
             if abs(doorAngShown[i] - ang) > 0.004 {
@@ -960,14 +1301,13 @@ final class TacScene {
         }
         let fx = sx(focus.pos)
         if !started || camFloor != focusFloor { camX = fx; camZ = focus.pos.y; started = true; camFloor = focusFloor }
-        camX += (fx - camX) * 0.2
-        camZ += (focus.pos.y - camZ) * 0.2
+        if e.replayOn { camX = fx; camZ = focus.pos.y } else { camX += (fx - camX) * 0.2; camZ += (focus.pos.y - camZ) * 0.2 }
         let sh = e.shake
         let jx: CGFloat = sh > 0 ? CGFloat.random(in: -sh...sh) * 0.6 : 0
         let jz: CGFloat = sh > 0 ? CGFloat.random(in: -sh...sh) * 0.6 : 0
         for c in ceilNodes { c.isHidden = true }
         if fpMode {
-            if focusFloor < ceilNodes.count { ceilNodes[focusFloor].isHidden = false }
+            if focusFloor < ceilNodes.count && (TMap.look == 0 || focusFloor == 0) { ceilNodes[focusFloor].isHidden = false }
             let ex = fx, ez = focus.pos.y
             let dxv = cos(focus.aim), dzv = sin(focus.aim)
             let eh = CGFloat(TMap.eyeH) + CGFloat(sin(Double(min(1, e.jumpT / 0.55)) * Double.pi)) * 22 + (sh > 0 ? CGFloat.random(in: -sh...sh) * 0.25 : 0)
@@ -977,15 +1317,15 @@ final class TacScene {
             if abs(e.time - lastCull) > 0.1 { lastCull = e.time; updateCull(ex, ez, dxv, dzv) }
             camNode.camera?.zNear = 0.6
             camNode.camera?.zFar = 2200
-            vm.show(TWeapons.model(focus.gun))
+            vm.show(focus.knife ? "knife" : TWeapons.model(focus.gun))
             vm.root.isHidden = !(focus.alive && !e.scoped)
             let gw = TWeapons.w(focus.gun)
             let rprog: Float? = focus.reloadT > 0 ? Float(max(0, min(1, 1 - focus.reloadT / max(0.1, gw.reload)))) : nil
             let vdt = Float(max(0.001, min(0.05, e.time - lastVmT)))
             lastVmT = e.time
-            vm.update(dt: vdt, t: Float(e.time), move: Float(min(1, hypot(e.move.dx, e.move.dy))), kick: Float(e.kick), reload: rprog, flashing: focus.flash > 0, recoilScale: TWeapons.recoil(focus.gun))
+            vm.update(dt: vdt, t: Float(e.time), move: e.replayOn ? 0.6 : Float(min(1, hypot(e.move.dx, e.move.dy))), kick: e.replayOn ? (focus.flash > 0 ? 6 : 0) : Float(e.kick), reload: rprog, flashing: focus.flash > 0, recoilScale: TWeapons.recoil(focus.gun))
             vm.flash(focus.flash > 0)
-            camNode.camera?.fieldOfView += ((e.scoped ? 26 : 62) - (camNode.camera?.fieldOfView ?? 62)) * 0.3
+            camNode.camera?.fieldOfView += ((e.scoped ? TAtt.mods(e.me.gun).zoomFOV : 62) - (camNode.camera?.fieldOfView ?? 62)) * 0.3
             camNode.position = MXVector3(Float(ex + jx * 0.3), Float(eh), Float(ez + jz * 0.3))
             camNode.look(at: MXVector3(Float(ex + dxv * 100), Float(eh), Float(ez + dzv * 100)))
         } else {
@@ -1003,12 +1343,12 @@ final class TacScene {
 
         for (i, p) in e.players.enumerated() {
             let rt = roots[i]
-            let show = (p.team == e.me.team || p.spotted || (!p.alive && p.seenEver)) && TMap.floorOf(p.pos) == focusFloor
+            let show = (e.replayOn || p.team == e.me.team || p.spotted || (!p.alive && p.seenEver)) && (TMap.floorOf(p.pos) == focusFloor || (fpMode && linkedFloors.contains(TMap.floorOf(p.pos)) && TMap.crossLink(focus.pos, p.pos)))
             rt.isHidden = !show || (fpMode && p.id == focus.id)
             if !show { continue }
             let ks: Float = fpMode ? 1.18 : 1
             rt.scale = MXVector3(ks, ks * (p.crouch ? 0.74 : 1), ks)
-            rt.position = MXVector3(Float(sx(p.pos)), 0, Float(p.pos.y))
+            rt.position = MXVector3(Float(sx(p.pos)), Float(TMap.floorOf(p.pos) - focusFloor) * stackH + stackAnim, Float(p.pos.y))
             rt.eulerAngles = MXVector3(0, Float(-p.aim), 0)
             heads[i].eulerAngles = MXVector3(0, Float(p.aim), 0)
             if p.alive {
@@ -1055,7 +1395,7 @@ final class TacScene {
         }
         // bullets
         for (i, node) in bulletPool.enumerated() {
-            if i < e.bullets.count, TMap.floorOf(e.bullets[i].pos) == focusFloor {
+            if !e.replayOn, i < e.bullets.count, TMap.floorOf(e.bullets[i].pos) == focusFloor {
                 let b = e.bullets[i]
                 node.isHidden = false
                 node.position = MXVector3(Float(sx(b.pos)), 30, Float(b.pos.y))
@@ -1066,7 +1406,7 @@ final class TacScene {
             } else { node.isHidden = true }
         }
         for (i, node) in nadePool.enumerated() {
-            if i < e.nades.count, TMap.floorOf(e.nades[i].pos) == focusFloor {
+            if !e.replayOn, i < e.nades.count, TMap.floorOf(e.nades[i].pos) == focusFloor {
                 let g = e.nades[i]
                 node.isHidden = false
                 node.position = MXVector3(Float(sx(g.pos)), 8, Float(g.pos.y))
@@ -1111,7 +1451,7 @@ final class TacScene {
 
 extension TacticalEngine {
     func drawOverlay3D(_ ctx: inout GraphicsContext, _ size: CGSize) {
-        guard let pr = project else { return }
+        guard let pr = project, !replayOn else { return }
         let focus: TPlayer = me.alive ? me : (players.first { $0.team == me.team && $0.alive } ?? me)
         // fog of war (top-down view only)
         let vp = focus.pos
@@ -1170,7 +1510,9 @@ extension TacticalEngine {
             let crownW: CGFloat = p.rank == 2 ? 15 * k : 0
             let badgeW: CGFloat = p.rank == 1 ? 34 * k : 0
             let gap: CGFloat = 4 * k
-            let total = (crownW > 0 ? crownW + gap : 0) + nsz.width + (badgeW > 0 ? badgeW + gap : 0)
+            let showL = TacLeague.shows(p.trophies)
+            let lgW: CGFloat = showL ? 11 * k : 0
+            let total = (crownW > 0 ? crownW + gap : 0) + nsz.width + (badgeW > 0 ? badgeW + gap : 0) + (showL ? lgW + gap : 0)
             var x0 = pt.x - total / 2
             let yMid = pt.y - 8 * k
             if crownW > 0 {
@@ -1201,6 +1543,14 @@ extension TacticalEngine {
                 let br = CGRect(x: x0, y: yMid - 6 * k, width: badgeW, height: 12 * k)
                 ctx.fill(Path(roundedRect: br, cornerRadius: 3 * k), with: .color(Color(red: 0.1, green: 0.55, blue: 0.4)))
                 ctx.draw(Text("STAFF").font(.system(size: 8 * k, weight: .heavy)).foregroundColor(.white), at: CGPoint(x: br.midX, y: br.midY))
+                x0 += badgeW + gap
+            }
+            if showL {
+                let sr = CGRect(x: x0, y: yMid - 7 * k, width: lgW, height: 14 * k)
+                let sh = LeagueShield().path(in: sr)
+                ctx.fill(sh, with: .color(TacLeague.color(p.trophies)))
+                ctx.stroke(sh, with: .color(.black.opacity(0.75)), lineWidth: 1)
+                ctx.draw(Text("\(TacLeague.index(p.trophies) - 1)").font(.system(size: 7 * k, weight: .heavy)).foregroundColor(.black.opacity(0.85)), at: CGPoint(x: sr.midX, y: sr.midY - 0.5 * k))
             }
             let bw: CGFloat = 54 * k, bh: CGFloat = 5 * k
             let bar = CGRect(x: pt.x - bw / 2, y: pt.y + 2 * k, width: bw, height: bh)
@@ -1293,7 +1643,6 @@ extension TacticalEngine {
 }
 
 extension TacScene {
-    private var dollhouse = false
 
     /// lobby hero shot: all three floors stacked like a cutaway dollhouse, slowly orbiting
     func orbit(_ time: Double) {
@@ -1303,6 +1652,7 @@ extension TacScene {
                 floorRoot[i].position = MXVector3(-Float(TMap.origin(i)), Float(i) * 125, 0)
                 floorRoot[i].isHidden = false
             }
+            vm.root.isHidden = true
             camNode.camera?.zNear = 10
             camNode.camera?.zFar = 7000
             camNode.camera?.fieldOfView = 44
@@ -1310,7 +1660,7 @@ extension TacScene {
             scene.fogEndDistance = 7000
         }
         let a = time * 0.1
-        let cx: Double = 1500, cz: Double = 900
+        let cx: Double = 1500, cz: Double = Double(TMap.H) / 2
         camNode.position = MXVector3(Float(cx + cos(a) * 2500), 1750 + Float(sin(a * 0.7)) * 160, Float(cz + sin(a) * 2000))
         camNode.look(at: MXVector3(Float(cx), 150, Float(cz)))
     }

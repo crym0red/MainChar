@@ -3,9 +3,9 @@ import UIKit
 
 /// In-match HUD building blocks (landscape). All of them read straight from the engine and are redrawn at 10 Hz by the HUD timeline.
 enum THud {
-    static let floorTag = ["B", "G", "A"]
-    static let floorCol: [Color] = [TUI.red, TUI.blue, TUI.orange]
-    static let floorShort = ["BASEMENT", "GROUND", "ATTIC"]
+    static var floorTag: [String] { [["B", "G", "A"], ["U", "W", "T"], ["T", "Y", "C"], ["C", "O", "R"]][TMap.look] }
+    static var floorCol: [Color] { TMap.look == 0 ? [TUI.red, TUI.blue, TUI.orange] : [TUI.red, TUI.green, TUI.orange] }
+    static var floorShort: [String] { [["BASEMENT", "GROUND", "ATTIC"], ["BUNKER", "WOODS", "TOWER"], ["TUNNEL", "YARD", "CATWALK"], ["CELLAR", "OUTPOST", "ROOFTOP"]][TMap.look] }
 
     static func clock(_ t: Int) -> String { String(format: "%d:%02d", t / 60, t % 60) }
 }
@@ -82,26 +82,17 @@ struct HudScoreboard: View {
         let t = Int(max(0, e.timer))
         let focus: TPlayer = e.me.alive ? e.me : (allies.first { $0.alive } ?? e.me)
         return VStack(spacing: 4) {
-            HStack(spacing: 10) {
-                HudRoster(list: allies, ally: true, meID: e.me.id)
-                HStack(spacing: 8) {
-                    HudScore(v: e.scores[0], col: TUI.blue)
-                    VStack(spacing: 1) {
-                        Text(THud.clock(t)).font(.system(size: 18, weight: .heavy, design: .monospaced)).foregroundColor(e.planted ? TUI.red : .white)
-                        if e.gameMode == 0 { Text("ROUND \(e.round + 1)").font(.jk(8, .heavy)).tracking(1).foregroundColor(.white.opacity(0.6)) }
-                    }
-                    .frame(minWidth: 52)
-                    HudScore(v: e.rivalScore, col: TUI.orange)
-                }
-                HudRoster(list: foes, ally: false, meID: e.me.id)
+            if e.gameMode == 6 { HudRaidBar(e: e) } else if e.gameMode == 7 { HudFrontline(e: e) } else {
+            HudCSScore(e: e)
             }
-            .padding(.horizontal, 12).padding(.vertical, 6).tuiGlass(18, fill: 0.5)
+            if e.gameMode != 6 && e.gameMode != 0 && e.gameMode != 1 && e.gameMode != 2 && false {
             HStack(spacing: 6) {
                 Text(TWeapons.modeNames[min(e.gameMode, TWeapons.modeNames.count - 1)].uppercased()).font(.jk(9, .heavy)).tracking(1).foregroundColor(TUI.blue)
                 Text("|").font(.jk(10, .regular)).foregroundColor(.white.opacity(0.35))
                 Text(e.objectiveText).font(.jk(11, .semibold)).foregroundColor(.white.opacity(0.95))
             }
-            .padding(.horizontal, 12).frame(height: 22).background(Capsule().fill(Color.black.opacity(0.42)))
+            .padding(.horizontal, 12).frame(height: 22).background(Capsule().fill(Color.black.opacity(0.16)))
+            }
             if e.planted { bombChip(focus) }
             if e.gameMode == 5 {
                 HStack(spacing: 5) {
@@ -134,6 +125,34 @@ struct HudScoreboard: View {
         }
     }
 
+    private var brBar: some View {
+        let cd = Int(max(0, e.stormCountdown))
+        let purple = Color(red: 0.78, green: 0.5, blue: 1)
+        return HStack(spacing: 14) {
+            HStack(spacing: 5) {
+                SF("person.3.fill").font(.system(size: 13, weight: .bold))
+                Text("\(e.brAlive)").font(.system(size: 20, weight: .heavy, design: .rounded)).monospacedDigit()
+                Text("ALIVE").font(.jk(8, .heavy)).tracking(1).opacity(0.7)
+            }
+            Rectangle().fill(Color.white.opacity(0.2)).frame(width: 1, height: 22)
+            VStack(spacing: 1) {
+                HStack(spacing: 4) {
+                    SF("tornado", "circle.fill").font(.system(size: 10, weight: .bold)).foregroundColor(purple)
+                    Text(e.stormShrinking ? "ZONE CLOSING" : "NEXT ZONE").font(.jk(8, .heavy)).tracking(1).foregroundColor(purple)
+                }
+                Text(THud.clock(cd)).font(.system(size: 17, weight: .heavy, design: .monospaced))
+            }
+            .frame(minWidth: 92)
+            Rectangle().fill(Color.white.opacity(0.2)).frame(width: 1, height: 22)
+            HStack(spacing: 5) {
+                SF("scope", "circle.fill").font(.system(size: 13, weight: .bold)).foregroundColor(TUI.gold)
+                Text("\(e.me.kills)").font(.system(size: 20, weight: .heavy, design: .rounded)).monospacedDigit()
+                Text("KILLS").font(.jk(8, .heavy)).tracking(1).opacity(0.7)
+            }
+        }
+        .foregroundColor(.white).padding(.horizontal, 14).padding(.vertical, 6).hudFloat(18)
+    }
+
     /// where the bomb is, in terms the player can act on: which floor, and which way to go
     private func bombChip(_ focus: TPlayer) -> some View {
         let bf = TMap.floorOf(e.bombPos), mf = TMap.floorOf(focus.pos)
@@ -158,7 +177,7 @@ struct HudFloorStack: View {
                 Text(THud.floorShort[f]).font(.jk(8, .heavy)).tracking(0.5)
                     .foregroundColor(on ? .black : .white.opacity(0.5))
                     .frame(width: on ? 62 : 54, height: 17)
-                    .background(Capsule().fill(on ? THud.floorCol[f] : Color.black.opacity(0.4)))
+                    .background(Capsule().fill(on ? THud.floorCol[f] : Color.black.opacity(0.15)))
                     .overlay(Capsule().stroke(Color.white.opacity(on ? 0.7 : 0.15), lineWidth: 1))
             }
         }
@@ -174,7 +193,7 @@ struct HudRoomChip: View {
             Circle().fill(THud.floorCol[floor]).frame(width: 6, height: 6)
             Text("\(THud.floorShort[floor]) · \(room)".uppercased()).font(.jk(10, .heavy)).tracking(1).foregroundColor(.white.opacity(0.95))
         }
-        .padding(.horizontal, 10).frame(height: 20).background(Capsule().fill(Color.black.opacity(0.5)))
+        .padding(.horizontal, 10).frame(height: 20).background(Capsule().fill(Color.black.opacity(0.2)))
     }
 }
 
@@ -188,12 +207,16 @@ struct HudFeed: View {
             ForEach(Array(items.enumerated()), id: \.offset) { i, f in
                 HStack(spacing: 8) {
                     Text(f.k.split(separator: " ").first.map(String.init) ?? f.k).font(.jk(12, .bold)).foregroundColor(f.kTeam == e.me.team ? TUI.blue : TUI.orange)
-                    Image(uiImage: GunSprites.icon(TWeapons.rig(f.gun))).renderingMode(.template).resizable().scaledToFit()
-                        .foregroundColor(.white).frame(width: 36, height: 14)
+                    if f.gun == "knife" {
+                        HudKnifeShape().fill(Color.white).frame(width: 20, height: 16)
+                    } else {
+                        Image(uiImage: GunSprites.icon(TWeapons.rig(f.gun))).renderingMode(.template).resizable().scaledToFit()
+                            .foregroundColor(.white).frame(width: 36, height: 14)
+                    }
                     if f.head { SF("scope", "circle.fill").font(.system(size: 11, weight: .black)).foregroundColor(TUI.red) }
                     Text(f.v.split(separator: " ").first.map(String.init) ?? f.v).font(.jk(12, .bold)).foregroundColor(f.kTeam == e.me.team ? TUI.orange : TUI.blue)
                 }
-                .padding(.horizontal, 10).frame(height: 24).tuiGlass(12, fill: 0.5)
+                .padding(.horizontal, 10).frame(height: 24).hudFloat(12)
                 .opacity(i == items.count - 1 ? 1 : 0.55)
             }
         }
@@ -216,13 +239,23 @@ struct HudVignette: View {
 
 // MARK: dock (vitals + weapons + grenades)
 
+struct HudKnifeShape: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: r.minX + r.width * x, y: r.minY + r.height * y) }
+        p.move(to: pt(0.34, 0.58)); p.addLine(to: pt(0.92, 0.08)); p.addLine(to: pt(0.66, 0.66)); p.closeSubpath()
+        p.move(to: pt(0.1, 0.88)); p.addLine(to: pt(0.2, 0.97)); p.addLine(to: pt(0.46, 0.68)); p.addLine(to: pt(0.34, 0.58)); p.closeSubpath()
+        return p
+    }
+}
+
 struct HudDock: View {
     let e: TacticalEngine
 
     private func cell<C: View>(_ w: CGFloat, on: Bool, _ act: (() -> Void)? = nil, @ViewBuilder _ c: () -> C) -> some View {
         ZStack { c() }
             .frame(width: w, height: 52)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(on ? TUI.accent.opacity(0.2) : Color.black.opacity(0.45)))
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(on ? TUI.accent.opacity(0.2) : Color.black.opacity(0.18)))
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(on ? TUI.accent : Color.white.opacity(0.2), lineWidth: on ? 1.6 : 1))
             .contentShape(Rectangle())
             .onTapGesture { act?() }
@@ -262,55 +295,13 @@ struct HudDock: View {
         }
     }
 
-    private struct Knife: Shape {
-        func path(in r: CGRect) -> Path {
-            var p = Path()
-            func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: r.minX + r.width * x, y: r.minY + r.height * y) }
-            p.move(to: pt(0.34, 0.58)); p.addLine(to: pt(0.92, 0.08)); p.addLine(to: pt(0.66, 0.66)); p.closeSubpath()
-            p.move(to: pt(0.1, 0.88)); p.addLine(to: pt(0.2, 0.97)); p.addLine(to: pt(0.46, 0.68)); p.addLine(to: pt(0.34, 0.58)); p.closeSubpath()
-            return p
-        }
-    }
-
     var body: some View {
         let me = e.me
         let hpFrac = max(0, min(1, me.hp / 100))
         return VStack(spacing: 6) {
-            HStack(alignment: .center, spacing: 10) {
-                HStack(alignment: .lastTextBaseline, spacing: 3) {
-                    SF("heart.fill").font(.system(size: 13, weight: .bold)).foregroundColor(me.hp < 35 ? TUI.red : .white)
-                    Text("\(Int(max(0, me.hp)))").font(.system(size: 30, weight: .heavy, design: .rounded)).foregroundColor(me.hp < 35 ? TUI.red : .white).monospacedDigit()
-                }
-                VStack(spacing: 4) {
-                    Capsule().fill(Color.white.opacity(0.2)).frame(height: 7)
-                        .overlay(alignment: .leading) {
-                            GeometryReader { g in
-                                Capsule().fill(LinearGradient(colors: me.hp < 35 ? [TUI.red, TUI.orange] : [Color.white, TUI.green.opacity(0.9)], startPoint: .leading, endPoint: .trailing))
-                                    .frame(width: g.size.width * hpFrac, height: 7)
-                            }
-                        }
-                    HStack(spacing: 3) {
-                        ForEach(0..<3, id: \.self) { i in
-                            let fill = max(0, min(1, me.armor / 100 * 3 - CGFloat(i)))
-                            Capsule().fill(Color.white.opacity(0.2)).frame(height: 5)
-                                .overlay(alignment: .leading) { GeometryReader { g in Capsule().fill(TUI.blue).frame(width: g.size.width * fill, height: 5) } }
-                        }
-                    }
-                }
-                .frame(width: 112)
-                VStack(alignment: .trailing, spacing: 1) {
-                    if e.gameMode == 0 {
-                        Text("$\(me.money)").font(.system(size: 13, weight: .heavy, design: .rounded)).foregroundColor(TUI.green)
-                    }
-                    HStack(spacing: 3) {
-                        SF("scope", "circle.fill").font(.system(size: 9, weight: .bold)).foregroundColor(TUI.gold)
-                        Text("\(me.kills)").font(.jk(11, .heavy)).foregroundColor(.white)
-                    }
-                }
-            }
             HStack(spacing: 4) {
-                cell(36, on: false) { Knife().fill(Color.white.opacity(0.75)).frame(width: 24, height: 24) }
-                gun(me.gun, mag: me.mag, spare: me.spare, reloading: me.reloadT > 0, on: true, w: 84, nil)
+                cell(36, on: me.knife, { e.wantKnife = true }) { HudKnifeShape().fill(me.knife ? Color.white : Color.white.opacity(0.7)).frame(width: 24, height: 24) }
+                gun(me.gun, mag: me.mag, spare: me.spare, reloading: me.reloadT > 0, on: !me.knife, w: 84) { e.wantGun = true }
                 gun(me.altGun, mag: me.altMag, spare: me.altSpare, reloading: false, on: false, w: 56) { e.wantSwap = true }
                 nade("circle.hexagongrid.fill", me.nades) { e.wantNade = true }
                 nade("smoke.fill", me.smokes) { e.wantSmoke = true }
@@ -319,6 +310,30 @@ struct HudDock: View {
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
         .frame(width: 330)
-        .tuiGlass(18, fill: 0.4)
+        .hudFloat(18)
+    }
+}
+
+
+extension View {
+    /// transparent floating HUD card: faint tint + hairline, no blur, so the world shows through
+    func hudFloat(_ r: CGFloat = 14) -> some View {
+        self
+            .background(RoundedRectangle(cornerRadius: r, style: .continuous).fill(Color.black.opacity(0.14)))
+            .overlay(RoundedRectangle(cornerRadius: r, style: .continuous).stroke(Color.white.opacity(0.16), lineWidth: 1))
+            .shadow(color: .black.opacity(0.55), radius: 5, y: 1)
+    }
+}
+
+
+/// purple pulse while the player is standing in the storm
+struct HudStormTint: View {
+    let e: TacticalEngine
+    var body: some View {
+        let inStorm = e.me.alive && e.stormOutside(e.me.pos)
+        return Rectangle()
+            .fill(RadialGradient(colors: [Color.clear, Color(red: 0.55, green: 0.15, blue: 0.9).opacity(inStorm ? 0.55 : 0)], center: .center, startRadius: 120, endRadius: 520))
+            .ignoresSafeArea().allowsHitTesting(false)
+            .animation(.easeInOut(duration: 0.4), value: inStorm)
     }
 }

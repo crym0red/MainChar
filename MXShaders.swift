@@ -63,6 +63,27 @@ vertex VOut vs_main(VIn v [[stage_in]],
     return o;
 }
 
+vertex VOut vs_inst(VIn v [[stage_in]],
+                    constant FrameU& f [[buffer(1)]],
+                    constant NodeU* ns [[buffer(2)]],
+                    uint iid [[instance_id]]) {
+    VOut o;
+    NodeU n = ns[iid];
+    float4 wp = n.model * float4(v.pos, 1.0);
+    o.pos = f.viewProj * wp;
+    o.wpos = wp.xyz;
+    o.nrm = (n.normalM * float4(v.nrm, 0.0)).xyz;
+    o.uv = v.uv;
+    return o;
+}
+
+vertex float4 vs_shadow_inst(VIn v [[stage_in]],
+                             constant FrameU& f [[buffer(1)]],
+                             constant NodeU* ns [[buffer(2)]],
+                             uint iid [[instance_id]]) {
+    return f.lightVP * (ns[iid].model * float4(v.pos, 1.0));
+}
+
 vertex float4 vs_shadow(VIn v [[stage_in]],
                         constant FrameU& f [[buffer(1)]],
                         constant NodeU& n [[buffer(2)]]) {
@@ -86,6 +107,22 @@ static float shadowAt(constant FrameU& f, depth2d<float> tShadow, float3 wpos, f
         }
     }
     return sum / 9.0;
+}
+
+static float3 pbrSpec(float3 N, float3 V, float3 L, float3 F0, float rough) {
+    float3 H = normalize(L + V);
+    float a = rough * rough;
+    float a2 = a * a;
+    float ndh = saturate(dot(N, H));
+    float ndl = saturate(dot(N, L));
+    float ndv = max(dot(N, V), 0.001);
+    float vdh = saturate(dot(V, H));
+    float d = ndh * ndh * (a2 - 1.0) + 1.0;
+    float D = a2 / (3.14159265 * d * d + 1e-5);
+    float k = (rough + 1.0) * (rough + 1.0) / 8.0;
+    float G = (ndl / (ndl * (1.0 - k) + k)) * (ndv / (ndv * (1.0 - k) + k));
+    float3 F = F0 + (float3(1.0) - F0) * pow(1.0 - vdh, 5.0);
+    return D * G * F / (4.0 * ndv) ;
 }
 
 fragment float4 fs_main(VOut in [[stage_in]],
@@ -124,6 +161,11 @@ fragment float4 fs_main(VOut in [[stage_in]],
     float3 N = normalize(in.nrm);
     float3 V = normalize(f.camPos.xyz - in.wpos);
     if (m.flags2.x > 0.5 && dot(N, V) < 0.0) { N = -N; }
+    if (f.shadowInfo.w > 0.5) {
+        // low-poly look: every face is lit by its true face normal
+        float3 fn = normalize(cross(dfdx(in.wpos), dfdy(in.wpos)));
+        N = (dot(fn, V) < 0.0) ? -fn : fn;
+    }
 
     int model = int(m.params.w + 0.5);
     float3 col;
@@ -140,8 +182,14 @@ fragment float4 fs_main(VOut in [[stage_in]],
         }
         float hemi = mix(0.5, 1.2, N.y * 0.5 + 0.5);
         float3 lightSum = f.ambient.rgb * hemi;
+        // sky/horizon bounce: upward faces pick up the sky tint, downward faces a little warm ground light
+        lightSum += f.fogColor.rgb * 0.10 * (N.y * 0.5 + 0.5) + f.ambient.rgb * 0.06 * (0.5 - N.y * 0.5);
         float3 spec = float3(0.0);
         bool useSpec = (model == 0) && (m.specular.w > 0.0);
+        float specMax = max(m.specular.r, max(m.specular.g, m.specular.b));
+        float metal = useSpec ? smoothstep(0.5, 0.95, specMax) : 0.0;
+        float rough = clamp(sqrt(2.0 / (m.specular.w + 2.0)), 0.06, 1.0);
+        float3 F0 = mix(float3(0.04) + m.specular.rgb * 0.08, base.rgb, metal);
         float shadow = 1.0;
         if (f.counts.z > 0.5) { shadow = shadowAt(f, tShadow, in.wpos, N); }
         int nd = int(f.counts.x + 0.5);
@@ -151,8 +199,7 @@ fragment float4 fs_main(VOut in [[stage_in]],
             float sh = (f.dirDir[i].w > 0.5) ? mix(1.0, shadow, f.shadowInfo.x) : 1.0;
             lightSum += f.dirCol[i].rgb * (ndl * sh);
             if (useSpec && ndl > 0.0) {
-                float3 H = normalize(L + V);
-                spec += m.specular.rgb * f.dirCol[i].rgb * (pow(max(dot(N, H), 0.0), m.specular.w) * sh);
+                spec += pbrSpec(N, V, L, F0, rough) * f.dirCol[i].rgb * (ndl * sh);
             }
         }
         // shadowed areas also lose a little ambient so they read as shade
@@ -167,11 +214,17 @@ fragment float4 fs_main(VOut in [[stage_in]],
             float3 lc = f.ptCol[i].rgb * (att * att);
             lightSum += lc * ndl;
             if (useSpec && ndl > 0.0) {
-                float3 H = normalize(L + V);
-                spec += m.specular.rgb * lc * pow(max(dot(N, H), 0.0), m.specular.w);
+                spec += pbrSpec(N, V, L, F0, rough) * lc * ndl;
             }
         }
-        col = base.rgb * max(lightSum, float3(0.0)) + spec + m.emission.rgb;
+        col = base.rgb * (1.0 - 0.6 * metal) * max(lightSum, float3(0.0)) + spec + m.emission.rgb;
+        if (metal > 0.05 && m.flags.w < 0.5) {
+            // metals with no environment map reflect the sky/horizon colours
+            float3 R0 = reflect(-V, N);
+            float3 skyC = mix(f.fogColor.rgb * 0.7, f.ambient.rgb * 2.2 + f.dirCol[0].rgb * 0.15, saturate(R0.y * 0.5 + 0.5));
+            float fr0 = pow(1.0 - max(dot(N, V), 0.0), 4.0);
+            col += skyC * F0 * (0.35 + 0.65 * fr0) * (1.0 - rough * 0.6);
+        }
         if (m.flags.w > 0.5) {
             float3 R = reflect(-V, N);
             float2 euv = float2(atan2(R.z, R.x) * 0.15915494 + 0.5, acos(clamp(R.y, -1.0, 1.0)) * 0.31830989);
