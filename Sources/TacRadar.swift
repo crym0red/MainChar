@@ -33,7 +33,8 @@ enum TacRadar {
             g.fill(CGRect(x: ox, y: 0, width: TMap.floorW, height: TMap.H))
             let floors: [(CGFloat, CGFloat, CGFloat)] = [(0.55, 0.43, 0.3), (0.5, 0.47, 0.42), (0.42, 0.36, 0.3), (0.6, 0.55, 0.46), (0.4, 0.3, 0.22), (0.52, 0.5, 0.48), (0.2, 0.36, 0.17), (0.38, 0.3, 0.2), (0.33, 0.34, 0.37)]
             for rm in TMap.floorTiles where rm.fl == fl {
-                let f = floors[rm.mat % floors.count]
+                let wc = TWorkshop.floorMatCols[min(rm.mat, TWorkshop.floorMatCols.count - 1)]
+                let f = rm.mat < floors.count ? floors[rm.mat] : (wc.0 * 0.85, wc.1 * 0.85, wc.2 * 0.85)
                 g.setFillColor(col(f.0, f.1, f.2))
                 g.fill(rm.r)
                 // soft inner shade so rooms read as sunken floor

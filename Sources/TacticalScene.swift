@@ -534,7 +534,7 @@ final class TacScene {
         }
 
         // floors
-        let floorCols: [(CGFloat, CGFloat, CGFloat)] = [(0.72, 0.59, 0.41), (0.7, 0.6, 0.45), (0.5, 0.26, 0.2), (0.72, 0.5, 0.34), (0.4, 0.27, 0.17), (0.66, 0.56, 0.42), (0.22, 0.36, 0.17), (0.38, 0.3, 0.2), (0.34, 0.35, 0.38)]
+        let floorCols = TWorkshop.floorMatCols
         for rm in TMap.floorTiles {
             let b = floorCols[rm.mat]
             let img: UIImage
@@ -546,6 +546,9 @@ final class TacScene {
             case 4: img = woodTex(b, "wood4")
             case 3, 5: img = tileTex(b, "tile\(rm.mat)")
             case 1: img = noiseTex(b, "slab", dots: 1800, grid: false)
+            case 9, 17, 18, 19, 20, 21, 22, 23, 24, 25: img = noiseTex(b, "liq\(rm.mat)", dots: 700, grid: false)
+            case 10, 11, 14, 15: img = noiseTex(b, "fx\(rm.mat)", dots: 2000, grid: false)
+            case 12, 13, 16: img = tileTex(b, "tile\(rm.mat)")
             default: img = noiseTex(b, "carpet", dots: 1400, grid: false)
             }
             let tile: CGFloat = rm.mat == 6 ? 170 : (rm.mat == 1 ? 140 : (rm.mat == 3 || rm.mat == 5 ? 112 : 128))
@@ -553,7 +556,7 @@ final class TacScene {
             let ffl = TMap.floorOfX(rm.r.midX)
             for pc in carve(rm.r, stairHoles(ffl, upper: true)) {
                 let top = mat(img, sx: pc.width / tile, sy: pc.height / tile)
-                let n = box(pc, h: 1, y0: ["Woods", "Yard", "Desert", "Harbor"].contains(rm.name) ? -2 : (rm.name == "Ground" ? -1.5 : -1), mats: [side, side, side, side, top, side])
+                let n = box(pc, h: 1, y0: ["Woods", "Yard", "Desert", "Harbor"].contains(rm.name) ? -2 : (rm.name == "Water" ? -6 : (rm.name == "Ground" ? -1.5 : -1)), mats: [side, side, side, side, top, side])
                 fr(pc.midX).addChildNode(n)
             }
         }
