@@ -45,6 +45,7 @@ struct LobbyView: View {
                     case 10: CSMarket(back: { screen = 0 })
                     case 11: workPage(t, g.size)
                     case 12: custPage(t, g.size)
+                    case 13: MapEditorView(back: { screen = 0 }, deploy: { nav.tacMap = 5; if nav.tacMode == 6 || nav.tacMode == 7 { nav.tacMode = 1 }; searchT = 0; screen = 2 })
                     case 5: CSLeague(rating: t.rating, cash: game.s.ex.gems, coins: t.wins) { screen = 0 }
                     case 6:
                         if !fromMatch { loadoutPage(t, g.size) } else { CSLoadout(gun: $nav.tacGun, countdown: fromMatch ? cd : nil, showBattle: fromMatch, gunsmith: fromMatch ? nil : { gsBack = 6; screen = 7 }, ok: { if fromMatch { beginMatch() } else { screen = 4 } }, battle: { beginMatch() }) }
@@ -171,6 +172,7 @@ struct LobbyView: View {
             case 4: showRanks = true
             case 5: showAdmin = true
             case 6: seasonTab = 2; showSeason = true
+            case 8: screen = 13
             default: showStats = true
             }
         case .screen(let s):
