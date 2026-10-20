@@ -263,8 +263,11 @@ enum MXGLTF {
                 m.diffuse.contents = img
             }
             if let met = pbr["metallicFactor"] as? Double, met > 0.5 {
+                let rough = (pbr["roughnessFactor"] as? Double) ?? 0.5
                 m.specular.contents = UIColor(white: 0.7, alpha: 1)
-                m.shininess = 0.5
+                m.shininess = CGFloat(0.25 + 0.5 * (1 - rough))
+                m.reflective.contents = TwGunLib.envMap
+                m.reflective.intensity = CGFloat(max(0.05, 0.5 - rough * 0.6))
             }
             if let e = d["emissiveFactor"] as? [Double], e.count == 3, e.contains(where: { $0 > 0 }) {
                 m.emission.contents = UIColor(red: CGFloat(e[0]), green: CGFloat(e[1]), blue: CGFloat(e[2]), alpha: 1)

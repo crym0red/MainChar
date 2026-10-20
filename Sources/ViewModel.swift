@@ -14,6 +14,7 @@ final class TwViewModel {
         let dirs: [String: MXVector3]
         let flash: MXNode?
         var att: TAttNodes? = nil
+        var travel: Float = 1
     }
 
     private var rigs: [String: Rig] = [:]
@@ -27,6 +28,7 @@ final class TwViewModel {
     private var lastFlash = false
     private var lastGlove = UIColor.clear
     private var lastAtt = ""
+    private var gloveMats: [MXMaterial] = []
 
     static var gloveColor = UIColor(red: 0.165, green: 0.153, blue: 0.137, alpha: 1)
 
@@ -38,8 +40,36 @@ final class TwViewModel {
         defer { TwGunLib.vmMode = false }
         buildKnife()
         guard let rs = TwGunLib.rigs else { return }
+        defer { for m in gloveMats { m.diffuse.contents = TwViewModel.gloveColor } }
         for (id, v) in rs {
             guard let rig = v as? [String: Any], let parts = rig["parts"] as? [[String: Any]] else { continue }
+            if let g = TwGunLib.glbGun(id, arms: true, order: 1000) {
+                let gun = MXNode()
+                gun.isHidden = true
+                gun.addChildNode(g.node)
+                gloveMats += g.gloveMats
+                var fl: MXNode? = nil
+                if let mz = rig["muzzle"] as? [Double], mz.count == 3 {
+                    let f = MXNode(geometry: MXSphere(radius: 2.0))
+                    let fm = MXMaterial()
+                    fm.lightingModel = .constant
+                    fm.diffuse.contents = UIColor(red: 1, green: 0.88, blue: 0.45, alpha: 1)
+                    fm.emission.contents = UIColor(red: 1, green: 0.8, blue: 0.3, alpha: 1)
+                    fm.readsFromDepthBuffer = false
+                    fm.writesToDepthBuffer = false
+                    f.geometry?.firstMaterial = fm
+                    f.position = MXVector3(Float(mz[0]), Float(mz[1]), Float(mz[2]) - 1)
+                    f.renderingOrder = 2000
+                    f.isHidden = true
+                    f.castsShadow = false
+                    gun.addChildNode(f)
+                    fl = f
+                }
+                root.addChildNode(gun)
+                let attNodes = TAttBuild.build(id, into: gun, magHolder: g.groups["mag"], order: 1000)
+                rigs[id] = Rig(node: gun, groups: g.groups, dirs: g.dirs, flash: fl, att: attNodes, travel: g.travel)
+                continue
+            }
             var buckets: [String: MXNode] = [:]
             for p in parts {
                 guard let n = TwGunLib.makePart(p) else { continue }
@@ -154,6 +184,7 @@ final class TwViewModel {
         if TwViewModel.gloveColor != lastGlove {
             lastGlove = TwViewModel.gloveColor
             TwGunLib.vmMats["glove"]?.diffuse.contents = TwViewModel.gloveColor
+            for m in gloveMats { m.diffuse.contents = TwViewModel.gloveColor }
         }
         let attKey = gid + "|" + TAtt.viewSig(gid)
         if attKey != lastAtt {
@@ -185,8 +216,9 @@ final class TwViewModel {
         return t * t * (3 - 2 * t)
     }
 
-    private func slideGroup(_ r: Rig, _ g: String, _ amount: Float) {
+    private func slideGroup(_ r: Rig, _ g: String, _ amount0: Float) {
         guard let n = r.groups[g], let d = r.dirs[g] else { return }
+        let amount = g == "mag" ? amount0 : amount0 * r.travel
         let len = max(0.0001, sqrt(d.x * d.x + d.y * d.y + d.z * d.z))
         n.position = MXVector3(d.x / len * amount, d.y / len * amount, d.z / len * amount)
     }
@@ -270,6 +302,57 @@ enum TwGunLib {
     static var vmMats: [String: MXMaterial] { get { sets[1] } set { sets[1] = newValue } }
     static var vmMode: Bool { get { setIdx == 1 } set { setIdx = newValue ? 1 : 0 } }
     static var rigs: [String: Any]? = nil
+
+    // MARK: Blender-built gun models (Resources/gun_<id>.glb + gunmeta.json)
+    struct GlbGun { let node: MXNode; let groups: [String: MXNode]; let dirs: [String: MXVector3]; let travel: Float; let gloveMats: [MXMaterial] }
+    static let gmeta: [String: [String: Any]] = {
+        guard let url = Bundle.main.url(forResource: "gunmeta", withExtension: "json") ?? Bundle.main.url(forResource: "gunmeta", withExtension: "json", subdirectory: "models"),
+              let d = try? Data(contentsOf: url),
+              let j = (try? JSONSerialization.jsonObject(with: d)) as? [String: [String: Any]] else { return [:] }
+        return j
+    }()
+    /// camo-able (painted) materials of each Blender gun, keyed "<id>#<material set>", with their stock baked textures
+    static var glbPaint: [String: [MXMaterial]] = [:]
+    static var glbPaintBase: [String: [Any?]] = [:]
+    private static let armSuffix: Set<String> = ["glove", "gloveP", "sleeve", "strap", "ARMS"]
+
+    /// loads the detailed model for a weapon; `arms` false strips the hands and sleeves (gunsmith preview)
+    static func glbGun(_ id: String, arms: Bool, order: Int = 0) -> GlbGun? {
+        guard let meta = gmeta[id],
+              let url = Bundle.main.url(forResource: "gun_\(id)", withExtension: "glb") ?? Bundle.main.url(forResource: "gun_\(id)", withExtension: "glb", subdirectory: "models"),
+              let root = MXGLTF.load(url) else { return nil }
+        var groups: [String: MXNode] = [:]
+        var gloves: [MXMaterial] = []
+        var paints: [MXMaterial] = []
+        func isArm(_ n: MXNode) -> Bool {
+            guard let nm = n.name, let u = nm.lastIndex(of: "_") else { return false }
+            return armSuffix.contains(String(nm[nm.index(after: u)...]))
+        }
+        func walk(_ n: MXNode) {
+            for c in n.childNodes {
+                if !arms && isArm(c) { c.removeFromParentNode(); continue }
+                walk(c)
+            }
+            n.castsShadow = false
+            if n.geometry != nil {
+                n.renderingOrder = order
+                if arms, let nm = n.name, nm.hasSuffix("_glove"), let ms = n.geometry?.materials { gloves += ms }
+                if let nm = n.name, nm.hasSuffix("_QUATP"), let ms = n.geometry?.materials {
+                    for m in ms where !paints.contains(where: { $0 === m }) { paints.append(m) }
+                }
+            }
+        }
+        walk(root)
+        glbPaint["\(id)#\(setIdx)"] = paints
+        glbPaintBase["\(id)#\(setIdx)"] = paints.map { $0.diffuse.contents }
+        for c in root.childNodes { if let nm = c.name, ["slide", "bolt", "mag", "pump"].contains(nm) { groups[nm] = c } }
+        var dirs: [String: MXVector3] = [:]
+        if let an = meta["anim"] as? [String: [Double]] {
+            for (k, a) in an where a.count == 3 { dirs[k] = MXVector3(Float(a[0]), Float(a[1]), Float(a[2])) }
+        }
+        let st = Float((meta["st"] as? Double) ?? 4)
+        return GlbGun(node: root, groups: groups, dirs: dirs, travel: st, gloveMats: gloves)
+    }
     private static var worldCache: [String: MXNode] = [:]
     private static var worldMuzzle: [String: Float] = [:]
 
