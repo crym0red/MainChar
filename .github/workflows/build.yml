@@ -18,7 +18,7 @@ jobs:
 
       - name: Prune legacy files
         run: |
-          keep=" AvatarStudio.swift Lobby.swift MainShotCore.swift Portrait.swift PortraitExtras.swift TacAvatar.swift TacRadar.swift TacSeason.swift TacUI.swift TacWeapons.swift Tactical.swift TacticalScene.swift TowerRig.swift TwProps.swift ViewModel.swift MXCore.swift MXShaders.swift MXRender.swift MXLoader.swift AvatarStage.swift TacFace.swift TacMap.swift TacHUD.swift TacRank.swift TacCS.swift TacCS2.swift TacMaps2.swift TacAttach.swift TacGunsmith.swift TacRaid.swift TacRaid2.swift TacMarket.swift TacStairs.swift TacMapsHarbor.swift TacGrid.swift TacWorkshop.swift TacFrontline.swift TacLobbyHome.swift TacShell.swift TacCustomize.swift TacLoadoutHome.swift TacBodycam.swift TacApartment.swift "
+          keep=" AvatarStudio.swift Lobby.swift MainShotCore.swift Portrait.swift PortraitExtras.swift TacAvatar.swift TacRadar.swift TacSeason.swift TacUI.swift TacWeapons.swift Tactical.swift TacticalScene.swift TowerRig.swift TwProps.swift ViewModel.swift MXCore.swift MXShaders.swift MXRender.swift MXLoader.swift AvatarStage.swift TacFace.swift TacMap.swift TacHUD.swift TacRank.swift TacCS.swift TacCS2.swift TacMaps2.swift TacAttach.swift TacGunsmith.swift TacRaid.swift TacRaid2.swift TacMarket.swift TacStairs.swift TacMapsHarbor.swift TacGrid.swift TacWorkshop.swift TacFrontline.swift TacLobbyHome.swift TacShell.swift TacCustomize.swift TacLoadoutHome.swift TacBodycam.swift TacApartment.swift TacBodycamLobby.swift TacMapEditor.swift "
           find Sources -name '*.swift' | while IFS= read -r f; do
             case "$keep" in *" $(basename "$f") "*) ;; *) rm -f "$f" ;; esac
           done
@@ -41,7 +41,7 @@ jobs:
         id: build
         run: |
           set -o pipefail
-          xcodebuild -project MainShot.xcodeproj -scheme MainShot -configuration Release \
+          xcodebuild -project BattleCam.xcodeproj -scheme BattleCam -configuration Release \
             -sdk iphoneos -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             build 2>&1 | tee build.log
@@ -105,10 +105,10 @@ jobs:
       - name: Package IPA
         run: |
           mkdir -p Payload
-          cp -R build/Build/Products/Release-iphoneos/MainShot.app Payload/
-          zip -qry MainShot.ipa Payload
+          cp -R build/Build/Products/Release-iphoneos/BattleCam.app Payload/
+          zip -qry BattleCam.ipa Payload
 
       - uses: actions/upload-artifact@v4
         with:
-          name: MainShot-ipa
-          path: MainShot.ipa
+          name: BattleCam-ipa
+          path: BattleCam.ipa
