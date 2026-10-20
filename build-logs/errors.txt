@@ -1,0 +1,12 @@
+--- xcodebuild: WARNING: Using the first of multiple matching destinations:
+/Users/runner/work/MainChar/MainChar/Sources/TacMap.swift:192:25: error: cannot find 'TAnnex' in scope
+/Users/runner/work/MainChar/MainChar/Sources/TacMap.swift:192:44: error: cannot find 'TAnnex' in scope
+/Users/runner/work/MainChar/MainChar/Sources/TacMap.swift:192:58: error: cannot find 'TAnnex' in scope
+/Users/runner/work/MainChar/MainChar/Sources/TacMap.swift:200:23: error: cannot find 'TAnnex' in scope
+/Users/runner/work/MainChar/MainChar/Sources/TacticalScene.swift:1594:41: error: cannot find 'TacImpactFX' in scope
+/Users/runner/work/MainChar/MainChar/Sources/TacticalScene.swift:1595:15: error: value of type 'TacticalEngine' has no member 'impacts'
+/Users/runner/work/MainChar/MainChar/Sources/TacticalScene.swift:1596:42: error: value of type 'TacticalEngine' has no member 'impacts'
+/Users/runner/work/MainChar/MainChar/Sources/TacticalScene.swift:1597:15: error: value of type 'TacticalEngine' has no member 'impacts'
+/Users/runner/work/MainChar/MainChar/Sources/TacticalScene.swift:48:19: error: cannot find type 'TacImpactFX' in scope
+/Users/runner/work/MainChar/MainChar/Sources/ViewModel.swift:198:13: error: cannot find 'MuzzleFX' in scope
+/Users/runner/work/MainChar/MainChar/Sources/ViewModel.swift:53:29: error: cannot find 'MuzzleFX' in scope
