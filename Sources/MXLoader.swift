@@ -262,6 +262,19 @@ enum MXGLTF {
             if let t = pbr["baseColorTexture"] as? [String: Any], let ti = t["index"] as? Int, let img = image(ti, &ctx) {
                 m.diffuse.contents = img
             }
+            let rf = (pbr["roughnessFactor"] as? Double) ?? 0.8
+            if (pbr["metallicFactor"] as? Double ?? 0) <= 0.5, d["normalTexture"] != nil {
+                // dielectric: glossiness follows the roughness factor (plaster dull, varnished wood and tile glossier)
+                let r = max(0.12, min(1, rf))
+                m.specular.contents = UIColor(white: CGFloat(0.12 + 0.2 * (1 - r)), alpha: 1)
+                m.shininess = CGFloat(max(0.02, (2 / (r * r) - 2) / 128))
+            }
+            if let nt = d["normalTexture"] as? [String: Any], let ni = nt["index"] as? Int, let img = image(ni, &ctx) {
+                // baked height map riding in the normal slot; the renderer turns it into a bump
+                m.normal.contents = img
+                m.bakedLighting = true
+                m.normal.intensity = CGFloat((nt["scale"] as? Double) ?? 0.45)
+            }
             if let met = pbr["metallicFactor"] as? Double, met > 0.5 {
                 let rough = (pbr["roughnessFactor"] as? Double) ?? 0.5
                 m.specular.contents = UIColor(white: 0.7, alpha: 1)

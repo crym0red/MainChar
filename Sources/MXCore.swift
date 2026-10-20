@@ -91,6 +91,8 @@ final class MXMaterial {
     var transparency: CGFloat = 1
     var transparencyMode: MXTransparencyMode = .aOne
     var isDoubleSided = false
+    /// light and occlusion are already in the textures: skip the shader's built-in wall/floor shading tricks
+    var bakedLighting = false
     var writesToDepthBuffer = true
     var readsFromDepthBuffer = true
     init() {}
@@ -520,6 +522,9 @@ final class MXCamera {
     /// bodycam lens strength (0 = off) and animation clock, read by the composite pass
     var bodycam: CGFloat = 0
     var camTime: Float = 0
+    /// scene exposure multiplier and lens-dirt strength on the bloom (0 = clean lens)
+    var exposure: CGFloat = 1
+    var lensDirt: CGFloat = 0
     init() {}
 }
 

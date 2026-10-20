@@ -206,7 +206,7 @@ enum TMap {
         solid = origBase + d.layout.doors
         solidKind = d.layout.walls.map { _ -> PropKind? in nil } + d.props.map { Optional($0.k) } + d.layout.doors.map { _ -> PropKind? in nil }
         solidMat = d.layout.mats + d.props.map { TMap.propMat($0.k) } + d.layout.doors.map { _ -> WallMat in .wood }
-        maxHP = d.layout.walls.map { min($0.width, $0.height) <= 25.01 ? 110 : -1 } + d.props.map { propHP($0.k) }
+        maxHP = d.layout.walls.map { min($0.width, $0.height) <= 25.01 && k != 7 ? 110 : -1 } + d.props.map { propHP($0.k) }
         hp = maxHP
         broken = []; brokenAll = []; breaches = []
         floorIdx = makeFloorIdx()

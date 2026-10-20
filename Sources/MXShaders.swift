@@ -140,7 +140,7 @@ fragment float4 fs_main(VOut in [[stage_in]],
     else { base.rgb *= m.mulColor.rgb; }
     float alpha = base.a * m.params.x;
     float3 Nn = normalize(in.nrm);
-    if (m.params.w < 1.5 && in.pos.z > 0.1) {
+    if (m.params.w < 1.5 && in.pos.z > 0.1 && m.flags2.y < 0.5) {
         if (abs(Nn.y) < 0.6) {
             // walls darken toward the ground like baked contact AO
             base.rgb *= mix(0.6, 1.0, smoothstep(0.0, 70.0, in.wpos.y));
@@ -322,12 +322,26 @@ static float hash21(float2 p) {
     return fract(p.x * p.y);
 }
 
+static float dirtMask(float2 uv) {
+    float s = 0.0, a = 0.5;
+    float2 p = uv * float2(5.0, 3.0);
+    for (int i = 0; i < 3; i++) {
+        float2 ip = floor(p), fp = fract(p);
+        fp = fp * fp * (3.0 - 2.0 * fp);
+        float v = mix(mix(hash21(ip), hash21(ip + float2(1, 0)), fp.x), mix(hash21(ip + float2(0, 1)), hash21(ip + float2(1, 1)), fp.x), fp.y);
+        s += v * a; a *= 0.5; p *= 2.1;
+    }
+    return smoothstep(0.35, 0.8, s);
+}
+
 fragment float4 fs_comp(FSOut in [[stage_in]],
                         texture2d<float> hdr [[texture(0)]],
                         texture2d<float> bloom [[texture(1)]],
                         constant float4& p0 [[buffer(0)]],
                         constant float4& p1 [[buffer(1)]],
-                        constant float4& p2 [[buffer(2)]]) {
+                        constant float4& p2 [[buffer(2)]],
+                        constant float4& p3 [[buffer(3)]]) {
+    // p3: x lens dirt strength
     // p0: x bloom intensity, y saturation, z contrast, w tone map on
     // p1: x vignette intensity, y vignette power, z exposure, w bodycam strength
     // p2: x time, y aspect, zw target size
@@ -352,13 +366,13 @@ fragment float4 fs_comp(FSOut in [[stage_in]],
         float2 uvb = clamp(uvd - dir * ca * float2(1.0 / asp, 1.0), 0.0, 1.0);
         float4 sg = hdr.sample(sClamp, uvd);
         float3 raw = float3(hdr.sample(sClamp, uvr).r, sg.g, hdr.sample(sClamp, uvb).b);
-        float3 bl = bloom.sample(sClamp, uvd).rgb * p0.x;
+        float3 bl = bloom.sample(sClamp, uvd).rgb * p0.x * (1.0 + p3.x * 2.2 * dirtMask(uv));
         c = (raw + bl) * p1.z * 1.12;
         a = sg.a;
         edge = 1.0;
     } else {
         float4 s = hdr.sample(sClamp, uv);
-        c = s.rgb + bloom.sample(sClamp, uv).rgb * p0.x;
+        c = s.rgb + bloom.sample(sClamp, uv).rgb * p0.x * (1.0 + p3.x * 2.2 * dirtMask(uv));
         c *= p1.z;
         a = s.a;
     }

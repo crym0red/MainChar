@@ -45,6 +45,9 @@ final class TacScene {
     var stackAnim: Float = 0
     var stackPrev = -1
     var liftF: Float = 0
+    var impactFX: TacImpactFX?
+    var muzzleLight: MXNode?
+    var expoCur: Float = 1
     var stairWas = false
     var stackT: Double = 0
     let stackH: Float = 82
@@ -480,7 +483,7 @@ final class TacScene {
 
         let lampCols: [UIColor] = [C(0.75, 0.86, 1), C(1, 0.84, 0.58), C(1, 0.72, 0.46)]
         for rm in TMap.rooms where rm.mat < 6 {
-            let n = max(1, Int(rm.r.width / 600))
+            let n = TMap.kind == 7 ? max(1, Int(rm.r.width / 350)) : max(1, Int(rm.r.width / 600))
             for j in 0..<n {
                 let lx = rm.r.minX + rm.r.width * (CGFloat(j) + 0.5) / CGFloat(n)
                 let nd = MXNode()
@@ -516,12 +519,48 @@ final class TacScene {
         cam.screenSpaceAmbientOcclusionRadius = 10
         cam.saturation = 1.28
         cam.contrast = 0.24
+        if TMap.kind == 7 {
+            cam.lensDirt = 0.35
+            cam.bloomIntensity = 0.6
+            cam.saturation = 1.12
+            cam.contrast = 0.18
+        }
         camNode.camera = cam
         root.addChildNode(camNode)
         camNode.addChildNode(vm.root)
 
+        // modelled shell for the annex (Blender: PBR surfaces, trim, baked light and occlusion)
+        var annex: [Int: [String: MXNode]] = [:]
+        if TMap.kind == 7 {
+            for f in 1...2 {
+                guard let a = MXModel.load("annex_f\(f)") else { continue }
+                var d: [String: MXNode] = [:]
+                func scan(_ n: MXNode) {
+                    for c in n.childNodes {
+                        if let nm = c.name, ["shell", "ceil", "stairs", "fence"].contains(nm) { d[nm] = c } else { scan(c) }
+                    }
+                }
+                scan(a)
+                annex[f] = d
+            }
+            func noShadow(_ n: MXNode) { n.castsShadow = false; for c in n.childNodes { noShadow(c) } }
+            for (f, d) in annex {
+                for key in ["shell", "stairs", "fence"] {
+                    guard let n = d[key] else { continue }
+                    if key == "stairs" { noShadow(n) }
+                    floorRoot[f].addChildNode(n)
+                }
+            }
+        }
+
         // ceilings (only shown in first person)
         for i in 0..<3 {
+            if TMap.kind == 7, let cn = annex[i]?["ceil"] {
+                cn.isHidden = true
+                floorRoot[i].addChildNode(cn)
+                ceilNodes.append(cn)
+                continue
+            }
             let cm = MXMaterial()
             cm.diffuse.contents = UIColor(red: 0.72, green: 0.7, blue: 0.66, alpha: 1)
             cm.emission.contents = UIColor(red: 0.04, green: 0.04, blue: 0.04, alpha: 1)
@@ -545,6 +584,7 @@ final class TacScene {
         // floors
         let floorCols = TWorkshop.floorMatCols
         for rm in TMap.floorTiles {
+            if TMap.kind == 7 && !annex.isEmpty && rm.name != "Yard" { continue }
             let b = floorCols[rm.mat]
             let img: UIImage
             switch rm.mat {
@@ -654,6 +694,7 @@ final class TacScene {
         let woodsMap = TMap.look >= 1
         let bark = TMap.look == 3 ? noiseTex((0.78, 0.66, 0.46), "sandstone", dots: 2400, grid: false) : (TMap.look == 2 ? cinder : woodTex((0.34, 0.24, 0.15), "bark"))
         for (k, o) in TMap.walls.enumerated() {
+            if TMap.kind == 7 && !annex.isEmpty { continue }
             let wf = TMap.floorOfX(o.midX)
             let img = wf == 0 ? cinder : (wf == 1 ? (woodsMap ? bark : paper) : plank)
             let tile: CGFloat = wf == 1 ? 160 : 128
@@ -680,6 +721,7 @@ final class TacScene {
             debrisFloor.append(0)
         }
         // stairs
+        impactFX?.clear(); impactFX = nil
         stairNodes = [:]
         rubbleNodes = [:]
         for i in TMap.stairs.indices {
@@ -689,6 +731,10 @@ final class TacScene {
             rub.isHidden = true
             fr(lr.midX).addChildNode(rub)
             rubbleNodes[i] = rub
+            if TMap.kind == 7, let sn = annex[TMap.stairLo[i]]?["stairs"] {
+                stairNodes[i] = [sn]
+                continue
+            }
             if TMap.smooth {
                 // one straight flight: 14 risers from the foot (maxY) to the head (minY), rising through the opening above
                 let r0 = TMap.stairRect(i, floor: TMap.stairLo[i])
@@ -1424,6 +1470,26 @@ final class TacScene {
             lastVmT = e.time
             vm.update(dt: vdt, t: Float(e.time), move: e.replayOn ? 0.6 : Float(min(1, hypot(e.move.dx, e.move.dy))), kick: e.replayOn ? (focus.flash > 0 ? 6 : 0) : Float(e.kick), reload: rprog, flashing: focus.flash > 0, recoilScale: TWeapons.recoil(focus.gun))
             vm.flash(focus.flash > 0)
+            // the muzzle lights the room for the length of the flash
+            if muzzleLight == nil {
+                let ln = MXNode()
+                let li = MXLight()
+                li.type = .omni
+                li.color = UIColor(red: 1, green: 0.78, blue: 0.45, alpha: 1)
+                li.intensity = 900
+                li.attenuationStartDistance = 10
+                li.attenuationEndDistance = 320
+                ln.light = li
+                ln.position = MXVector3(4, -2, -26)
+                ln.isHidden = true
+                camNode.addChildNode(ln)
+                muzzleLight = ln
+            }
+            if let ln = muzzleLight {
+                let on = focus.flash > 0 && focus.alive
+                if on { ln.light?.intensity = CGFloat.random(in: 650...1250) }
+                ln.isHidden = !on
+            }
             camNode.camera?.fieldOfView += ((e.scoped ? TAtt.mods(e.me.gun).zoomFOV : TBody.fov) - (camNode.camera?.fieldOfView ?? TBody.fov)) * 0.3
             // bodycam: strapped to the chest, so it breathes, rolls with every step and lags the aim
             let bt = Double(e.time)
@@ -1525,6 +1591,23 @@ final class TacScene {
                 node.geometry?.firstMaterial?.diffuse.contents = g.kind == 1 ? UIColor(white: 0.75, alpha: 1) : UIColor(red: 0.3, green: 0.8, blue: 0.3, alpha: 1)
             } else { node.isHidden = true }
         }
+        if impactFX == nil { impactFX = TacImpactFX(roots: floorRoot) }
+        if !e.impacts.isEmpty {
+            if !e.replayOn { for im in e.impacts where TMap.floorOf(im.pos) < floorRoot.count { impactFX?.spawn(im) } }
+            e.impacts.removeAll()
+        }
+        impactFX?.update(sdt, camPlan: focus.pos)
+        // slow eye adaptation: brighter inside, a touch darker in the open yard, dipping under a muzzle flash
+        var tgt: Float = 1
+        if TMap.kind == 7 {
+            let o = TMap.origin(TMap.floorOf(focus.pos))
+            let pl = CGPoint(x: focus.pos.x - o, y: focus.pos.y)
+            let inside = TMap.floorOf(focus.pos) == 2 || CGRect(x: 300, y: 225, width: 800, height: 500).contains(pl)
+            tgt = inside ? 1.12 : 0.92
+        }
+        if focus.flash > 0 { tgt *= 0.93 }
+        expoCur += (tgt - expoCur) * min(1, sdt * 1.6)
+        camNode.camera?.exposure = CGFloat(expoCur)
         for (i, node) in boomPool.enumerated() {
             if i < e.booms.count, TMap.floorOf(e.booms[i].pos) == focusFloor {
                 let b = e.booms[i]

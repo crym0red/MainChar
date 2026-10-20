@@ -314,7 +314,7 @@ final class MXRenderer {
     private let nodeU = UnsafeMutablePointer<simd_float4x4>.allocate(capacity: 2)
     private let nodeI = UnsafeMutablePointer<simd_float4x4>.allocate(capacity: 64)
     private let matU = UnsafeMutablePointer<SIMD4<Float>>.allocate(capacity: 8)
-    private let post0 = UnsafeMutablePointer<SIMD4<Float>>.allocate(capacity: 3)
+    private let post0 = UnsafeMutablePointer<SIMD4<Float>>.allocate(capacity: 4)
 
     private struct Item {
         var mesh: MXGPUMesh
@@ -550,7 +550,7 @@ final class MXRenderer {
         matU[4] = SIMD4<Float>(alpha / max(diff.w, 0.0001), Float(m.reflective.intensity), Float(m.normal.intensity), model)
         matU[5] = SIMD4<Float>(dTex != nil ? 1 : 0, bTex != nil ? 1 : 0, mTex != nil ? 1 : 0, eTex != nil ? 1 : 0)
         matU[6] = SIMD4<Float>(ds.sx, ds.sy, bs.sx, bs.sy)
-        matU[7] = SIMD4<Float>(m.isDoubleSided ? 1 : 0, 0, 0, 0)
+        matU[7] = SIMD4<Float>(m.isDoubleSided ? 1 : 0, m.bakedLighting ? 1 : 0, 0, 0)
         enc.setFragmentBytes(matU, length: 8 * MemoryLayout<SIMD4<Float>>.stride, index: 0)
         enc.setFragmentTexture(dTex ?? gpu.whiteTex, index: 0)
         enc.setFragmentTexture(mTex ?? gpu.whiteTex, index: 1)
@@ -873,11 +873,13 @@ final class MXRenderer {
             ce.setFragmentTexture(hdr, index: 0)
             ce.setFragmentTexture(bloomTex, index: 1)
             post0[0] = SIMD4<Float>(bloomOn ? Float(camera.bloomIntensity) : 0, Float(camera.saturation == 0 ? 1 : camera.saturation), Float(camera.contrast), camera.wantsHDR ? 1 : 0)
-            post0[1] = SIMD4<Float>(Float(camera.vignettingIntensity), Float(max(0.1, camera.vignettingPower)), 1.0, Float(camera.bodycam))
+            post0[1] = SIMD4<Float>(Float(camera.vignettingIntensity), Float(max(0.1, camera.vignettingPower)), Float(max(0.05, camera.exposure)), Float(camera.bodycam))
+            post0[3] = SIMD4<Float>(Float(camera.lensDirt), 0, 0, 0)
             post0[2] = SIMD4<Float>(camera.camTime, Float(target.width) / Float(max(1, target.height)), Float(target.width), Float(target.height))
             ce.setFragmentBytes(post0, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
             ce.setFragmentBytes(post0 + 1, length: MemoryLayout<SIMD4<Float>>.stride, index: 1)
             ce.setFragmentBytes(post0 + 2, length: MemoryLayout<SIMD4<Float>>.stride, index: 2)
+            ce.setFragmentBytes(post0 + 3, length: MemoryLayout<SIMD4<Float>>.stride, index: 3)
             ce.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
             ce.endEncoding()
         }
