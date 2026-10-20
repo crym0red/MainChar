@@ -140,6 +140,15 @@ enum TAtt {
                 m.diffuse.contents = UIColor(red: CGFloat(df[0]), green: CGFloat(df[1]), blue: CGFloat(df[2]), alpha: 1)
             }
         }
+        // Blender-built guns: only the painted / polymer / wood parts take the camo, bare metal keeps its baked texture
+        if let pm = TwGunLib.glbPaint["\(gun)#\(set)"], let base = TwGunLib.glbPaintBase["\(gun)#\(set)"] {
+            for (i, m) in pm.enumerated() {
+                if let d = d, let c = d.color {
+                    if let img = TAttPattern.gunSkin(d) { m.diffuse.contents = img }
+                    else { m.diffuse.contents = UIColor(red: c.0, green: c.1, blue: c.2, alpha: 1) }
+                } else if i < base.count, let b = base[i] { m.diffuse.contents = b }
+            }
+        }
     }
 
     /// puts the shared (bot / world) gun materials back to their stock colours

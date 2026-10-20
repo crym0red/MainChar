@@ -16,6 +16,24 @@ enum TAttPattern {
 
     private static func ui(_ c: (CGFloat, CGFloat, CGFloat)) -> UIColor { UIColor(red: c.0, green: c.1, blue: c.2, alpha: 1) }
 
+    /// camo tiled across the 512px atlas of a Blender-built gun so every UV island shows the pattern
+    static func gunSkin(_ d: TAttDef) -> UIImage? {
+        let key = d.id + "#g"
+        if let c = cache[key] { return c }
+        guard let tile = image(d) else { return nil }
+        let n: CGFloat = 512, t: CGFloat = 170
+        let img = UIGraphicsImageRenderer(size: CGSize(width: n, height: n)).image { _ in
+            var y: CGFloat = 0
+            while y < n {
+                var x: CGFloat = 0
+                while x < n { tile.draw(in: CGRect(x: x, y: y, width: t, height: t)); x += t }
+                y += t
+            }
+        }
+        cache[key] = img
+        return img
+    }
+
     static func image(_ d: TAttDef) -> UIImage? {
         if d.pat == 0 { return nil }
         if let c = cache[d.id] { return c }
@@ -187,6 +205,7 @@ enum TAttBuild {
             let up = Float(S(tb)[1] / 2)
             topPos = P(tb) + rot(QG, SIMD3<Float>(0, up, 0))
         }
+        if let tp = TwGunLib.gmeta[gid]?["top"] as? [Double], tp.count == 3 { topPos = v3(tp) }
         let lens = mat(0.2, 0.5, 0.8, sp: 0.9, sh: 0.8, alpha: 0.75)
         let metal = mat(0.16, 0.17, 0.19, sp: 0.9, sh: 0.55)
         let steel = mat(0.5, 0.52, 0.55, sp: 0.95, sh: 0.7)
@@ -413,9 +432,13 @@ struct GunPreview3D: UIViewRepresentable {
         TwGunLib.setIdx = 2
         TwGunLib.load()
         let gun = MXNode()
-        for p in parts {
-            if arm.contains((p["m"] as? String) ?? "") { continue }
-            if let n = TwGunLib.makePart(p) { gun.addChildNode(n) }
+        if let gg = TwGunLib.glbGun(gid, arms: false) {
+            gun.addChildNode(gg.node)
+        } else {
+            for p in parts {
+                if arm.contains((p["m"] as? String) ?? "") { continue }
+                if let n = TwGunLib.makePart(p) { gun.addChildNode(n) }
+            }
         }
         let att = TAttBuild.build(gid, into: gun, magHolder: nil)
         att.apply(gid)
