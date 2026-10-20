@@ -9,7 +9,7 @@ enum TMap {
     static let nFloors = 3
     static var W: CGFloat = 3000
     static var H: CGFloat = 1800
-    static var look: Int { kind == 6 ? 0 : ((kind == 4 || kind == 5) ? 2 : kind) }
+    static var look: Int { (kind == 6 || kind == 7) ? 0 : ((kind == 4 || kind == 5) ? 2 : kind) }
     static var totalW: CGFloat { off * 3 }
     static let th: CGFloat = 14
     static let wallH: CGFloat = 80
@@ -88,7 +88,7 @@ enum TMap {
 
     static func site(_ i: Int) -> CGRect { i == 0 ? siteA : siteB }
     static var siteNames: [String] { cur.siteNames }
-    static let mapNames = ["THE HOUSE", "THE WOODS", "WAREHOUSE YARD", "DESERT OUTPOST", "HARBOR COMPLEX", "CUSTOM MAP", "BLOCK 9"]
+    static let mapNames = ["THE HOUSE", "THE WOODS", "WAREHOUSE YARD", "DESERT OUTPOST", "HARBOR COMPLEX", "CUSTOM MAP", "BLOCK 9", "ANNEX"]
 
     static func roomName(_ p: CGPoint) -> String {
         for r in rooms where r.r.contains(p) { return r.name }
@@ -189,6 +189,7 @@ enum TMap {
         W = 3000; floorW = 3000; off = 3200; H = 1800
         _ = THouse.shared
         if k == 4 { W = THarbor.W; floorW = THarbor.W; off = THarbor.W + 200; H = THarbor.W }
+        if k == 7 { W = TAnnex.W; floorW = TAnnex.W; H = TAnnex.H }
         switch k {
         case 1: cur = TWoods.shared
         case 2: cur = TWarehouse.shared
@@ -196,6 +197,7 @@ enum TMap {
         case 4: cur = THarbor.shared
         case 5: cur = TCustom.shared
         case 6: cur = TApartment.shared
+        case 7: cur = TAnnex.shared
         default: cur = THouse.shared
         }
         let d = cur

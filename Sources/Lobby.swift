@@ -30,7 +30,7 @@ struct LobbyView: View {
         GeometryReader { g in
             let t = game.s.ex.tac ?? TacData()
             ZStack {
-                CSBackdrop()
+                BodycamBackdrop()
                 Group {
                     switch screen {
                     case 1: modeScreen(t, g.size)
@@ -105,7 +105,7 @@ struct LobbyView: View {
     }
 
     private func startLoading() {
-        TMap.load(nav.tacMap == 5 ? 5 : 6)
+        TMap.load([5, 6, 7].contains(nav.tacMap) ? nav.tacMap : 7)
         mapImg = TacRadar.image(1)
         loadP = 0
         screen = 3

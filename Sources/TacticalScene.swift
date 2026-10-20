@@ -44,6 +44,8 @@ final class TacScene {
     var focusFloor = 0
     var stackAnim: Float = 0
     var stackPrev = -1
+    var liftF: Float = 0
+    var stairWas = false
     var stackT: Double = 0
     let stackH: Float = 82
     var linkedFloors = Set<Int>()
@@ -687,6 +689,42 @@ final class TacScene {
             rub.isHidden = true
             fr(lr.midX).addChildNode(rub)
             rubbleNodes[i] = rub
+            if TMap.smooth {
+                // one straight flight: 14 risers from the foot (maxY) to the head (minY), rising through the opening above
+                let r0 = TMap.stairRect(i, floor: TMap.stairLo[i])
+                let n = Int(TMap.stairSteps)
+                let tread = r0.height / TMap.stairSteps
+                let rise = TMap.riseH / TMap.stairSteps
+                let wood = UIColor(red: 0.5, green: 0.37, blue: 0.24, alpha: 1)
+                let riserC = UIColor(red: 0.34, green: 0.25, blue: 0.17, alpha: 1)
+                let steel = UIColor(red: 0.16, green: 0.16, blue: 0.17, alpha: 1)
+                for k in 0..<n {
+                    let sr = CGRect(x: r0.minX, y: r0.maxY - CGFloat(k + 1) * tread, width: r0.width, height: tread + 0.4)
+                    let top = CGFloat(k + 1) * rise
+                    let tone = CGFloat(k % 2) * 0.03
+                    let tc = UIColor(red: 0.5 + tone, green: 0.37 + tone, blue: 0.24 + tone, alpha: 1)
+                    let st = solid(sr, h: top, color: riserC, top: tc)
+                    st.castsShadow = false
+                    fr(r0.midX).addChildNode(st)
+                    stepNodes.append(st)
+                    // handrails on both sides, stepped to follow the flight, with a post every third tread
+                    for sx0 in [r0.minX + 1.5, r0.maxX - 4.5] {
+                        let rl = solid(CGRect(x: sx0, y: sr.minY, width: 3, height: tread + 0.4), h: 3, y0: top + 26, color: steel, top: steel)
+                        rl.castsShadow = false
+                        fr(r0.midX).addChildNode(rl)
+                        stepNodes.append(rl)
+                        if k % 3 == 0 {
+                            let po = solid(CGRect(x: sx0, y: sr.minY + tread * 0.4, width: 3, height: 3), h: 26, y0: top, color: steel, top: steel)
+                            po.castsShadow = false
+                            fr(r0.midX).addChildNode(po)
+                            stepNodes.append(po)
+                        }
+                    }
+                }
+                _ = wood
+                stairNodes[i] = stepNodes
+                continue
+            }
             for fl in TMap.stairLo[i]...(TMap.stairLo[i] + 1) {
                 let r = TMap.stairRect(i, floor: fl)
                 if fl == TMap.stairLo[i] {
@@ -1284,7 +1322,11 @@ final class TacScene {
         let focus: TPlayer = e.replayOn ? (e.players.first { $0.id == e.replayKiller } ?? e.me) : e.me.alive ? e.me : (e.gameMode != 6 ? e.players.first { $0.id == e.lastKiller && $0.alive && !$0.isPlayer } : nil) ?? (e.players.first { $0.team == e.me.team && $0.alive } ?? e.me)
         // floors are stacked vertically, so taking stairs glides the world up/down instead of cutting to another floor
         let nf = TMap.floorOf(focus.pos)
-        if stackPrev >= 0 && nf != stackPrev && !e.replayOn { stackAnim = Float(nf - stackPrev) * stackH }
+        let focusLift: CGFloat? = TMap.smooth ? TMap.stairLift(focus.pos) : nil
+        liftF = Float(focusLift ?? 0)
+        let stairNow = focusLift != nil
+        if stackPrev >= 0 && nf != stackPrev && !e.replayOn && !(TMap.smooth && (stairNow || stairWas)) { stackAnim = Float(nf - stackPrev) * stackH }
+        stairWas = stairNow
         if e.replayOn { stackAnim = 0 }
         stackPrev = nf
         let nowT = CACurrentMediaTime()
@@ -1303,7 +1345,7 @@ final class TacScene {
             }
         }
         for i in 0..<3 {
-            let dy = Float(i - nf) * stackH + stackAnim
+            let dy = Float(i - nf) * stackH + stackAnim - liftF
             floorRoot[i].position = MXVector3(-Float(TMap.origin(i)), dy, 0)
             floorRoot[i].isHidden = i != nf && !linked.contains(i) && (stackAnim == 0 || abs(i - nf) != 1)
         }
@@ -1418,7 +1460,7 @@ final class TacScene {
             if !show { continue }
             let ks: Float = fpMode ? 1.18 : 1
             rt.scale = MXVector3(ks, ks * (p.crouch ? 0.74 : 1), ks)
-            rt.position = MXVector3(Float(sx(p.pos)), Float(TMap.floorOf(p.pos) - focusFloor) * stackH + stackAnim, Float(p.pos.y))
+            rt.position = MXVector3(Float(sx(p.pos)), Float(TMap.floorOf(p.pos) - focusFloor) * stackH + stackAnim - liftF + Float(TMap.smooth ? (TMap.stairLift(p.pos) ?? 0) : 0), Float(p.pos.y))
             rt.eulerAngles = MXVector3(0, Float(-p.aim), 0)
             heads[i].eulerAngles = MXVector3(0, Float(p.aim), 0)
             if p.alive {
@@ -1468,7 +1510,7 @@ final class TacScene {
             if !e.replayOn, i < e.bullets.count, TMap.floorOf(e.bullets[i].pos) == focusFloor {
                 let b = e.bullets[i]
                 node.isHidden = false
-                node.position = MXVector3(Float(sx(b.pos)), 30, Float(b.pos.y))
+                node.position = MXVector3(Float(sx(b.pos)), 30 - liftF, Float(b.pos.y))
                 node.eulerAngles = MXVector3(0, Float(-atan2(b.vel.dy, b.vel.dx)), 0)
                 let c: UIColor = b.team == e.me.team ? UIColor(red: 0.7, green: 0.9, blue: 1, alpha: 1) : UIColor(red: 1, green: 0.55, blue: 0.35, alpha: 1)
                 node.geometry?.firstMaterial?.emission.contents = c
@@ -1479,7 +1521,7 @@ final class TacScene {
             if !e.replayOn, i < e.nades.count, TMap.floorOf(e.nades[i].pos) == focusFloor {
                 let g = e.nades[i]
                 node.isHidden = false
-                node.position = MXVector3(Float(sx(g.pos)), 8, Float(g.pos.y))
+                node.position = MXVector3(Float(sx(g.pos)), 8 - liftF, Float(g.pos.y))
                 node.geometry?.firstMaterial?.diffuse.contents = g.kind == 1 ? UIColor(white: 0.75, alpha: 1) : UIColor(red: 0.3, green: 0.8, blue: 0.3, alpha: 1)
             } else { node.isHidden = true }
         }

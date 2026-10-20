@@ -107,3 +107,50 @@ struct BodycamHud: View {
         .allowsHitTesting(false)
     }
 }
+
+
+/// ammo line, bottom centre; tap swaps to the other weapon
+struct BodycamAmmo: View {
+    let e: TacticalEngine
+    var body: some View {
+        let me = e.me
+        let g = TGuns.get(me.gun)
+        let pistol = TWeapons.isPistol(me.gun)
+        return Button { e.wantSwap = true } label: {
+            HStack(spacing: 8) {
+                Text(g.name.uppercased()).foregroundColor(.white.opacity(0.7))
+                if me.reloadT > 0 {
+                    Text("RELOADING").foregroundColor(Color(red: 1, green: 0.7, blue: 0.2))
+                } else {
+                    Text(pistol ? "\(me.mag)" : "\(me.mag) / \(me.spare * g.mag)").foregroundColor(me.mag == 0 ? Color(red: 1, green: 0.3, blue: 0.25) : .white)
+                }
+            }
+            .font(.system(size: 13, weight: .bold, design: .monospaced))
+            .shadow(color: .black.opacity(0.8), radius: 2)
+            .padding(.horizontal, 12).padding(.vertical, 6)
+        }
+        .buttonStyle(TuiPress())
+    }
+}
+
+/// shown while down: camera feed lost, auto redeploy, tap for loadout
+struct BodycamDown: View {
+    let e: TacticalEngine
+    let loadout: () -> Void
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.55).ignoresSafeArea().allowsHitTesting(false)
+            VStack(spacing: 6) {
+                Text("SIGNAL LOST").font(.system(size: 20, weight: .heavy, design: .monospaced)).foregroundColor(Color(red: 0.95, green: 0.2, blue: 0.15))
+                if e.me.respawn > 0 && e.me.respawn < 100 {
+                    Text("REDEPLOY \(Int(ceil(e.me.respawn)))").font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(.white.opacity(0.8))
+                }
+                Button(action: loadout) {
+                    Text("LOADOUT").font(.system(size: 12, weight: .heavy, design: .monospaced)).foregroundColor(.white)
+                        .padding(.horizontal, 16).padding(.vertical, 7).overlay(Rectangle().stroke(Color.white.opacity(0.6), lineWidth: 1))
+                }
+                .buttonStyle(TuiPress())
+            }
+        }
+    }
+}

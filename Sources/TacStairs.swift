@@ -17,6 +17,29 @@ extension TMap {
         stairBrokenAll = []
     }
 
+    /// the annex uses continuous stairs: one straight run, near (foot) end at the rect's maxY, head at minY
+    static var smooth: Bool { kind == 7 }
+    static let riseH: CGFloat = 82
+    static let stairSteps: CGFloat = 14
+
+    /// 0 at the foot of the run, 1 at the head
+    static func stairT(_ i: Int, _ p: CGPoint) -> CGFloat {
+        let r = stairs[i], y = planOf(p).y
+        return min(1, max(0, (r.maxY - y) / max(1, r.height)))
+    }
+
+    /// vertical offset of the eye against the floor the point stands on, nil when not on a staircase.
+    /// Ground floor: 0...riseH going up. Upper floor: -riseH...0. Both agree at the hand-over point, so the climb never jumps.
+    static func stairLift(_ p: CGPoint) -> CGFloat? {
+        guard smooth, let s = stairAt(p) else { return nil }
+        let n = stairSteps
+        let t = stairT(s.0, p) * n
+        let k = min(n - 1, floor(t))
+        let f = t - k
+        let h = (k + f * f * (3 - 2 * f)) * riseH / n
+        return s.1 == stairLo[s.0] ? h : h - riseH
+    }
+
     static func stairIntact(_ i: Int) -> Bool { i < stairDown.count ? !stairDown[i] : true }
 
     static func planOf(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x - origin(floorOf(p)), y: p.y) }

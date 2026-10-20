@@ -50,18 +50,9 @@ final class TwViewModel {
                 gloveMats += g.gloveMats
                 var fl: MXNode? = nil
                 if let mz = rig["muzzle"] as? [Double], mz.count == 3 {
-                    let f = MXNode(geometry: MXSphere(radius: 2.0))
-                    let fm = MXMaterial()
-                    fm.lightingModel = .constant
-                    fm.diffuse.contents = UIColor(red: 1, green: 0.88, blue: 0.45, alpha: 1)
-                    fm.emission.contents = UIColor(red: 1, green: 0.8, blue: 0.3, alpha: 1)
-                    fm.readsFromDepthBuffer = false
-                    fm.writesToDepthBuffer = false
-                    f.geometry?.firstMaterial = fm
-                    f.position = MXVector3(Float(mz[0]), Float(mz[1]), Float(mz[2]) - 1)
-                    f.renderingOrder = 2000
+                    let f = MuzzleFX.make()
+                    f.position = MXVector3(Float(mz[0]), Float(mz[1]), Float(mz[2]))
                     f.isHidden = true
-                    f.castsShadow = false
                     gun.addChildNode(f)
                     fl = f
                 }
@@ -204,9 +195,7 @@ final class TwViewModel {
     func flash(_ on: Bool) {
         guard let f = rigs[shown]?.flash else { return }
         if on && f.isHidden {
-            let s = Float.random(in: 0.8...1.3)
-            f.scale = MXVector3(s, s, s * Float.random(in: 1.5...2.4))
-            f.eulerAngles = MXVector3(0, 0, Float.random(in: 0...3))
+            MuzzleFX.pulse(f)
         }
         f.isHidden = !on
     }
@@ -314,6 +303,8 @@ enum TwGunLib {
     /// camo-able (painted) materials of each Blender gun, keyed "<id>#<material set>", with their stock baked textures
     static var glbPaint: [String: [MXMaterial]] = [:]
     static var glbPaintBase: [String: [Any?]] = [:]
+    static var glbMetal: [String: [MXMaterial]] = [:]
+    static var glbMetalBase: [String: [Any?]] = [:]
     private static let armSuffix: Set<String> = ["glove", "gloveP", "sleeve", "strap", "ARMS"]
 
     /// loads the detailed model for a weapon; `arms` false strips the hands and sleeves (gunsmith preview)
@@ -324,6 +315,7 @@ enum TwGunLib {
         var groups: [String: MXNode] = [:]
         var gloves: [MXMaterial] = []
         var paints: [MXMaterial] = []
+        var metals: [MXMaterial] = []
         func isArm(_ n: MXNode) -> Bool {
             guard let nm = n.name, let u = nm.lastIndex(of: "_") else { return false }
             return armSuffix.contains(String(nm[nm.index(after: u)...]))
@@ -339,12 +331,16 @@ enum TwGunLib {
                 if arms, let nm = n.name, nm.hasSuffix("_glove"), let ms = n.geometry?.materials { gloves += ms }
                 if let nm = n.name, nm.hasSuffix("_QUATP"), let ms = n.geometry?.materials {
                     for m in ms where !paints.contains(where: { $0 === m }) { paints.append(m) }
+                } else if let nm = n.name, nm.hasSuffix("_QUAT"), let ms = n.geometry?.materials {
+                    for m in ms where !metals.contains(where: { $0 === m }) { metals.append(m) }
                 }
             }
         }
         walk(root)
         glbPaint["\(id)#\(setIdx)"] = paints
         glbPaintBase["\(id)#\(setIdx)"] = paints.map { $0.diffuse.contents }
+        glbMetal["\(id)#\(setIdx)"] = metals
+        glbMetalBase["\(id)#\(setIdx)"] = metals.map { $0.diffuse.contents }
         for c in root.childNodes { if let nm = c.name, ["slide", "bolt", "mag", "pump"].contains(nm) { groups[nm] = c } }
         var dirs: [String: MXVector3] = [:]
         if let an = meta["anim"] as? [String: [Double]] {
