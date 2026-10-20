@@ -1274,7 +1274,7 @@ final class TacticalEngine {
         let rMul = am.recoilMul * gm.rec
         if p.isPlayer {
             sprd += recoil * 0.045 * rMul + (moving ? 0.03 : 0) + (p.crouch ? -0.004 : 0)
-            if scoped { sprd *= 0.35 * am.scopeMul }
+            if scoped { sprd *= 0.35 * am.scopeMul } else if TBody.on { sprd *= TBody.hipSpread }
             sprd = max(0.002, sprd)
             p.aim += CGFloat.random(in: -0.0035...0.0035) * (0.4 + recoil)
             recoil = min(1.2, recoil + 0.13 * rMul)
@@ -1313,7 +1313,7 @@ final class TacticalEngine {
 
     func damage(_ victim: TPlayer, _ amt: CGFloat, by owner: Int) {
         guard victim.alive else { return }
-        var amt = amt
+        var amt = TBody.on && owner > -2 ? amt * TBody.dmgMul : amt
         if victim.armor > 0 && owner > -2 {
             let ratio: CGFloat = victim.armorKind >= 3 ? 0.75 : (victim.armorKind == 2 ? 0.6 : 0.5)
             let red: CGFloat = victim.armorKind >= 3 ? 0.9 : (victim.armorKind == 2 ? 0.85 : 0.8)
@@ -1757,6 +1757,7 @@ final class TacticalEngine {
 
     /// First-person radar: baked map image rotated heading-up inside a circle, live markers on top.
     private func drawRadar(_ ctx: inout GraphicsContext) {
+        if TBody.on { return }
         let focus: TPlayer = me.alive ? me : (players.first { $0.team == me.team && $0.alive } ?? me)
         let cx: CGFloat = 84, cy: CGFloat = 128, R: CGFloat = 64
         let s: CGFloat = 0.12
@@ -2570,17 +2571,18 @@ struct TacticalPlay: View {
                 let W = geo.size.width, H = geo.size.height
                 ZStack(alignment: .topLeading) {
                     HudVignette(e: e)
+                    BodycamGrain(strength: 0.03)
+                    BodycamHud(e: e)
                     // top-left: settings; the radar is drawn by the canvas
                     Button { e.paused = true } label: { vbtn("gearshape.fill", 34) }
                         .buttonStyle(TuiPress())
                         .position(x: 180, y: 84)
-                    Button { e.banner = "GG!"; e.bannerT = 1.5 } label: { vbtn("bubble.left.and.bubble.right.fill", 34) }
-                        .buttonStyle(TuiPress())
-                        .position(x: 224, y: 84)
                     let hf: TPlayer = e.me.alive ? e.me : (e.players.first { $0.team == e.me.team && $0.alive } ?? e.me)
                     let hfl = TMap.floorOf(hf.pos)
-                    HudFloorStack(floor: hfl).position(x: 198, y: 150)
-                    HudRoomChip(floor: hfl, room: TMap.roomName(hf.pos)).position(x: 84, y: 206)
+                    if !TBody.on {
+                        HudFloorStack(floor: hfl).position(x: 198, y: 150)
+                        HudRoomChip(floor: hfl, room: TMap.roomName(hf.pos)).position(x: 84, y: 206)
+                    }
 
                     // top-center: roster with floor tags, score, objective, bomb location
                     HudScoreboard(e: e).frame(width: W).padding(.top, 2)
@@ -2589,7 +2591,7 @@ struct TacticalPlay: View {
                     // top-right: kill feed
                     HudFeed(e: e).padding(.trailing, 16).padding(.top, 84).frame(width: W, alignment: .trailing)
                     if e.me.alive { HudCSWeapon(e: e).padding(.trailing, 18).padding(.top, 6).frame(width: W, alignment: .trailing) }
-                    HudCSVitals(e: e).padding(.leading, 14).padding(.top, 8)
+                    if !TBody.on { HudCSVitals(e: e).padding(.leading, 14).padding(.top, 8) }
 
                     if e.gameMode == 6 && e.me.alive {
                         Button { e.raidBagOpen.toggle() } label: {

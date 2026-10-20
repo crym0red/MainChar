@@ -316,26 +316,80 @@ static float3 toSRGB(float3 c) {
     return select(hi, lo, c <= 0.0031308);
 }
 
+static float hash21(float2 p) {
+    p = fract(p * float2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+}
+
 fragment float4 fs_comp(FSOut in [[stage_in]],
                         texture2d<float> hdr [[texture(0)]],
                         texture2d<float> bloom [[texture(1)]],
                         constant float4& p0 [[buffer(0)]],
-                        constant float4& p1 [[buffer(1)]]) {
+                        constant float4& p1 [[buffer(1)]],
+                        constant float4& p2 [[buffer(2)]]) {
     // p0: x bloom intensity, y saturation, z contrast, w tone map on
-    // p1: x vignette intensity, y vignette power, z exposure
-    float4 s = hdr.sample(sClamp, in.uv);
-    float3 c = s.rgb + bloom.sample(sClamp, in.uv).rgb * p0.x;
-    c *= p1.z;
+    // p1: x vignette intensity, y vignette power, z exposure, w bodycam strength
+    // p2: x time, y aspect, zw target size
+    float k = p1.w;
+    float2 uv = in.uv;
+    float3 c;
+    float a;
+    float edge = 1.0;
+    if (k > 0.001) {
+        // fisheye: normalise so the screen edge still maps inside the image
+        float asp = max(p2.y, 0.5);
+        float2 q = (uv - 0.5) * float2(asp, 1.0);
+        float rmax = 0.25 * asp * asp + 0.25;
+        float amt = 0.32 * k;
+        float r2 = dot(q, q);
+        float2 qd = q * (1.0 + amt * r2) / (1.0 + amt * rmax);
+        float2 uvd = 0.5 + qd / float2(asp, 1.0);
+        // chromatic fringing grows toward the edges
+        float2 dir = normalize(q + 1e-5);
+        float ca = 0.0035 * k * sqrt(r2);
+        float2 uvr = clamp(uvd + dir * ca * float2(1.0 / asp, 1.0), 0.0, 1.0);
+        float2 uvb = clamp(uvd - dir * ca * float2(1.0 / asp, 1.0), 0.0, 1.0);
+        float4 sg = hdr.sample(sClamp, uvd);
+        float3 raw = float3(hdr.sample(sClamp, uvr).r, sg.g, hdr.sample(sClamp, uvb).b);
+        float3 bl = bloom.sample(sClamp, uvd).rgb * p0.x;
+        c = (raw + bl) * p1.z * 1.12;
+        a = sg.a;
+        edge = 1.0;
+    } else {
+        float4 s = hdr.sample(sClamp, uv);
+        c = s.rgb + bloom.sample(sClamp, uv).rgb * p0.x;
+        c *= p1.z;
+        a = s.a;
+    }
     if (p0.w > 0.5) { c = aces(c); } else { c = saturate(c); }
     c = toSRGB(c);
     c = (c - 0.5) * (1.0 + p0.z) + 0.5;
     float l = dot(c, float3(0.299, 0.587, 0.114));
     c = mix(float3(l), c, p0.y);
-    float2 q = in.uv - 0.5;
-    float v = 1.0 - p1.x * pow(saturate(length(q) * 1.45), p1.y);
+    float2 q2 = uv - 0.5;
+    float v = 1.0 - p1.x * pow(saturate(length(q2) * 1.45), p1.y);
     c *= clamp(v, 0.0, 1.0);
+    if (k > 0.001) {
+        float t = p2.x;
+        // cheap sensor look: muted colour, cool-green cast, crushed blacks, clipped highlights
+        float lm = dot(c, float3(0.299, 0.587, 0.114));
+        c = mix(float3(lm), c, 0.8);
+        c *= float3(0.97, 1.02, 0.98);
+        c = (c - 0.04) * 1.08;
+        // low-bitrate video: coarse blocks that shimmer, banded colour
+        float2 blk = floor(uv * float2(p2.z, p2.w) / 14.0);
+        float bn = hash21(blk + floor(t * 9.0));
+        c *= 1.0 + (bn - 0.5) * 0.045 * k;
+        c = floor(c * 40.0 + 0.5) / 40.0;
+        // sensor grain and scanlines
+        float g = hash21(uv * float2(p2.z, p2.w) * 0.5 + t * 37.0);
+        c += (g - 0.5) * 0.085 * k * (1.1 - lm);
+        c *= 0.965 + 0.035 * sin(uv.y * p2.w * 1.57);
+        // tiny exposure flicker
+        c *= 1.0 + 0.012 * sin(t * 23.0);
+    }
     c = saturate(c);
-    float a = s.a;
     return float4(c * a, a);
 }
 """#

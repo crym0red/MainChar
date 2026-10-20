@@ -250,7 +250,7 @@ struct LobbyHome: View {
             .position(x: 8 + 110, y: H - 8 - 66 - 8 - 78)
             // bottom tiles
             HStack(spacing: 5) {
-                tile("wrench.fill", "WORKSHOP", "Create & play custom guns and maps", LS.orange, leftW * 0.4, art: 2) { act(.nav(3)) }
+                tile("wrench.and.screwdriver.fill", "ARMORY", "Attachments, camos and gun upgrades", LS.orange, leftW * 0.4, art: 2) { act(.nav(3)) }
                 tile("bubble.left.and.bubble.right.fill", "JOIN OUR DISCORD", "Get updates, share creations, find squads", Color(red: 0.35, green: 0.4, blue: 0.95), leftW * 0.32, art: 1) { act(.friends) }
                 tile("gift.fill", "DAILY REWARDS", "Log in for free rewards", Color(red: 0.95, green: 0.7, blue: 0.15), leftW * 0.28 - 10, art: 0) { act(.season(0)) }
             }
@@ -260,9 +260,9 @@ struct LobbyHome: View {
                 HStack(spacing: 0) { tabBtn(0, "MODES"); tabBtn(1, "MAPS"); tabBtn(2, "SERVER") }
                     .background(LS.navy.opacity(0.9))
                 if tab == 0 {
-                    modeCard(7, "shield.lefthalf.filled", "FRONTLINE", "Large scale battle · 100 bots", "Capture points · Tickets · Squads", ch)
-                    modeCard(1, "person.2.fill", "5v5", "Team Deathmatch · 5v5", "Fast paced · Small maps", art: 1, ch)
-                    modeCard(6, "bag.fill", "EXTRACTION", "Loot · Survive · Extract", "Large map · AI + Players", art: 2, ch)
+                    modeCard(0, "timer", "BOMB DEFUSAL", "Plant or defuse · 5v5", "One life per round · Realistic", art: 1, ch)
+                    modeCard(1, "person.2.fill", "TEAM DEATHMATCH", "Respawns · 5v5", "Fast paced · Tight rooms", art: 2, ch)
+                    modeCard(5, "flag.fill", "CONTROL POINT", "Hold three zones · 5v5", "Push · Flank · Hold", art: 0, ch)
                     Button { act(.screen(1)) } label: {
                         HStack(spacing: 4) {
                             Text("MORE MODES").font(.jk(10, .heavy)).foregroundColor(.white.opacity(0.85))
@@ -276,7 +276,7 @@ struct LobbyHome: View {
                         if nav.tacMode == 7 || nav.tacMode == 6 {
                             Text("MAP: HARBOR").font(.jk(11, .heavy)).foregroundColor(LS.orange)
                         } else {
-                            ForEach([0, 2, 3, 5], id: \.self) { k in
+                            ForEach([6], id: \.self) { k in
                                 Button { nav.tacMap = k } label: {
                                     HStack {
                                         Text(TMap.mapNames[k]).font(.jk(12, .heavy)).foregroundColor(nav.tacMap == k ? .black : .white)
@@ -335,7 +335,8 @@ struct LobbyHome: View {
             .position(x: W - 6 - rp / 2, y: H / 2)
         }
         .onAppear {
-            if !LobbyHome.didDefault { LobbyHome.didDefault = true; if ![7, 1, 6].contains(nav.tacMode) { nav.tacMode = 7 } }
+            if ![0, 1, 5].contains(nav.tacMode) { nav.tacMode = 0 }
+            if nav.tacMap != 5 { nav.tacMap = 6 }
         }
     }
 }

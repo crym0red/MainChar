@@ -38,6 +38,7 @@ struct MainShotApp: App {
     var body: some Scene {
         WindowGroup {
             LobbyView()
+                .overlay(BodycamMenuLayer())
                 .environmentObject(game)
                 .environmentObject(nav)
                 .preferredColorScheme(.dark)

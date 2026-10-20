@@ -176,7 +176,8 @@ struct HarborBackdrop: View {
             }
             ctx.stroke(gp, with: .color(Color.black.opacity(0.1)), lineWidth: 1)
         }
-        .overlay(LinearGradient(colors: [Color.black.opacity(0.1), Color.black.opacity(0.4)], startPoint: .top, endPoint: .bottom))
+        .saturation(0.55)
+        .overlay(LinearGradient(colors: [Color.black.opacity(0.1), Color.black.opacity(0.45)], startPoint: .top, endPoint: .bottom))
         .ignoresSafeArea()
     }
 }
@@ -195,7 +196,7 @@ struct LobbyShell<Content: View>: View {
         self.active = active; self.size = size; self.t = t; self.act = act; self.content = content()
     }
 
-    private let items: [(String, String)] = [("house.fill", "PLAY"), ("person.fill", "CUSTOMIZE"), ("scope", "LOADOUT"), ("wrench.fill", "WORKSHOP"),
+    private let items: [(String, String)] = [("house.fill", "PLAY"), ("person.fill", "CUSTOMIZE"), ("scope", "LOADOUT"), ("wrench.and.screwdriver.fill", "ARMORY"),
                                               ("shield.lefthalf.filled", "CLAN"), ("person.3.fill", "SQUAD"), ("cart.fill", "STORE"), ("gearshape.fill", "SETTINGS")]
 
     private func navItem(_ i: Int) -> some View {
@@ -236,7 +237,10 @@ struct LobbyShell<Content: View>: View {
             // top bar
             HStack(spacing: 10) {
                 HStack(spacing: 6) {
-                    SF("triangle.fill").font(.system(size: 19, weight: .black)).foregroundColor(LS.orange)
+                    TimelineView(.periodic(from: .now, by: 0.6)) { tl in
+                        Circle().fill(Color(red: 0.95, green: 0.12, blue: 0.1)).frame(width: 13, height: 13)
+                            .opacity(Int(tl.date.timeIntervalSinceReferenceDate / 0.6) % 2 == 0 ? 1 : 0.25)
+                    }
                     Text("MAINSHOT").font(.jk(19, .heavy)).foregroundColor(.white).lineLimit(1).minimumScaleFactor(0.6)
                 }
                 .frame(width: LS.navW - 4, alignment: .leading)

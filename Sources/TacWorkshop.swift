@@ -141,6 +141,8 @@ enum TWorkshop {
 
     /// called by TwGunLib.load(): registers palette materials and swaps sprite guns into the rigs
     static func inject() {
+        // pixel-art guns do not belong in a bodycam game: keep the real gun models
+        if TBody.on { return }
         guard var rs = TwGunLib.rigs else { return }
         let p = pal
         for i in 1...15 {

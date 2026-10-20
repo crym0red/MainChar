@@ -100,6 +100,7 @@ final class TacScene {
     private var doorHoriz: [Bool] = []
     private var doorAngShown: [Float] = []
     private var sunNode: MXNode? = nil
+    private var lamps: [(MXLight, CGFloat)] = []
     private var lastT = CACurrentMediaTime()
     private var fpsEMA: CGFloat = 60
     private var lowT: CGFloat = 0
@@ -123,10 +124,14 @@ final class TacScene {
 
     private func grimeOverlay(_ g: CGContext, _ s: CGFloat, _ key: String) {
         var r = LCG(s: UInt64(abs(key.hashValue) % 100000) + 17)
-        for _ in 0..<9 {
-            let w = 18 + r.next() * 60, h = 12 + r.next() * 44
-            g.setFillColor(UIColor.black.withAlphaComponent(0.03 + r.next() * 0.05).cgColor)
+        for _ in 0..<18 {
+            let w = 18 + r.next() * 70, h = 12 + r.next() * 50
+            g.setFillColor(UIColor.black.withAlphaComponent(0.05 + r.next() * 0.09).cgColor)
             g.fillEllipse(in: CGRect(x: r.next() * s - w / 2, y: r.next() * s - h / 2, width: w, height: h))
+        }
+        for _ in 0..<7 {
+            g.setFillColor(UIColor(red: 0.12, green: 0.09, blue: 0.05, alpha: 0.05 + r.next() * 0.08).cgColor)
+            g.fill(CGRect(x: r.next() * s, y: r.next() * s * 0.5, width: 1 + r.next() * 3, height: 20 + r.next() * 70))
         }
         for _ in 0..<260 {
             g.setFillColor(UIColor.black.withAlphaComponent(0.08 + r.next() * 0.14).cgColor)
@@ -413,10 +418,10 @@ final class TacScene {
         let th = e.theme
         func C(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> UIColor { UIColor(red: r, green: g, blue: b, alpha: 1) }
         let skyCols: [UIColor] = TMap.look == 2 ? [C(0.35, 0.4, 0.5), C(0.65, 0.62, 0.6), C(0.9, 0.72, 0.5)] : TMap.look == 3 ? [C(0.3, 0.55, 0.9), C(0.72, 0.84, 0.95), C(0.98, 0.9, 0.7)] : TMap.look == 1 ? [C(0.42, 0.5, 0.58), C(0.66, 0.74, 0.78), C(0.82, 0.85, 0.8)] : th == 1 ? [C(0.02, 0.04, 0.12), C(0.05, 0.09, 0.2), C(0.12, 0.16, 0.3)] : (th == 2 ? [C(0.18, 0.07, 0.28), C(0.65, 0.25, 0.2), C(0.95, 0.55, 0.2)] : [C(0.25, 0.52, 0.9), C(0.62, 0.8, 0.96), C(0.95, 0.88, 0.72)])
-        let fogC: UIColor = TMap.look == 2 ? C(0.55, 0.52, 0.5) : TMap.look == 3 ? C(0.85, 0.76, 0.6) : TMap.look == 1 ? C(0.6, 0.67, 0.65) : th == 1 ? C(0.04, 0.06, 0.12) : (th == 2 ? C(0.22, 0.12, 0.12) : C(0.3, 0.28, 0.26))
-        let ambI: CGFloat = th == 1 ? 560 : (th == 2 ? 560 : 520)
+        let fogC: UIColor = TMap.look == 2 ? C(0.55, 0.52, 0.5) : TMap.look == 3 ? C(0.85, 0.76, 0.6) : TMap.look == 1 ? C(0.6, 0.67, 0.65) : th == 1 ? C(0.04, 0.06, 0.12) : (th == 2 ? C(0.2, 0.11, 0.1) : C(0.2, 0.19, 0.18))
+        let ambI: CGFloat = th == 1 ? 360 : (th == 2 ? 380 : 330)
         let ambC: UIColor = th == 1 ? C(0.55, 0.65, 0.95) : (th == 2 ? C(0.9, 0.65, 0.7) : C(0.78, 0.8, 0.9))
-        let sunI: CGFloat = (th == 1 ? 500 : (th == 2 ? 900 : 1500)) * 0.5
+        let sunI: CGFloat = (th == 1 ? 500 : (th == 2 ? 900 : 1500)) * 0.4
         let sunC: UIColor = th == 1 ? C(0.6, 0.75, 1) : (th == 2 ? C(1, 0.55, 0.3) : C(1, 0.93, 0.78))
         let skyImg = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 256)).image { c in
             let cs = CGColorSpaceCreateDeviceRGB()
@@ -426,10 +431,11 @@ final class TacScene {
         }
         scene.background.contents = skyImg
         scene.fogColor = fogC
-        scene.fogStartDistance = fpMode ? (TMap.look == 1 ? 450 : (TMap.look >= 2 ? 900 : 1100)) : 1400
-        scene.fogEndDistance = fpMode ? (TMap.look == 1 ? 2000 : (TMap.look >= 2 ? 3000 : 3300)) : 4200
+        scene.fogStartDistance = fpMode ? (TMap.look == 1 ? 400 : (TMap.look >= 2 ? 700 : 650)) : 1400
+        scene.fogEndDistance = fpMode ? (TMap.look == 1 ? 1800 : (TMap.look >= 2 ? 2500 : 2300)) : 4200
         scene.fogDensityExponent = 1.4
         let root = scene.rootNode
+        lamps = []
         for i in 0..<3 {
             floorRoot[i].position = MXVector3(-Float(TMap.origin(i)), 0, 0)
             floorRoot[i].isHidden = i != 0
@@ -463,7 +469,7 @@ final class TacScene {
         let fill = MXNode()
         let fl = MXLight()
         fl.type = .directional
-        fl.intensity = 420
+        fl.intensity = 260
         fl.color = UIColor(red: 1, green: 0.95, blue: 0.85, alpha: 1)
         fill.light = fl
         fill.position = MXVector3(400, 500, 500)
@@ -478,7 +484,8 @@ final class TacScene {
                 let nd = MXNode()
                 let li = MXLight()
                 li.type = .omni
-                li.intensity = 600
+                li.intensity = 430
+                lamps.append((li, 430))
                 li.color = lampCols[rm.fl]
                 li.attenuationStartDistance = 50
                 li.attenuationEndDistance = 500
@@ -566,6 +573,43 @@ final class TacScene {
             let n = solid(rg.0, h: 1.6, color: c, top: c)
             n.castsShadow = false
             fr(rg.0.midX).addChildNode(n)
+        }
+        // decals: stains, puddles, papers, debris, cracks (seeded per map so every match looks the same)
+        var dr = LCG(s: UInt64(TMap.kind + 3) &* 7919 &+ 13)
+        for rm in TMap.rooms where rm.mat != 6 {
+            let area = rm.r.width * rm.r.height
+            let n = min(60, max(3, Int(area / 26000)))
+            for _ in 0..<n {
+                let kind = Int(dr.next() * 7)
+                let cx = rm.r.minX + 24 + dr.next() * max(1, rm.r.width - 60)
+                let cy = rm.r.minY + 24 + dr.next() * max(1, rm.r.height - 60)
+                var rects: [(CGRect, UIColor)] = []
+                switch kind {
+                case 0:
+                    let w = 30 + dr.next() * 60
+                    rects.append((CGRect(x: cx, y: cy, width: w, height: w * (0.55 + dr.next() * 0.5)), UIColor(white: 0.03, alpha: 0.26)))
+                case 1:
+                    let w = 24 + dr.next() * 50
+                    rects.append((CGRect(x: cx, y: cy, width: w, height: w * (0.5 + dr.next() * 0.4)), UIColor(red: 0.1, green: 0.16, blue: 0.22, alpha: 0.4)))
+                case 2:
+                    for _ in 0..<3 { rects.append((CGRect(x: cx + dr.next() * 22, y: cy + dr.next() * 22, width: 7 + dr.next() * 5, height: 9 + dr.next() * 6), UIColor(white: 0.85, alpha: 0.8))) }
+                case 3:
+                    for _ in 0..<5 { rects.append((CGRect(x: cx + dr.next() * 26, y: cy + dr.next() * 26, width: 2 + dr.next() * 4, height: 2 + dr.next() * 4), UIColor(white: 0.32 + dr.next() * 0.2, alpha: 0.9))) }
+                case 4:
+                    rects.append((CGRect(x: cx, y: cy, width: 40 + dr.next() * 70, height: 1.3), UIColor(white: 0, alpha: 0.4)))
+                case 5:
+                    rects.append((CGRect(x: cx, y: cy, width: 16 + dr.next() * 10, height: 12 + dr.next() * 8), UIColor(red: 0.5, green: 0.38, blue: 0.22, alpha: 0.85)))
+                default:
+                    if dr.next() < 0.4 {
+                        for _ in 0..<4 { rects.append((CGRect(x: cx + dr.next() * 14, y: cy + dr.next() * 14, width: 3 + dr.next() * 7, height: 3 + dr.next() * 6), UIColor(red: 0.28, green: 0.03, blue: 0.03, alpha: 0.7))) }
+                    }
+                }
+                for (r, col) in rects {
+                    let nd = solid(r, h: 0.4, y0: 0.05, color: col, top: col)
+                    nd.castsShadow = false
+                    fr(r.midX).addChildNode(nd)
+                }
+            }
         }
         // sites
         for i in 0..<2 where TMap.look != 1 && TMap.kind != 4 {
@@ -1225,6 +1269,16 @@ final class TacScene {
 
     func sync(_ e: TacticalEngine) {
         guard !e.players.isEmpty, roots.count == e.players.count else { return }
+        // tired tungsten tubes: a few buzz, a few cut out for a moment
+        let ft = Double(e.time)
+        for (i, l) in lamps.enumerated() {
+            var k = 0.97 + 0.03 * sin(ft * 7 + Double(i))
+            if i % 4 == 0 {
+                k = 0.84 + 0.16 * sin(ft * 29 + Double(i) * 1.3)
+                if sin(ft * 0.8 + Double(i) * 1.7) > 0.965 { k *= 0.2 }
+            }
+            l.0.intensity = l.1 * CGFloat(k)
+        }
         let rsv = e.beginReplayView()
         defer { e.endReplayView(rsv) }
         let focus: TPlayer = e.replayOn ? (e.players.first { $0.id == e.replayKiller } ?? e.me) : e.me.alive ? e.me : (e.gameMode != 6 ? e.players.first { $0.id == e.lastKiller && $0.alive && !$0.isPlayer } : nil) ?? (e.players.first { $0.team == e.me.team && $0.alive } ?? e.me)
@@ -1328,14 +1382,27 @@ final class TacScene {
             lastVmT = e.time
             vm.update(dt: vdt, t: Float(e.time), move: e.replayOn ? 0.6 : Float(min(1, hypot(e.move.dx, e.move.dy))), kick: e.replayOn ? (focus.flash > 0 ? 6 : 0) : Float(e.kick), reload: rprog, flashing: focus.flash > 0, recoilScale: TWeapons.recoil(focus.gun))
             vm.flash(focus.flash > 0)
-            camNode.camera?.fieldOfView += ((e.scoped ? TAtt.mods(e.me.gun).zoomFOV : 62) - (camNode.camera?.fieldOfView ?? 62)) * 0.3
-            camNode.position = MXVector3(Float(ex + jx * 0.3), Float(eh), Float(ez + jz * 0.3))
-            camNode.look(at: MXVector3(Float(ex + dxv * 100), Float(eh), Float(ez + dzv * 100)))
+            camNode.camera?.fieldOfView += ((e.scoped ? TAtt.mods(e.me.gun).zoomFOV : TBody.fov) - (camNode.camera?.fieldOfView ?? TBody.fov)) * 0.3
+            // bodycam: strapped to the chest, so it breathes, rolls with every step and lags the aim
+            let bt = Double(e.time)
+            let mv = CGFloat(min(1, hypot(e.move.dx, e.move.dy)))
+            let calm: CGFloat = e.scoped ? 0.25 : 1
+            let swayX = CGFloat(sin(bt * 1.35) * 0.45 + sin(bt * 0.57) * 0.6 + sin(bt * 4.1) * 0.12) * (1 + 2.2 * mv) * calm
+            let swayY = CGFloat(sin(bt * 2.05) * 0.3 + abs(sin(bt * 6.2)) * 0.9 * Double(mv)) * calm
+            camNode.camera?.bodycam = e.scoped ? 0.55 : 1
+            camNode.camera?.camTime = Float(bt)
+            camNode.camera?.saturation = 0.9
+            camNode.camera?.contrast = 0.12
+            camNode.camera?.vignettingIntensity = 0.55
+            camNode.camera?.vignettingPower = 2.0
+            camNode.position = MXVector3(Float(ex + jx * 0.3), Float(eh + swayY * 0.9), Float(ez + jz * 0.3))
+            camNode.look(at: MXVector3(Float(ex + dxv * 100 - dzv * swayX), Float(eh + swayY * 1.4), Float(ez + dzv * 100 + dxv * swayX)))
         } else {
             vm.root.isHidden = true
             camNode.camera?.zNear = 10
             camNode.camera?.zFar = 3000
             camNode.camera?.fieldOfView = 52
+            camNode.camera?.bodycam = 0
             let pr: [(CGFloat, CGFloat, CGFloat, CGFloat)] = [(300, 170, 60, 30), (400, 250, 70, 40), (520, 70, 70, 50), (640, 400, 90, 60)]
             let c = pr[max(0, min(3, preset))]
             // always the same top-down pitch; yaw just spins the view around the player

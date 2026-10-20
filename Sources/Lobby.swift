@@ -20,7 +20,7 @@ struct LobbyView: View {
     @State private var fromMatch = false
     @State private var gsBack = 6
     @State private var opsBack = 0
-    private let modeOrder = [7, 1, 4, 5, 0, 3, 2, 6]
+    private let modeOrder = [0, 1, 5]
     private let modeLock = [4, 1, 6, 5, 1, 3, 1, 1]
 
     private let lime = TUI.accent
@@ -104,7 +104,7 @@ struct LobbyView: View {
     }
 
     private func startLoading() {
-        TMap.load((nav.tacMode == 6 || nav.tacMode == 7) ? 4 : nav.tacMap)
+        TMap.load(nav.tacMap == 5 ? 5 : 6)
         mapImg = TacRadar.image(1)
         loadP = 0
         screen = 3
@@ -167,7 +167,7 @@ struct LobbyView: View {
             case 0: screen = 0
             case 1: screen = 12
             case 2: fromMatch = false; screen = 6
-            case 3: screen = 11
+            case 3: gsBack = 0; screen = 7
             case 4: showRanks = true
             case 5: showAdmin = true
             case 6: seasonTab = 2; showSeason = true
@@ -293,7 +293,7 @@ struct LobbyView: View {
                 FrontClassPicker().position(x: W / 2, y: H - 80)
             } else if nav.tacMode != 6 {
                 HStack(spacing: 8) {
-                    ForEach([0, 2, 3, 5], id: \.self) { k in
+                    ForEach([6], id: \.self) { k in
                         Button { nav.tacMap = k } label: {
                             Text(TMap.mapNames[k]).font(.jk(11, .heavy)).foregroundColor(nav.tacMap == k ? .black : .white.opacity(0.85))
                                 .padding(.horizontal, 12).frame(height: 28)
